@@ -6,7 +6,13 @@ config = load_config()
 
 def connect_to_imap(config):
     try:
-        mail = imaplib.IMAP4_SSL(config['imap_server'])
+        # Use port from config, default to 993 for SSL
+        port = config.get('imap_port', 993)
+        if config.get('imap_use_ssl', True):
+            mail = imaplib.IMAP4_SSL(config['imap_server'], port)
+        else:
+            mail = imaplib.IMAP4(config['imap_server'], port)
+        
         mail.login(config['email'], config['password'])
         mail.select("inbox")
 
