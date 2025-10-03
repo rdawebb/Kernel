@@ -1,8 +1,10 @@
 import unittest
+import io
+import contextlib
 from unittest.mock import patch, MagicMock
 
-from ui.inbox_viewer import display_inbox
-from ui.email_viewer import display_email
+from src.quiet_mail.ui.inbox_viewer import display_inbox
+from src.quiet_mail.ui.email_viewer import display_email
 
 
 class TestInboxViewer(unittest.TestCase):
@@ -23,33 +25,53 @@ class TestInboxViewer(unittest.TestCase):
             }
         ]
     
-    @patch('ui.inbox_viewer.console')
-    def test_display_inbox_with_emails(self, mock_console):
-        display_inbox(self.test_emails)
-        
-        mock_console.print.assert_called_once()
-        
-        call_args = mock_console.print.call_args[0][0]
-        
-        from rich.table import Table
-        self.assertIsInstance(call_args, Table)
-    
-    @patch('ui.inbox_viewer.console')
-    def test_display_inbox_empty(self, mock_console):
-        display_inbox([])
-        
-        mock_console.print.assert_called_once()
-        
-        call_args = mock_console.print.call_args[0][0]
-        from rich.table import Table
-        self.assertIsInstance(call_args, Table)
-    
-    def test_display_inbox_data_integrity(self):
-        # Test ensures the function doesn't crash with real data
-        try:
+    def test_display_inbox_with_emails_table_structure(self):
+        """Test display_inbox shows proper table structure with emails"""
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
             display_inbox(self.test_emails)
-        except Exception as e:
-            self.fail(f"display_inbox raised an exception: {e}")
+        
+        output = f.getvalue()
+        # Verify that table structure and data are displayed
+        self.assertIn("Inbox", output)
+        self.assertIn("alice@example.com", output)
+        self.assertIn("Test Email 1", output)
+        self.assertIn("bob@example.com", output)
+        self.assertIn("Test Email 2", output)
+    
+    def test_display_inbox_empty(self):
+        """Test display_inbox with empty list - should show empty table structure"""
+        # Capture stdout to verify the table is displayed
+        import io
+        import contextlib
+        
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            display_inbox([])
+        
+        output = f.getvalue()
+        # Verify that a table structure is displayed
+        self.assertIn("Inbox", output)
+        self.assertIn("ID", output) 
+        self.assertIn("From", output)
+        self.assertIn("Subject", output)
+
+    def test_display_inbox_with_emails(self):
+        """Test display_inbox with email data - should show populated table"""
+        import io
+        import contextlib
+        
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            display_inbox(self.test_emails)
+        
+        output = f.getvalue()
+        # Verify that table structure and data are displayed
+        self.assertIn("Inbox", output)
+        self.assertIn("alice@example.com", output)
+        self.assertIn("Test Email 1", output)
+        self.assertIn("bob@example.com", output)
+        self.assertIn("Test Email 2", output)
     
     def test_display_inbox_with_missing_fields(self):
         incomplete_emails = [
@@ -82,40 +104,46 @@ class TestEmailViewer(unittest.TestCase):
             'body': 'This is the email body content.'
         }
     
-    @patch('ui.email_viewer.console')
-    def test_display_email_complete(self, mock_console):
-        display_email(self.test_email)
+    def test_display_email_complete(self):
+        """Test display_email with complete email data"""
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            display_email(self.test_email)
         
-        self.assertTrue(mock_console.print.called)
-        
-        all_calls = str(mock_console.print.call_args_list)
-        self.assertIn('sender@example.com', all_calls)
-        self.assertIn('Test Email Subject', all_calls)
-        self.assertIn('2025-10-02', all_calls)
-        self.assertIn('This is the email body content.', all_calls)
+        output = f.getvalue()
+        self.assertIn('sender@example.com', output)
+        self.assertIn('Test Email Subject', output)
+        self.assertIn('2025-10-02', output)
+        self.assertIn('This is the email body content.', output)
     
-    @patch('ui.email_viewer.console')
-    def test_display_email_missing_body(self, mock_console):
+    def test_display_email_missing_body(self):
+        """Test display_email with missing body"""
         email_no_body = self.test_email.copy()
         email_no_body['body'] = None
         
-        display_email(email_no_body)
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            display_email(email_no_body)
         
-        all_calls = str(mock_console.print.call_args_list)
-        self.assertIn('sender@example.com', all_calls)
-        self.assertIn('Test Email Subject', all_calls)
+        output = f.getvalue()
+        self.assertIn('sender@example.com', output)
+        self.assertIn('Test Email Subject', output)
     
-    @patch('ui.email_viewer.console')
-    def test_display_email_missing_fields(self, mock_console):
+    def test_display_email_missing_fields(self):
+        """Test display_email with minimal fields"""
         minimal_email = {
             'from': 'sender@example.com',
             'subject': 'Test Subject'
             # Missing date and body
         }
         
-        display_email(minimal_email)
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            display_email(minimal_email)
         
-        self.assertTrue(mock_console.print.called)
+        output = f.getvalue()
+        self.assertIn('sender@example.com', output)
+        self.assertIn('Test Subject', output)
     
     def test_display_email_data_integrity(self):
         try:
@@ -170,16 +198,19 @@ class TestUIIntegration(unittest.TestCase):
         except Exception as e:
             self.fail(f"UI functions should handle empty data: {e}")
     
-    @patch('ui.inbox_viewer.console')
-    @patch('ui.email_viewer.console')
-    def test_ui_components_dont_interfere(self, mock_email_console, mock_inbox_console):
+    def test_ui_components_dont_interfere(self):
+        """Test that both UI components can be used together without issues"""
         emails = [{'id': 1, 'from': 'test@example.com', 'subject': 'Test', 'date': '2025-10-02'}]
         
-        display_inbox(emails)
-        display_email(emails[0])
+        f = io.StringIO()
+        with contextlib.redirect_stdout(f):
+            display_inbox(emails)
+            display_email(emails[0])
         
-        self.assertTrue(mock_inbox_console.print.called)
-        self.assertTrue(mock_email_console.print.called)
+        output = f.getvalue()
+        # Check that both components produced output
+        self.assertIn('test@example.com', output)
+        self.assertIn('Test', output)
 
 
 if __name__ == '__main__':

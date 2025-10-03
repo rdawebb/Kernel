@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "quiet-mail"
+version = "0.1.0"
+description = "A minimal command-line email client"
+authors = ["Rob Webb <rdawebb@gmail.com>"]
+readme = "README.md"
+packages = [{include = "quiet_mail", from = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.13"
+rich = "14.1.0"
+apscheduler = "3.11.0"
+python-dotenv = "1.1.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+
+[tool.poetry.scripts]
+quiet-mail = "quiet_mail.cli:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

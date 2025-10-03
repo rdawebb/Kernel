@@ -1,6 +1,6 @@
 import sqlite3
 from pathlib import Path
-from utils.config import load_config
+from quiet_mail.utils.config import load_config
 
 def get_db_path():
     config = load_config()
@@ -30,7 +30,8 @@ def initialize_db():
                 recipient TEXT,
                 date TEXT,
                 time TEXT,
-                body TEXT
+                body TEXT,
+                fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
         conn.commit()
@@ -38,20 +39,22 @@ def initialize_db():
     except Exception as e:
         raise RuntimeError(f"Failed to initialize database: {e}")
 
-def save_email_metadata(uid, sender, subject, date, time):
+def save_email_metadata(uid, sender, subject, recipient, date, time):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
         # Use UPSERT to avoid duplicates while updating existing records
         cursor.execute("""
-            INSERT INTO emails (uid, sender, subject, date, time)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO emails (uid, sender, subject, recipient, date, time, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(uid) DO UPDATE SET
                 sender = excluded.sender,
                 subject = excluded.subject,
+                recipient = excluded.recipient,
                 date = excluded.date,
-                time = excluded.time
-        """, (uid, sender, subject, date, time))
+                time = excluded.time,
+                fetched_at = CURRENT_TIMESTAMP
+        """, (uid, sender, subject, recipient, date, time))
         conn.commit()
     finally:
         conn.close()
@@ -61,12 +64,11 @@ def save_email_body(uid, body):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        # Use UPSERT for body storage
+        # Use UPDATE to add body to existing email record
         cursor.execute("""
-            INSERT INTO emails (uid, body)
-            VALUES (?, ?)
-            ON CONFLICT(uid) DO UPDATE SET
-                body = excluded.body
+            UPDATE emails
+            SET body = ?
+            WHERE uid = ?
         """, (body, uid))
         conn.commit()
     finally:
@@ -77,9 +79,9 @@ def get_inbox(limit=10):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, uid, subject, sender, recipient, date, time
+            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time
             FROM emails
-            ORDER BY date DESC, time DESC
+            ORDER BY fetched_at DESC
             LIMIT ?
         """, (limit,))
         emails = cursor.fetchall()

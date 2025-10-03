@@ -3,7 +3,7 @@ import datetime
 import time
 from email.header import decode_header
 from email.utils import parsedate_tz
-from utils.config import load_config
+from quiet_mail.utils.config import load_config
 
 config = load_config()
 

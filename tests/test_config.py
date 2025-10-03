@@ -2,8 +2,7 @@ import unittest
 import os
 from unittest.mock import patch
 
-from utils.config import load_config
-
+from src.quiet_mail.utils.config import load_config
 
 class TestConfig(unittest.TestCase):
     
@@ -19,7 +18,7 @@ class TestConfig(unittest.TestCase):
                 del os.environ[var]
         
         # Mock load_dotenv to prevent loading actual .env file
-        self.dotenv_patcher = patch('utils.config.load_dotenv')
+        self.dotenv_patcher = patch('src.quiet_mail.utils.config.load_dotenv')
         self.mock_dotenv = self.dotenv_patcher.start()
     
     def tearDown(self):
@@ -52,10 +51,7 @@ class TestConfig(unittest.TestCase):
     
     def test_load_config_missing_required_vars(self):
         os.environ['IMAP_SERVER'] = 'imap.gmail.com'
-        # Explicitly ensure EMAIL and PASSWORD are not set
-        for var in ['EMAIL', 'PASSWORD']:
-            if var in os.environ:
-                del os.environ[var]
+        # EMAIL and PASSWORD are already cleared in setUp
         
         with self.assertRaises(RuntimeError) as context:
             load_config()
