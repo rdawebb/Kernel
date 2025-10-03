@@ -25,7 +25,7 @@ def main():
                              help="Number of emails to display")
 
     view_parser = subparsers.add_parser("view", help="View a specific email by ID")
-    view_parser.add_argument("id", type=int, help="Email ID (from list command)")
+    view_parser.add_argument("id", help="Email ID (from list command)")
 
     args = parser.parse_args()
 
@@ -40,9 +40,17 @@ def main():
         try:
             emails = imap_client.fetch_inbox(cfg, limit=args.limit)
 
-            # Save to DB
+            # Save metadata and body separately for efficiency
             for e in emails:
-                storage.save_email_metadata(e)
+                storage.save_email_metadata(
+                    e.get("uid"), 
+                    e.get("from"), 
+                    e.get("subject"), 
+                    e.get("date"),
+                    e.get("time")
+                )
+                if e.get("body"):
+                    storage.save_email_body(e.get("uid"), e.get("body"))
 
             inbox_viewer.display_inbox(emails)
         except Exception as e:
@@ -52,7 +60,6 @@ def main():
         console.print(f"[bold cyan]Fetching email {args.id}...[/]")
 
         try:
-            # Get email from DB (fallback: fetch from server)
             email_data = storage.get_email(args.id)
             if not email_data:
                 console.print(f"[red]Email with ID {args.id} not found.[/]")

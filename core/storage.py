@@ -9,10 +9,9 @@ def get_db_path():
 def get_db_connection():
     try:
         db_path = get_db_path()
-        # Ensure the database directory exists before connecting
         db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(db_path)
-        # Enable accessing columns by name instead of just index
+        # Enable accessing columns by name instead of index
         conn.row_factory = sqlite3.Row
         return conn
     except Exception as e:
@@ -39,46 +38,39 @@ def initialize_db():
     except Exception as e:
         raise RuntimeError(f"Failed to initialize database: {e}")
 
-def save_email_metadata(email_data):
+def save_email_metadata(uid, sender, subject, date, time):
+    conn = get_db_connection()
     try:
-        conn = get_db_connection()
         cursor = conn.cursor()
-        # Use UPSERT to avoid duplicates when re-fetching emails
+        # Use UPSERT to avoid duplicates while updating existing records
         cursor.execute("""
-            INSERT INTO emails (uid, subject, sender, recipient, date, time)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO emails (uid, sender, subject, date, time)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(uid) DO UPDATE SET
-                subject=excluded.subject,
-                sender=excluded.sender,
-                recipient=excluded.recipient,
-                date=excluded.date,
-                time=excluded.time
-        """, (
-            email_data.get("uid"),
-            email_data.get("subject"),
-            email_data.get("from"),
-            email_data.get("to"),
-            email_data.get("date"),
-            email_data.get("time")
-        ))
+                sender = excluded.sender,
+                subject = excluded.subject,
+                date = excluded.date,
+                time = excluded.time
+        """, (uid, sender, subject, date, time))
         conn.commit()
+    finally:
         conn.close()
-    except Exception as e:
-        raise RuntimeError(f"Failed to save email metadata: {e}")
 
 def save_email_body(uid, body):
+    """Save email body content separately (loaded only when viewing specific emails)"""
+    conn = get_db_connection()
     try:
-        conn = get_db_connection()
         cursor = conn.cursor()
+        # Use UPSERT for body storage
         cursor.execute("""
-            UPDATE emails
-            SET body = ?
-            WHERE uid = ?
+            INSERT INTO emails (uid, body)
+            VALUES (?, ?)
+            ON CONFLICT(uid) DO UPDATE SET
+                body = excluded.body
         """, (body, uid))
         conn.commit()
+    finally:
         conn.close()
-    except Exception as e:
-        raise RuntimeError(f"Failed to save email body: {e}")
 
 def get_inbox(limit=10):
     try:
@@ -96,18 +88,17 @@ def get_inbox(limit=10):
     except Exception as e:
         raise RuntimeError(f"Failed to retrieve inbox: {e}")
 
-def get_email(email_id):
+def get_email(email_uid):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        # Alias 'sender' as 'from' to match expected email format
         cursor.execute("""
             SELECT id, uid, sender as "from", subject, date, time, body
             FROM emails
-            WHERE id = ?
-        """, (email_id,))
+            WHERE uid = ?
+        """, (str(email_uid),))
         email = cursor.fetchone()
         conn.close()
         return dict(email) if email else None
     except Exception as e:
-        raise RuntimeError(f"Failed to retrieve email {email_id}: {e}")
+        raise RuntimeError(f"Failed to retrieve email {email_uid}: {e}")
