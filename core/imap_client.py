@@ -20,9 +20,9 @@ def fetch_inbox(config, limit=10):
     try:
         return [
             {"id": 1, "uid": "abc123", "from": "alice@example.com",
-            "subject": "Hello!", "date": "2025-09-25"},
+            "subject": "Hello!", "date": "2025-09-25", "time": "10:30:00"},
             {"id": 2, "uid": "def456", "from": "bob@example.com",
-            "subject": "Meeting update", "date": "2025-09-24"},
+            "subject": "Meeting update", "date": "2025-09-24", "time": "14:00:00"},
         ][:limit]
     except Exception as e:
         print(f"Error fetching emails: {e}")

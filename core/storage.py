@@ -30,6 +30,7 @@ def initialize_db():
                 sender TEXT,
                 recipient TEXT,
                 date TEXT,
+                time TEXT,
                 body TEXT
             )
         """)
@@ -44,17 +45,21 @@ def save_email_metadata(email_data):
         cursor = conn.cursor()
         # Use UPSERT to avoid duplicates when re-fetching emails
         cursor.execute("""
-            INSERT INTO emails (subject, sender, recipient, date)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO emails (uid, subject, sender, recipient, date, time)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(uid) DO UPDATE SET
                 subject=excluded.subject,
                 sender=excluded.sender,
-                date=excluded.date
+                recipient=excluded.recipient,
+                date=excluded.date,
+                time=excluded.time
         """, (
+            email_data.get("uid"),
             email_data.get("subject"),
             email_data.get("from"),
             email_data.get("to"),
-            email_data.get("date")
+            email_data.get("date"),
+            email_data.get("time")
         ))
         conn.commit()
         conn.close()
@@ -80,9 +85,9 @@ def get_inbox(limit=10):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, uid, subject, sender, recipient, date 
-            FROM emails 
-            ORDER BY date DESC 
+            SELECT id, uid, subject, sender, recipient, date, time
+            FROM emails
+            ORDER BY date DESC, time DESC
             LIMIT ?
         """, (limit,))
         emails = cursor.fetchall()
@@ -97,7 +102,7 @@ def get_email(email_id):
         cursor = conn.cursor()
         # Alias 'sender' as 'from' to match expected email format
         cursor.execute("""
-            SELECT id, uid, sender as "from", subject, date, body
+            SELECT id, uid, sender as "from", subject, date, time, body
             FROM emails
             WHERE id = ?
         """, (email_id,))
