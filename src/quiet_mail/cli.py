@@ -1,7 +1,7 @@
 import argparse
 from rich.console import Console
 from quiet_mail.core import imap_client, storage
-from quiet_mail.ui import inbox_viewer, email_viewer
+from quiet_mail.ui import inbox_viewer, email_viewer, search_viewer
 from quiet_mail.utils import config
 
 console = Console()
@@ -28,6 +28,9 @@ def main():
 
     view_parser = subparsers.add_parser("view", help="View a specific email by ID")
     view_parser.add_argument("id", help="Email ID (from list command)")
+
+    search_parser = subparsers.add_parser("search", help="Search emails by keyword")
+    search_parser.add_argument("keyword", help="Keyword to search in emails")
 
     args = parser.parse_args()
 
@@ -81,6 +84,15 @@ def main():
             email_viewer.display_email(email_data)
         except Exception as e:
             console.print(f"[red]Failed to retrieve or display email: {e}[/]")
+
+    elif args.command == "search":
+        console.print(f"[bold cyan]Searching emails for '{args.keyword}'...[/]")
+        
+        try:
+            search_results = storage.search_emails(args.keyword)
+            search_viewer.display_search_results(search_results, args.keyword)
+        except Exception as e:
+            console.print(f"[red]Failed to search emails: {e}[/]")
 
 if __name__ == "__main__":
     main()

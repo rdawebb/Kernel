@@ -30,8 +30,7 @@ def initialize_db():
                 recipient TEXT,
                 date TEXT,
                 time TEXT,
-                body TEXT,
-                fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                body TEXT
             )
         """)
         conn.commit()
@@ -43,17 +42,15 @@ def save_email_metadata(uid, sender, subject, recipient, date, time):
     conn = get_db_connection()
     try:
         cursor = conn.cursor()
-        # Use UPSERT to avoid duplicates while updating existing records
         cursor.execute("""
-            INSERT INTO emails (uid, sender, subject, recipient, date, time, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            INSERT INTO emails (uid, sender, subject, recipient, date, time)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(uid) DO UPDATE SET
                 sender = excluded.sender,
                 subject = excluded.subject,
                 recipient = excluded.recipient,
                 date = excluded.date,
-                time = excluded.time,
-                fetched_at = CURRENT_TIMESTAMP
+                time = excluded.time
         """, (uid, sender, subject, recipient, date, time))
         conn.commit()
     finally:
@@ -81,7 +78,7 @@ def get_inbox(limit=10):
         cursor.execute("""
             SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time
             FROM emails
-            ORDER BY fetched_at DESC
+            ORDER BY date DESC, time DESC
             LIMIT ?
         """, (limit,))
         emails = cursor.fetchall()
@@ -104,3 +101,22 @@ def get_email(email_uid):
         return dict(email) if email else None
     except Exception as e:
         raise RuntimeError(f"Failed to retrieve email {email_uid}: {e}")
+    
+def search_emails(keyword, limit=10):
+    """Search emails by keyword in subject or sender"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        search_term = f"%{keyword}%"
+        cursor.execute("""
+            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time
+            FROM emails
+            WHERE subject LIKE ? OR sender LIKE ?
+            ORDER BY date DESC, time DESC
+            LIMIT ?
+        """, (search_term, search_term, limit))
+        emails = cursor.fetchall()
+        conn.close()
+        return [dict(email) for email in emails]
+    except Exception as e:
+        raise RuntimeError(f"Failed to search emails with keyword '{keyword}': {e}")

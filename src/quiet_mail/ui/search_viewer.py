@@ -1,0 +1,28 @@
+from rich.table import Table
+from rich.console import Console
+
+console = Console()
+
+def display_search_results(emails, keyword):
+    if not emails:
+        console.print(f"[yellow]No emails found matching '{keyword}'.[/]")
+        return
+    
+    table = Table(title=f"Search Results for '{keyword}'")
+
+    table.add_column("ID", justify="right", style="cyan", no_wrap=True)
+    table.add_column("From", style="magenta")
+    table.add_column("Subject", style="green")
+    table.add_column("Date", justify="right", style="yellow")
+    table.add_column("Time", justify="right", style="yellow")
+
+    for email in emails:
+        table.add_row(
+            str(email.get("id")),
+            email.get("from", "N/A"),
+            email.get("subject", "No Subject"),
+            email.get("date", "Unknown Date"),
+            email.get("time", "Unknown Time")
+        )
+
+    console.print(table)

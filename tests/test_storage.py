@@ -2,7 +2,7 @@ import unittest
 import tempfile
 import sqlite3
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from src.quiet_mail.core.storage import (
     get_db_path, get_db_connection, initialize_db,
@@ -54,10 +54,12 @@ class TestStorage(unittest.TestCase):
         columns = cursor.fetchall()
         
         column_names = [col[1] for col in columns]
-        expected_columns = ['id', 'uid', 'subject', 'sender', 'recipient', 'date', 'time', 'body', 'fetched_at']
+        expected_columns = ['id', 'uid', 'subject', 'sender', 'recipient', 'date', 'time', 'body']
         
         for col in expected_columns:
             self.assertIn(col, column_names)
+        # Ensure fetched_at is NOT in the new schema
+        self.assertNotIn('fetched_at', column_names)
         conn.close()
     
     def test_save_email_metadata(self):
