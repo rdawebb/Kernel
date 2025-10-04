@@ -12,7 +12,8 @@ except Exception as e:
     console.print(f"[red]Failed to initialize database: {e}[/]")
     exit(1)
 
-def main():
+def setup_argument_parser():
+    """Configure and return the argument parser with all subcommands"""
     parser = argparse.ArgumentParser(
         prog="quiet_mail",
         description="Minimal Email Client — fetch, view, send, and manage emails."
@@ -20,18 +21,41 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    list_parser = subparsers.add_parser("list", help="List recent emails")
-    list_parser.add_argument("--limit", type=int, default=10,
-                             help="Number of emails to display")
-    list_parser.add_argument("--cached", action="store_true",
-                             help="Show emails from local database (fast) instead of fetching from server")
+    # Command configurations: (name, help, arguments)
+    commands_config = [
+        ("list", "List recent emails", [
+            ("--limit", {"type": int, "default": 10, "help": "Number of emails to display"}),
+            ("--cached", {"action": "store_true", "help": "Show emails from local database (fast) instead of fetching from server"})
+        ]),
+        ("view", "View a specific email by ID", [
+            ("id", {"help": "Email ID (from list command)"})
+        ]),
+        ("search", "Search emails by keyword", [
+            ("keyword", {"help": "Keyword to search in emails"})
+        ]),
+        ("flagged", "List flagged emails", [
+            ("--limit", {"type": int, "default": 10, "help": "Number of emails to display"})
+        ]),
+        ("unflagged", "List unflagged emails", [
+            ("--limit", {"type": int, "default": 10, "help": "Number of emails to display"})
+        ]),
+        ("flag", "Flag or unflag an email by ID", [
+            ("id", {"help": "Email ID (from list command)"}),
+            ("--flag", {"action": "store_true", "help": "Flag the email"}),
+            ("--unflag", {"action": "store_true", "help": "Unflag the email"})
+        ])
+    ]
 
-    view_parser = subparsers.add_parser("view", help="View a specific email by ID")
-    view_parser.add_argument("id", help="Email ID (from list command)")
+    # Create subparsers from configuration
+    for command_name, command_help, arguments in commands_config:
+        subparser = subparsers.add_parser(command_name, help=command_help)
+        for arg_name, arg_config in arguments:
+            subparser.add_argument(arg_name, **arg_config)
 
-    search_parser = subparsers.add_parser("search", help="Search emails by keyword")
-    search_parser.add_argument("keyword", help="Keyword to search in emails")
+    return parser
 
+def main():
+    parser = setup_argument_parser()
     args = parser.parse_args()
 
     try:
@@ -93,6 +117,35 @@ def main():
             search_viewer.display_search_results(search_results, args.keyword)
         except Exception as e:
             console.print(f"[red]Failed to search emails: {e}[/]")
+
+    elif args.command in ["flagged", "unflagged"]:
+        flagged_status = args.command == "flagged"
+        status_text = "flagged" if flagged_status else "unflagged"
+        console.print(f"[bold cyan]Loading {status_text} emails...[/]")
+        
+        try:
+            emails = storage.search_emails_by_flag_status(flagged_status, limit=args.limit)
+            search_viewer.display_search_results(emails, f"{status_text} emails")
+        except Exception as e:
+            console.print(f"[red]Failed to retrieve {status_text} emails: {e}[/]")
+
+    elif args.command == "flag":
+        if args.flag == args.unflag:
+            console.print("[red]Please specify either --flag or --unflag.[/]")
+            return
+
+        try:
+            email_data = storage.get_email(args.id)
+            if not email_data:
+                console.print(f"[red]Email with ID {args.id} not found.[/]")
+                return
+
+            flag_status = True if args.flag else False
+            storage.mark_email_flagged(args.id, flag_status)
+            action = "Flagged" if args.flag else "Unflagged"
+            console.print(f"[green]{action} email ID {args.id} successfully.[/]")
+        except Exception as e:
+            console.print(f"[red]Failed to update flag status: {e}[/]")
 
 if __name__ == "__main__":
     main()

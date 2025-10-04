@@ -11,14 +11,17 @@ def display_inbox(emails):
     table.add_column("Subject", style="green")
     table.add_column("Date", justify="right", style="yellow")
     table.add_column("Time", justify="right", style="yellow")
+    table.add_column("Flagged", justify="center", style="red")
 
     for email in emails:
+        flagged_status = "🚩" if email.get("flagged") else ""
         table.add_row(
             str(email.get("id")),
             email.get("from", "N/A"),
             email.get("subject", "No Subject"),
             email.get("date", "Unknown Date"),
-            email.get("time", "Unknown Time")
+            email.get("time", "Unknown Time"),
+            flagged_status
         )
 
     console.print(table)

@@ -30,7 +30,8 @@ def initialize_db():
                 recipient TEXT,
                 date TEXT,
                 time TEXT,
-                body TEXT
+                body TEXT,
+                flagged BOOLEAN DEFAULT 0
             )
         """)
         conn.commit()
@@ -43,15 +44,16 @@ def save_email_metadata(uid, sender, subject, recipient, date, time):
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO emails (uid, sender, subject, recipient, date, time)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO emails (uid, sender, subject, recipient, date, time, flagged)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(uid) DO UPDATE SET
                 sender = excluded.sender,
                 subject = excluded.subject,
                 recipient = excluded.recipient,
                 date = excluded.date,
-                time = excluded.time
-        """, (uid, sender, subject, recipient, date, time))
+                time = excluded.time,
+                flagged = excluded.flagged
+        """, (uid, sender, subject, recipient, date, time, False))
         conn.commit()
     finally:
         conn.close()
@@ -76,7 +78,7 @@ def get_inbox(limit=10):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time
+            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time, flagged
             FROM emails
             ORDER BY date DESC, time DESC
             LIMIT ?
@@ -92,7 +94,7 @@ def get_email(email_uid):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, uid, sender as "from", subject, date, time, body
+            SELECT id, uid, sender as "from", subject, date, time, flagged, body
             FROM emails
             WHERE uid = ?
         """, (str(email_uid),))
@@ -109,14 +111,48 @@ def search_emails(keyword, limit=10):
         cursor = conn.cursor()
         search_term = f"%{keyword}%"
         cursor.execute("""
-            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time
+            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time, flagged
             FROM emails
-            WHERE subject LIKE ? OR sender LIKE ?
+            WHERE subject LIKE ? OR sender LIKE ? or body LIKE ?
             ORDER BY date DESC, time DESC
             LIMIT ?
-        """, (search_term, search_term, limit))
+        """, (search_term, search_term, search_term, limit))
         emails = cursor.fetchall()
         conn.close()
         return [dict(email) for email in emails]
     except Exception as e:
         raise RuntimeError(f"Failed to search emails with keyword '{keyword}': {e}")
+    
+def mark_email_flagged(email_uid, flagged=True):
+    """Mark or unmark an email as flagged"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE emails
+            SET flagged = ?
+            WHERE uid = ?
+        """, (1 if flagged else 0, str(email_uid)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        raise RuntimeError(f"Failed to update flag status for email {email_uid}: {e}")
+    
+def search_emails_by_flag_status(flagged_status, limit=10):
+    """Retrieve emails based on their flagged status"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time, flagged
+            FROM emails
+            WHERE flagged = ?
+            ORDER BY date DESC, time DESC
+            LIMIT ?
+        """, (1 if flagged_status else 0, limit))
+        emails = cursor.fetchall()
+        conn.close()
+        return [dict(email) for email in emails]
+    except Exception as e:
+        status_name = "flagged" if flagged_status else "unflagged"
+        raise RuntimeError(f"Failed to retrieve {status_name} emails: {e}")
