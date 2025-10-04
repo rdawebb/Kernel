@@ -1,23 +1,31 @@
-[tool.poetry]
+[project]
 name = "quiet-mail"
 version = "0.1.0"
 description = "A minimal command-line email client"
-authors = ["Rob Webb <rdawebb@gmail.com>"]
+authors = [{ name = "Rob Webb", email = "rdawebb@gmail.com" }]
+requires-python = "~=3.13"
 readme = "README.md"
-packages = [{include = "quiet_mail", from = "src"}]
+dependencies = [
+    "rich==14.1.0",
+    "apscheduler==3.11.0",
+    "python-dotenv==1.1.1",
+]
 
-[tool.poetry.dependencies]
-python = "^3.13"
-rich = "14.1.0"
-apscheduler = "3.11.0"
-python-dotenv = "1.1.1"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.0.0"
-
-[tool.poetry.scripts]
+[project.scripts]
 quiet-mail = "quiet_mail.cli:main"
 
+[dependency-groups]
+dev = ["pytest>=8.0.0,<9"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/quiet_mail"]
+
+[tool.hatch.build.targets.wheel]
+include = ["src/quiet_mail"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/quiet_mail" = "quiet_mail"
+
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"

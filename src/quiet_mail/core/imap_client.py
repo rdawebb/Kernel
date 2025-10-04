@@ -1,4 +1,5 @@
-import imaplib, email
+import imaplib
+import email
 import datetime
 import time
 from email.header import decode_header
@@ -60,30 +61,30 @@ def fetch_inbox(config, limit=10):
     finally:
         try:
             mail.logout()
-        except:
+        except Exception:
             pass
     
 def parse_email_date(date_str):
-    """Parse RFC 2822 email date format and handle timezone offsets"""
+    """Parse RFC 2822 email date format and convert to local system timezone"""
     if not date_str:
         now = datetime.datetime.now()
         return now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S")
     
     try:
-        # Use email.utils.parsedate_tz to handle RFC 2822 format with timezone
         parsed_date = parsedate_tz(date_str)
         if parsed_date:
-            # Convert to UTC timestamp, then to local datetime
             timestamp = time.mktime(parsed_date[:9])
-            if parsed_date[9]:  # If timezone offset exists
-                timestamp -= parsed_date[9]  # Adjust for timezone
             
+            # Adjust for the email's timezone offset to get UTC
+            if parsed_date[9] is not None:
+                timestamp -= parsed_date[9]
+            
+            # Convert UTC timestamp to local system time
             local_datetime = datetime.datetime.fromtimestamp(timestamp)
             return local_datetime.strftime("%Y-%m-%d"), local_datetime.strftime("%H:%M:%S")
     except Exception:
         pass
     
-    # Fallback to current time if parsing fails
     now = datetime.datetime.now()
     return now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S")
 
@@ -114,7 +115,6 @@ def parse_email(email_data, email_id):
         date_header = email_data.get("Date")
         date_, time_ = parse_email_date(date_header)
 
-        # Extract plain text body from multipart or single-part messages
         body = ""
         for part in email_data.walk() if email_data.is_multipart() else [email_data]:
             content_type = part.get_content_type()
