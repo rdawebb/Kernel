@@ -41,18 +41,17 @@ class TestCLI(unittest.TestCase):
     
     @patch('sys.argv', ['cli.py', 'list', '--limit', '5'])
     @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage.initialize_db')
+    @patch('quiet_mail.core.storage.get_inbox')
     @patch('quiet_mail.ui.inbox_viewer.display_inbox')
-    @patch('quiet_mail.core.imap_client.fetch_inbox')
-    @patch('quiet_mail.core.storage.save_email_metadata')
-    def test_list_command_with_limit(self, mock_save_email, mock_fetch_inbox, mock_display_inbox, mock_init_db, mock_console):
-        mock_fetch_inbox.return_value = []
+    def test_list_command_with_limit(self, mock_display_inbox, mock_get_inbox, mock_console):
+        # Test list command with limit (should use local database by default)
+        mock_get_inbox.return_value = []
         
         main()
         
-        # Verify fetch_inbox was called with correct limit
-        args, kwargs = mock_fetch_inbox.call_args
-        self.assertEqual(kwargs.get('limit'), 5)
+        # Verify get_inbox was called with correct limit
+        mock_get_inbox.assert_called_once_with(limit=5)
+        mock_display_inbox.assert_called_once()
     
     @patch('sys.argv', ['cli.py', 'view', '1'])
     @patch('quiet_mail.core.storage.initialize_db')
@@ -102,7 +101,7 @@ class TestCLI(unittest.TestCase):
         error_found = any('Configuration error' in call for call in calls)
         self.assertTrue(error_found)
     
-    @patch('sys.argv', ['cli.py', 'list'])
+    @patch('sys.argv', ['cli.py', 'list', '--refresh'])
     @patch('src.quiet_mail.cli.console')  # Mock the global console object
     @patch('quiet_mail.core.imap_client.fetch_inbox')
     def test_imap_error_handling(self, mock_fetch_inbox, mock_console):
@@ -115,7 +114,7 @@ class TestCLI(unittest.TestCase):
         error_found = any('Failed to fetch' in call for call in calls)
         self.assertTrue(error_found)
     
-    @patch('sys.argv', ['cli.py', 'list', '--cached'])
+    @patch('sys.argv', ['cli.py', 'list'])
     @patch('src.quiet_mail.cli.console')
     @patch('quiet_mail.core.storage.get_inbox')
     def test_storage_operation_failure(self, mock_get_inbox, mock_console):
@@ -129,6 +128,47 @@ class TestCLI(unittest.TestCase):
         error_found = any('Failed to load emails' in call for call in calls)
         self.assertTrue(error_found)
     
+    @patch('sys.argv', ['cli.py', 'list', '--refresh', '--limit', '3'])
+    @patch('src.quiet_mail.cli.console')
+    @patch('quiet_mail.core.storage.initialize_db')
+    @patch('quiet_mail.ui.inbox_viewer.display_inbox')
+    @patch('quiet_mail.core.imap_client.fetch_inbox')
+    @patch('quiet_mail.core.storage.save_email_metadata')
+    def test_list_command_with_refresh(self, mock_save_email, mock_fetch_inbox, mock_display_inbox, mock_init_db, mock_console):
+        # Test list command with --refresh flag (should fetch from server)
+        mock_fetch_inbox.return_value = [
+            {'uid': '123', 'from': 'test@example.com', 'subject': 'Test', 'to': 'user@example.com', 'date': '2025-10-04', 'time': '10:00:00'}
+        ]
+        
+        main()
+        
+        mock_fetch_inbox.assert_called_once()
+        mock_save_email.assert_called()
+        mock_display_inbox.assert_called_once()
+        mock_console.print.assert_called()
+        calls = [str(call) for call in mock_console.print.call_args_list]
+        loading_found = any('Fetching inbox' in call for call in calls)
+        self.assertTrue(loading_found)
+    
+    @patch('sys.argv', ['cli.py', 'list', '--limit', '3'])
+    @patch('src.quiet_mail.cli.console')
+    @patch('quiet_mail.core.storage.get_inbox')
+    @patch('quiet_mail.ui.inbox_viewer.display_inbox')
+    def test_list_command_default_behavior(self, mock_display_inbox, mock_get_inbox, mock_console):
+        # Test list command default behavior (should use local database)
+        mock_get_inbox.return_value = [
+            {'id': '123', 'from': 'test@example.com', 'subject': 'Test', 'date': '2025-10-04', 'time': '10:00:00', 'flagged': 0}
+        ]
+        
+        main()
+        
+        mock_get_inbox.assert_called_once_with(limit=3)
+        mock_display_inbox.assert_called_once()
+        mock_console.print.assert_called()
+        calls = [str(call) for call in mock_console.print.call_args_list]
+        loading_found = any('Loading emails' in call for call in calls)
+        self.assertTrue(loading_found)
+
     @patch('sys.argv', ['cli.py', 'search', 'test_keyword'])
     @patch('src.quiet_mail.cli.console')
     @patch('quiet_mail.core.storage.search_emails')

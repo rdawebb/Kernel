@@ -25,7 +25,7 @@ def setup_argument_parser():
     commands_config = [
         ("list", "List recent emails", [
             ("--limit", {"type": int, "default": 10, "help": "Number of emails to display"}),
-            ("--cached", {"action": "store_true", "help": "Show emails from local database (fast) instead of fetching from server"})
+            ("--refresh", {"action": "store_true", "help": "Fetch and show fresh emails from server instead of local database (slow)"})
         ]),
         ("view", "View a specific email by ID", [
             ("id", {"help": "Email ID (from list command)"})
@@ -65,15 +65,7 @@ def main():
         return
 
     if args.command == "list":
-        if args.cached:
-            # Fast: show emails from local database
-            console.print("[bold cyan]Loading emails...[/]")
-            try:
-                emails = storage.get_inbox(limit=args.limit)
-                inbox_viewer.display_inbox(emails)
-            except Exception as e:
-                console.print(f"[red]Failed to load emails: {e}[/]")
-        else:
+        if args.refresh:
             # Slow: fetch fresh emails from IMAP server
             console.print("[bold cyan]Fetching inbox...[/]")
             try:
@@ -95,6 +87,14 @@ def main():
                 inbox_viewer.display_inbox(emails)
             except Exception as e:
                 console.print(f"[red]Failed to fetch or display inbox: {e}[/]")
+        else:
+            # Fast: show emails from local database
+            console.print("[bold cyan]Loading emails...[/]")
+            try:
+                emails = storage.get_inbox(limit=args.limit)
+                inbox_viewer.display_inbox(emails)
+            except Exception as e:
+                console.print(f"[red]Failed to load emails: {e}[/]")
 
     elif args.command == "view":
         console.print(f"[bold cyan]Fetching email {args.id}...[/]")
