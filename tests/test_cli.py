@@ -2,9 +2,7 @@ import unittest
 import tempfile
 import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-import sys
-
+from unittest.mock import patch
 from src.quiet_mail.cli import main
 
 class TestCLI(unittest.TestCase):
@@ -129,6 +127,104 @@ class TestCLI(unittest.TestCase):
         mock_console.print.assert_called()
         calls = [str(call) for call in mock_console.print.call_args_list]
         error_found = any('Failed to load emails' in call for call in calls)
+        self.assertTrue(error_found)
+    
+    @patch('sys.argv', ['cli.py', 'search', 'test_keyword'])
+    @patch('src.quiet_mail.cli.console')
+    @patch('quiet_mail.core.storage.search_emails')
+    @patch('quiet_mail.ui.search_viewer.display_search_results')
+    def test_search_command(self, mock_display_results, mock_search_emails, mock_console):
+        mock_search_emails.return_value = [
+            {'id': '1', 'subject': 'Test Email', 'from': 'test@example.com', 'date': '2025-10-03', 'time': '10:00:00', 'flagged': 0}
+        ]
+        
+        main()
+        
+        mock_search_emails.assert_called_once_with('test_keyword')
+        mock_display_results.assert_called_once_with(mock_search_emails.return_value, 'test_keyword')
+    
+    @patch('sys.argv', ['cli.py', 'flagged', '--limit', '5'])
+    @patch('src.quiet_mail.cli.console')
+    @patch('quiet_mail.core.storage.search_emails_by_flag_status')
+    @patch('quiet_mail.ui.search_viewer.display_search_results')
+    def test_flagged_command(self, mock_display_results, mock_search_flagged, mock_console):
+        mock_search_flagged.return_value = [
+            {'id': '1', 'subject': 'Flagged Email', 'from': 'test@example.com', 'date': '2025-10-03', 'time': '10:00:00', 'flagged': 1}
+        ]
+        
+        main()
+        
+        mock_search_flagged.assert_called_once_with(True, limit=5)
+        mock_display_results.assert_called_once_with(mock_search_flagged.return_value, 'flagged emails')
+    
+    @patch('sys.argv', ['cli.py', 'unflagged', '--limit', '3'])
+    @patch('src.quiet_mail.cli.console')
+    @patch('quiet_mail.core.storage.search_emails_by_flag_status')
+    @patch('quiet_mail.ui.search_viewer.display_search_results')
+    def test_unflagged_command(self, mock_display_results, mock_search_unflagged, mock_console):
+        mock_search_unflagged.return_value = [
+            {'id': '2', 'subject': 'Unflagged Email', 'from': 'test@example.com', 'date': '2025-10-03', 'time': '11:00:00', 'flagged': 0}
+        ]
+        
+        main()
+        
+        mock_search_unflagged.assert_called_once_with(False, limit=3)
+        mock_display_results.assert_called_once_with(mock_search_unflagged.return_value, 'unflagged emails')
+    
+    @patch('sys.argv', ['cli.py', 'flag', 'test_uid', '--flag'])
+    @patch('src.quiet_mail.cli.console')
+    @patch('quiet_mail.core.storage.get_email')
+    @patch('quiet_mail.core.storage.mark_email_flagged')
+    def test_flag_command_flag(self, mock_mark_flagged, mock_get_email, mock_console):
+        mock_get_email.return_value = {'id': 'test_uid', 'subject': 'Test Email'}
+        
+        main()
+        
+        mock_get_email.assert_called_once_with('test_uid')
+        mock_mark_flagged.assert_called_once_with('test_uid', True)
+        mock_console.print.assert_called()
+        calls = [str(call) for call in mock_console.print.call_args_list]
+        success_found = any('Flagged email ID test_uid successfully' in call for call in calls)
+        self.assertTrue(success_found)
+    
+    @patch('sys.argv', ['cli.py', 'flag', 'test_uid', '--unflag'])
+    @patch('src.quiet_mail.cli.console')
+    @patch('quiet_mail.core.storage.get_email')
+    @patch('quiet_mail.core.storage.mark_email_flagged')
+    def test_flag_command_unflag(self, mock_mark_flagged, mock_get_email, mock_console):
+        mock_get_email.return_value = {'id': 'test_uid', 'subject': 'Test Email'}
+        
+        main()
+        
+        mock_get_email.assert_called_once_with('test_uid')
+        mock_mark_flagged.assert_called_once_with('test_uid', False)
+        mock_console.print.assert_called()
+        calls = [str(call) for call in mock_console.print.call_args_list]
+        success_found = any('Unflagged email ID test_uid successfully' in call for call in calls)
+        self.assertTrue(success_found)
+    
+    @patch('sys.argv', ['cli.py', 'flag', 'test_uid'])
+    @patch('src.quiet_mail.cli.console')
+    def test_flag_command_no_flag_option(self, mock_console):
+        main()
+        
+        mock_console.print.assert_called()
+        calls = [str(call) for call in mock_console.print.call_args_list]
+        error_found = any('Please specify either --flag or --unflag' in call for call in calls)
+        self.assertTrue(error_found)
+    
+    @patch('sys.argv', ['cli.py', 'flag', 'nonexistent_uid', '--flag'])
+    @patch('src.quiet_mail.cli.console')
+    @patch('quiet_mail.core.storage.get_email')
+    def test_flag_command_nonexistent_email(self, mock_get_email, mock_console):
+        mock_get_email.return_value = None
+        
+        main()
+        
+        mock_get_email.assert_called_once_with('nonexistent_uid')
+        mock_console.print.assert_called()
+        calls = [str(call) for call in mock_console.print.call_args_list]
+        error_found = any('Email with ID nonexistent_uid not found' in call for call in calls)
         self.assertTrue(error_found)
 
 
