@@ -7,7 +7,8 @@ from unittest.mock import patch
 from src.quiet_mail.core.storage import (
     get_db_path, get_db_connection, initialize_db,
     save_email_metadata, save_email_body, get_inbox, get_email,
-    search_emails, mark_email_flagged, search_emails_by_flag_status
+    search_emails, mark_email_flagged, search_emails_by_flag_status,
+    search_emails_with_attachments, get_highest_uid, delete_email
 )
 
 
@@ -543,6 +544,108 @@ class TestStorage(unittest.TestCase):
                 initialize_db()
             
             self.assertIn("Failed to initialize database", str(context.exception))
+
+    # New tests for missing functionality
+    def test_search_emails_with_attachments(self):
+        initialize_db()
+        
+        # Create test emails with and without attachments
+        email_with_attachments = {
+            "uid": "1001",
+            "subject": "Email with attachments",
+            "from": "sender@example.com",
+            "to": "recipient@example.com",
+            "date": "2025-10-05",
+            "time": "14:30:00",
+            "body": "This email has attachments",
+            "flagged": False,
+            "attachments": "document.pdf,image.jpg"
+        }
+        
+        email_without_attachments = {
+            "uid": "1002", 
+            "subject": "Email without attachments",
+            "from": "sender2@example.com",
+            "to": "recipient@example.com",
+            "date": "2025-10-05",
+            "time": "15:30:00",
+            "body": "This email has no attachments",
+            "flagged": False,
+            "attachments": ""
+        }
+        
+        save_email_metadata(email_with_attachments)
+        save_email_metadata(email_without_attachments)
+        
+        # Test searching emails with attachments
+        results = search_emails_with_attachments(limit=10)
+        
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["subject"], "Email with attachments")
+        self.assertTrue(results[0]["attachments"])
+
+    def test_get_highest_uid(self):
+        initialize_db()
+        
+        # Test with empty database
+        highest_uid = get_highest_uid()
+        self.assertIsNone(highest_uid)
+        
+        # Add some emails with different UIDs
+        emails = [
+            {"uid": "5", "subject": "Email 5", "from": "test@example.com", "to": "user@example.com", 
+             "date": "2025-10-05", "time": "10:00:00", "body": "Test", "flagged": False, "attachments": ""},
+            {"uid": "12", "subject": "Email 12", "from": "test@example.com", "to": "user@example.com",
+             "date": "2025-10-05", "time": "11:00:00", "body": "Test", "flagged": False, "attachments": ""},
+            {"uid": "8", "subject": "Email 8", "from": "test@example.com", "to": "user@example.com",
+             "date": "2025-10-05", "time": "12:00:00", "body": "Test", "flagged": False, "attachments": ""}
+        ]
+        
+        for email in emails:
+            save_email_metadata(email)
+        
+        # Test getting highest UID
+        highest_uid = get_highest_uid()
+        self.assertEqual(highest_uid, 12)
+
+    def test_delete_email(self):
+        initialize_db()
+        
+        # Create test email
+        test_email = {
+            "uid": "delete_test_001",
+            "subject": "Email to delete",
+            "from": "sender@example.com",
+            "to": "recipient@example.com",
+            "date": "2025-10-05",
+            "time": "16:00:00",
+            "body": "This email will be deleted",
+            "flagged": False,
+            "attachments": ""
+        }
+        
+        save_email_metadata(test_email)
+        
+        # Verify email exists
+        retrieved_email = get_email("delete_test_001")
+        self.assertIsNotNone(retrieved_email)
+        self.assertEqual(retrieved_email["subject"], "Email to delete")
+        
+        # Delete the email
+        delete_email("delete_test_001")
+        
+        # Verify email is deleted
+        deleted_email = get_email("delete_test_001")
+        self.assertIsNone(deleted_email)
+
+    def test_delete_email_nonexistent(self):
+        initialize_db()
+        
+        # Try to delete non-existent email - should not raise exception
+        try:
+            delete_email("nonexistent_uid")
+        except Exception as e:
+            self.fail(f"delete_email raised exception for non-existent email: {e}")
 
 
 if __name__ == '__main__':

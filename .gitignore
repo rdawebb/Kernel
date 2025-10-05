@@ -72,6 +72,7 @@ Thumbs.db
 emails.db
 test_emails.db
 attachments/*
+!attachments/.gitkeep
 data/*
 
 # Logs

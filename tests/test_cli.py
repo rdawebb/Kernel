@@ -3,6 +3,7 @@ import tempfile
 import os
 from pathlib import Path
 from unittest.mock import patch
+import unittest.mock
 from src.quiet_mail.cli import main
 
 class TestCLI(unittest.TestCase):
@@ -101,11 +102,11 @@ class TestCLI(unittest.TestCase):
         error_found = any('Configuration error' in call for call in calls)
         self.assertTrue(error_found)
     
-    @patch('sys.argv', ['cli.py', 'list', '--refresh'])
+    @patch('sys.argv', ['cli.py', 'refresh'])
     @patch('src.quiet_mail.cli.console')  # Mock the global console object
-    @patch('quiet_mail.core.imap_client.fetch_inbox')
-    def test_imap_error_handling(self, mock_fetch_inbox, mock_console):
-        mock_fetch_inbox.side_effect = Exception("IMAP connection failed")
+    @patch('quiet_mail.core.imap_client.fetch_new_emails')
+    def test_imap_error_handling(self, mock_fetch_new_emails, mock_console):
+        mock_fetch_new_emails.side_effect = Exception("IMAP connection failed")
         
         main()
         
@@ -128,27 +129,28 @@ class TestCLI(unittest.TestCase):
         error_found = any('Failed to load emails' in call for call in calls)
         self.assertTrue(error_found)
     
-    @patch('sys.argv', ['cli.py', 'list', '--refresh', '--limit', '3'])
+    @patch('sys.argv', ['cli.py', 'refresh', '--limit', '3'])
     @patch('src.quiet_mail.cli.console')
     @patch('quiet_mail.core.storage.initialize_db')
-    @patch('quiet_mail.ui.inbox_viewer.display_inbox')
-    @patch('quiet_mail.core.imap_client.fetch_inbox')
-    @patch('quiet_mail.core.storage.save_email_metadata')
-    def test_list_command_with_refresh(self, mock_save_email, mock_fetch_inbox, mock_display_inbox, mock_init_db, mock_console):
-        # Test list command with --refresh flag (should fetch from server)
-        mock_fetch_inbox.return_value = [
-            {'uid': '123', 'from': 'test@example.com', 'subject': 'Test', 'to': 'user@example.com', 'date': '2025-10-04', 'time': '10:00:00'}
+    @patch('src.quiet_mail.cli.inbox_viewer.display_inbox')
+    @patch('src.quiet_mail.cli.storage.get_inbox')
+    @patch('src.quiet_mail.cli.imap_client.fetch_new_emails')
+    def test_list_command_with_refresh(self, mock_fetch_new_emails, mock_get_inbox, mock_display_inbox, mock_init_db, mock_console):
+        # Test refresh command (should fetch from server)
+        mock_fetch_new_emails.return_value = 3  # Number of emails fetched
+        mock_get_inbox.return_value = [
+            {'id': '123', 'from': 'test@example.com', 'subject': 'Test', 'to': 'user@example.com', 'date': '2025-10-04', 'time': '10:00:00'}
         ]
         
         main()
         
-        mock_fetch_inbox.assert_called_once()
-        mock_save_email.assert_called()
+        mock_fetch_new_emails.assert_called_once()
+        mock_get_inbox.assert_called_once_with(limit=3)
         mock_display_inbox.assert_called_once()
         mock_console.print.assert_called()
         calls = [str(call) for call in mock_console.print.call_args_list]
-        loading_found = any('Fetching inbox' in call for call in calls)
-        self.assertTrue(loading_found)
+        fetching_found = any('Fetching' in call for call in calls)
+        self.assertTrue(fetching_found)
     
     @patch('sys.argv', ['cli.py', 'list', '--limit', '3'])
     @patch('src.quiet_mail.cli.console')
@@ -286,6 +288,100 @@ class TestCLIArgumentParsing(unittest.TestCase):
                     main()
                 except SystemExit:
                     pass  # Invalid command causes SystemExit, which is expected
+
+    # New tests for attachment and delete functionality
+    @patch('src.quiet_mail.core.storage.initialize_db')
+    @patch('src.quiet_mail.cli.console')
+    @patch('src.quiet_mail.cli.storage.search_emails_with_attachments')
+    @patch('src.quiet_mail.cli.inbox_viewer.display_inbox')
+    def test_attachments_command(self, mock_display_inbox, mock_search_attachments, mock_console, mock_init_db):
+        with patch('sys.argv', ['cli.py', 'attachments', '--limit', '5']):
+            mock_search_attachments.return_value = [
+                {'id': '1', 'subject': 'Email with PDF', 'attachments': 'document.pdf'},
+                {'id': '2', 'subject': 'Email with images', 'attachments': 'photo1.jpg,photo2.png'}
+            ]
+            
+            main()
+            
+            mock_search_attachments.assert_called_once_with(limit=5)
+            mock_display_inbox.assert_called_once()
+
+    @patch('src.quiet_mail.core.storage.initialize_db')
+    @patch('src.quiet_mail.cli.console')
+    @patch('src.quiet_mail.cli.imap_client.get_attachment_list')
+    def test_list_attachments_command(self, mock_get_attachment_list, mock_console, mock_init_db):
+        with patch('sys.argv', ['cli.py', 'list-attachments', '123']):
+            mock_get_attachment_list.return_value = ['document.pdf', 'image.jpg']
+            
+            main()
+            
+            mock_get_attachment_list.assert_called_once_with(unittest.mock.ANY, '123')
+            # Verify console.print was called with attachment information
+            self.assertTrue(mock_console.print.called)
+
+    @patch('src.quiet_mail.core.storage.initialize_db')
+    @patch('src.quiet_mail.cli.console')
+    @patch('src.quiet_mail.cli.storage.get_email')
+    @patch('src.quiet_mail.cli.handle_download_action')
+    def test_download_command_with_attachments(self, mock_handle_download, mock_get_email, mock_console, mock_init_db):
+        with patch('sys.argv', ['cli.py', 'download', '123', '--all']):
+            mock_get_email.return_value = {
+                'id': '123',
+                'subject': 'Test Email',
+                'attachments': 'document.pdf,image.jpg'
+            }
+            
+            main()
+            
+            mock_get_email.assert_called_once_with('123')
+            mock_handle_download.assert_called_once()
+
+    @patch('src.quiet_mail.core.storage.initialize_db')
+    @patch('src.quiet_mail.cli.console')
+    @patch('src.quiet_mail.cli.storage.get_email')
+    @patch('src.quiet_mail.cli.storage.delete_email')
+    @patch('builtins.input', return_value='y')  # Mock user confirmation
+    def test_delete_command_local_only(self, mock_input, mock_delete_email, mock_get_email, mock_console, mock_init_db):
+        with patch('sys.argv', ['cli.py', 'delete', '123']):
+            mock_get_email.return_value = {
+                'id': '123',
+                'subject': 'Email to delete'
+            }
+            
+            main()
+            
+            mock_get_email.assert_called_once_with('123')
+            mock_delete_email.assert_called_once_with('123')
+            # Should not call imap delete for local-only deletion
+
+    @patch('src.quiet_mail.core.storage.initialize_db')
+    @patch('src.quiet_mail.cli.console')
+    @patch('src.quiet_mail.cli.storage.get_email')
+    @patch('src.quiet_mail.cli.storage.delete_email')
+    @patch('src.quiet_mail.cli.imap_client.delete_email')
+    @patch('builtins.input', return_value='y')  # Mock user confirmation
+    def test_delete_command_server_and_local(self, mock_input, mock_imap_delete, mock_storage_delete, mock_get_email, mock_console, mock_init_db):
+        with patch('sys.argv', ['cli.py', 'delete', '123', '--all']):
+            mock_get_email.return_value = {
+                'id': '123',
+                'subject': 'Email to delete'
+            }
+            
+            main()
+            
+            mock_get_email.assert_called_once_with('123')
+            mock_storage_delete.assert_called_once_with('123')
+            mock_imap_delete.assert_called_once()
+
+    @patch('src.quiet_mail.core.storage.initialize_db')
+    @patch('src.quiet_mail.cli.console')
+    @patch('builtins.input', return_value='n')  # Mock user declining deletion
+    def test_delete_command_cancelled(self, mock_input, mock_console, mock_init_db):
+        with patch('sys.argv', ['cli.py', 'delete', '123']):
+            main()
+            
+            # Should print cancellation message
+            mock_console.print.assert_called_with("[yellow]Deletion cancelled.[/]")
 
 
 if __name__ == '__main__':

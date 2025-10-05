@@ -8,16 +8,16 @@ This directory contains comprehensive unit tests for the Quiet Mail email client
 tests/
 ├── __init__.py                 # Test package initialization
 ├── test_config.py             # Configuration loading tests (5 tests)
-├── test_storage.py            # Database/storage tests (17 tests)
-├── test_imap_client.py        # IMAP client tests (3 tests)
+├── test_storage.py            # Database/storage tests (21 tests)
+├── test_imap_client.py        # IMAP client tests (7 tests)
 ├── test_connection.py         # IMAP connection integration test (1 test)
 ├── test_ui.py                 # UI component tests (15 tests)
-├── test_cli.py                # CLI integration tests (17 tests)
+├── test_cli.py                # CLI integration tests (23 tests)
 ├── run_tests.py               # Test runner script
 └── README.md                  # This file
 ```
 
-**Total: 58 comprehensive tests covering all functionality**
+**Total: 72 comprehensive tests covering all functionality**
 
 ## Quick Start
 
@@ -96,7 +96,7 @@ python -m unittest tests.test_ui.TestSearchViewer
 - ✅ Default value assignment
 - ✅ SSL flag parsing variations
 
-### Storage Tests (`test_storage.py`) - 17 tests
+### Storage Tests (`test_storage.py`) - 21 tests
 
 **Core Database Operations:**
 
@@ -108,7 +108,7 @@ python -m unittest tests.test_ui.TestSearchViewer
 - ✅ Individual email retrieval
 - ✅ Error handling for database operations
 
-**New Flagging & Search Features:**
+**Email Management Features:**
 
 - ✅ Email flagging/unflagging functionality
 - ✅ Search emails by keyword (subject, sender, body)
@@ -118,11 +118,27 @@ python -m unittest tests.test_ui.TestSearchViewer
 - ✅ Flagged column inclusion in all search results
 - ✅ Database schema validation
 
-### IMAP Client Tests (`test_imap_client.py`) - 3 tests
+**New Attachment and Deletion Features:**
+
+- ✅ Search emails with attachments functionality
+- ✅ Get highest UID for incremental email fetching
+- ✅ Delete email from local database
+- ✅ Handle deletion of non-existent emails gracefully
+
+### IMAP Client Tests (`test_imap_client.py`) - 7 tests
+
+**Connection Management:**
 
 - ✅ IMAP connection success/failure scenarios
 - ✅ Login authentication testing
 - ✅ Exception handling for network errors
+
+**Email Processing:**
+
+- ✅ Email header decoding with encoding handling
+- ✅ Attachment filename decoding
+- ✅ Attachment filename extraction from emails
+- ✅ Attachment file saving with duplicate handling
 
 ### Connection Tests (`test_connection.py`) - 1 test
 
@@ -157,17 +173,17 @@ python -m unittest tests.test_ui.TestSearchViewer
 - ✅ Empty data handling
 - ✅ Component interaction testing
 
-### CLI Tests (`test_cli.py`) - 17 tests
+### CLI Tests (`test_cli.py`) - 23 tests
 
 **Core Commands:**
 
 - ✅ List command default behavior (local database)
-- ✅ List command with --refresh flag (IMAP fetch)
+- ✅ Refresh command for fetching new emails from server
 - ✅ List command with limit parameter
 - ✅ View command for existing/nonexistent emails
 - ✅ Configuration and IMAP error handling
 
-**New Flagging Commands:**
+**Email Management Commands:**
 
 - ✅ Search command by keyword
 - ✅ Flagged emails listing
@@ -176,7 +192,21 @@ python -m unittest tests.test_ui.TestSearchViewer
 - ✅ Unflag email command
 - ✅ Flag command error handling (missing options, nonexistent emails)
 
-**Argument Parsing:**
+**Attachment Management Commands:**
+
+- ✅ Attachments command (list emails with attachments)
+- ✅ List-attachments command (show attachment filenames)
+- ✅ Download command with attachments validation
+- ✅ Download command with all/index options
+
+**Email Deletion Commands:**
+
+- ✅ Delete command (local database only)
+- ✅ Delete command (both local and server with --all flag)
+- ✅ Delete command cancellation handling
+- ✅ User confirmation workflow
+
+**System Commands:**
 
 - ✅ Help command functionality
 - ✅ Invalid command handling
@@ -198,6 +228,59 @@ The tests use the following libraries:
 ### New Features Tested (Added in 2025):
 
 - ✅ **Email Flagging System**: Complete flag/unflag functionality
+- ✅ **Advanced Search Features**: Keyword search across subject, sender, and body
+- ✅ **Attachment Management**: Download, list, and search functionality
+- ✅ **Email Deletion**: Local and server deletion with confirmation
+- ✅ **Incremental Email Fetching**: UID-based smart refresh system
+- ✅ **Enhanced Error Handling**: Comprehensive exception coverage
+- ✅ **Database Management**: Improved schema and query functionality
+
+### Test Architecture Improvements:
+
+- ✅ **Comprehensive Mocking**: Proper isolation of external dependencies
+- ✅ **Path-Accurate Patches**: Correct module patching for CLI tests
+- ✅ **Resource Management**: Temporary databases and cleanup
+- ✅ **Edge Case Coverage**: Non-existent data, error conditions
+- ✅ **Integration Testing**: End-to-end workflow validation
+
+### Test Coverage Areas:
+
+1. **Configuration Management** (5 tests)
+
+   - Environment variable loading
+   - Default value handling
+   - Error scenarios
+
+2. **Database Operations** (21 tests)
+
+   - CRUD operations
+   - Search functionality
+   - Attachment handling
+   - UID management
+
+3. **IMAP Client Functionality** (7 tests)
+
+   - Connection management
+   - Email processing
+   - Attachment extraction
+
+4. **User Interface Components** (15 tests)
+
+   - Display formatting
+   - Data presentation
+   - Error handling
+
+5. **Command Line Interface** (23 tests)
+
+   - All CLI commands
+   - Argument parsing
+   - User interaction flows
+
+6. **Integration Testing** (1 test)
+   - Real connection validation
+
+**Total Test Coverage: 72 comprehensive tests ensuring robust functionality across all components.**
+
 - ✅ **Advanced Search**: Keyword search across subject, sender, and body
 - ✅ **Flag-based Filtering**: Search by flagged/unflagged status
 - ✅ **UI Flag Display**: Visual flag indicators (🚩) in all table views
