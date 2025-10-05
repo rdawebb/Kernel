@@ -25,7 +25,10 @@ def setup_argument_parser():
     commands_config = [
         ("list", "List recent emails", [
             ("--limit", {"type": int, "default": 10, "help": "Number of emails to display"}),
-            ("--refresh", {"action": "store_true", "help": "Fetch and show fresh emails from server instead of local database (slow)"})
+        ]),
+        ("refresh", "Fetch new emails", [
+            ("--limit", {"type": int, "default": 10, "help": "Number of emails to display"}),
+            ("--all", {"action": "store_true", "help": "Fetch all emails from server"})
         ]),
         ("view", "View a specific email by ID", [
             ("id", {"help": "Email ID (from list command)"})
@@ -80,29 +83,32 @@ def main():
         return
 
     if args.command == "list":
-        if args.refresh:
-            # Slow: fetch fresh emails from IMAP server
-            console.print("[bold cyan]Fetching inbox...[/]")
-            try:
-                emails = imap_client.fetch_inbox(cfg, limit=args.limit)
-
-                # Save metadata and body separately for efficiency
-                for e in emails:
-                    storage.save_email_metadata(e)
-                    if e.get("body"):
-                        storage.save_email_body(e.get("uid"), e.get("body"))
-
-                inbox_viewer.display_inbox(emails)
-            except Exception as e:
-                console.print(f"[red]Failed to fetch or display inbox: {e}[/]")
-        else:
-            # Fast: show emails from local database
-            console.print("[bold cyan]Loading emails...[/]")
-            try:
-                emails = storage.get_inbox(limit=args.limit)
-                inbox_viewer.display_inbox(emails)
-            except Exception as e:
+        console.print("[bold cyan]Loading emails...[/]")
+        try:
+            emails = storage.get_inbox(limit=args.limit)
+            inbox_viewer.display_inbox(emails)
+        except Exception as e:
                 console.print(f"[red]Failed to load emails: {e}[/]")
+
+    elif args.command == "refresh":
+        try:
+            if args.all:
+                console.print("[yellow]Warning: Fetching all emails can be slow and may hit server limits.[/]")
+                if input("Are you sure you want to fetch all emails? (y/n): ").lower() != 'y':
+                    console.print("[yellow]Fetch cancelled.[/]")
+                    return
+                console.print("[bold cyan]Fetching all emails from server...[/]")
+                fetched_count = imap_client.fetch_new_emails(cfg, fetch_all=True)
+            else:
+                console.print("[bold cyan]Fetching new emails from server...[/]")
+                fetched_count = imap_client.fetch_new_emails(cfg, fetch_all=False)
+            
+            console.print(f"[green]Fetched {fetched_count} new email(s) from server.[/]")
+            console.print("[bold cyan]Loading emails...[/]")
+            emails = storage.get_inbox(limit=args.limit)
+            inbox_viewer.display_inbox(emails)
+        except Exception as e:
+            console.print(f"[red]Failed to fetch or load emails: {e}[/]")
 
     elif args.command == "view":
         console.print(f"[bold cyan]Fetching email {args.id}...[/]")

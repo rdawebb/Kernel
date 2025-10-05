@@ -63,6 +63,72 @@ def fetch_inbox(config, limit=10):
             mail.logout()
         except Exception:
             pass
+
+def fetch_new_emails(config, fetch_all=False):
+    """Fetch new emails from IMAP server and save to database"""
+    from quiet_mail.core import storage
+    
+    mail = connect_to_imap(config)
+    if not mail:
+        return 0
+    
+    try:
+        if fetch_all:
+            status, messages = mail.search(None, "ALL")
+        else:
+            highest_uid = storage.get_highest_uid()
+            if highest_uid:
+                status, messages = mail.uid('search', None, f'UID {highest_uid + 1}:*')
+            else:
+                # No emails in database, fetch recent emails instead of all
+                status, messages = mail.search(None, "ALL")
+        
+        if status != "OK":
+            print(f"Error searching for emails: {status}")
+            return 0
+        
+        email_ids = messages[0].split()
+        if not email_ids or email_ids == [b'']:
+            return 0
+        
+        emails_saved = 0
+        
+        # For UID search, use uid fetch; for regular search, use regular fetch
+        fetch_method = mail.uid if not fetch_all and storage.get_highest_uid() else mail
+        
+        for email_id in email_ids:
+            try:
+                status, email_data = fetch_method('fetch', email_id, "(RFC822)")
+                
+                if status != "OK":
+                    print(f"Error fetching email ID {email_id}: {status}")
+                    continue
+
+                for msg_part in email_data:
+                    if isinstance(msg_part, tuple):
+                        email_message = email.message_from_bytes(msg_part[1])
+                        email_dict = parse_email(email_message, email_id.decode())
+                        
+                        # Save to database
+                        storage.save_email_metadata(email_dict)
+                        if email_dict.get("body"):
+                            storage.save_email_body(email_dict.get("uid"), email_dict.get("body"))
+                        
+                        emails_saved += 1
+            except Exception as e:
+                print(f"Error processing email {email_id}: {e}")
+                continue
+
+        return emails_saved
+    
+    except Exception as e:
+        print(f"Error fetching emails: {e}")
+        return 0
+    finally:
+        try:
+            mail.logout()
+        except Exception:
+            pass
     
 def parse_email_date(date_str):
     """Parse RFC 2822 email date format and convert to local system timezone"""

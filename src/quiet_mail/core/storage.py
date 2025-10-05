@@ -183,6 +183,19 @@ def search_emails_with_attachments(limit=10):
     except Exception as e:
         raise RuntimeError(f"Failed to retrieve emails with attachments: {e}")
     
+def get_highest_uid():
+    """Get the highest UID from the database to determine where to start fetching new emails"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT MAX(CAST(uid AS INTEGER)) FROM emails")
+        result = cursor.fetchone()
+        conn.close()
+        return int(result[0]) if result[0] is not None else None
+    except Exception as e:
+        print(f"Error getting highest UID: {e}")
+        return None
+
 def delete_email(email_uid):
     """Delete an email from the local database by UID"""
     try:
