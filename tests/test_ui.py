@@ -42,9 +42,7 @@ class TestInboxViewer(unittest.TestCase):
         self.assertIn("Test Email 1", output)
         self.assertIn("bob@example.com", output)
         self.assertIn("Test Email 2", output)
-        # Verify flagged column is displayed
-        self.assertIn("Flagged", output)
-        # Verify flag emoji appears for flagged email
+        # Verify flag emoji appears for flagged email (no header since columns are headerless)
         self.assertIn("🚩", output)
     
     def test_display_inbox_empty(self):

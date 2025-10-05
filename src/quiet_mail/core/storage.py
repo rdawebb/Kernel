@@ -31,32 +31,40 @@ def initialize_db():
                 date TEXT,
                 time TEXT,
                 body TEXT,
-                flagged BOOLEAN DEFAULT 0
+                flagged BOOLEAN DEFAULT 0,
+                attachments TEXT DEFAULT ''
             )
         """)
+            
         conn.commit()
         conn.close()
     except Exception as e:
         raise RuntimeError(f"Failed to initialize database: {e}")
 
-def save_email_metadata(uid, sender, subject, recipient, date, time):
+def save_email_metadata(email):
+    """Save email metadata to the database."""
     conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO emails (uid, sender, subject, recipient, date, time, flagged)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(uid) DO UPDATE SET
-                sender = excluded.sender,
-                subject = excluded.subject,
-                recipient = excluded.recipient,
-                date = excluded.date,
-                time = excluded.time,
-                flagged = excluded.flagged
-        """, (uid, sender, subject, recipient, date, time, False))
-        conn.commit()
-    finally:
-        conn.close()
+    
+    # Convert attachments list to comma-separated string for storage
+    attachments_str = ','.join(email.get("attachments", []))
+    
+    conn.execute("""
+        INSERT OR REPLACE INTO emails (uid, subject, sender, recipient, date, time, body, flagged, attachments)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        email["uid"],
+        email["subject"],
+        email["from"],
+        email["to"], 
+        email["date"],
+        email["time"],
+        email["body"],
+        email["flagged"],
+        attachments_str
+    ))
+        
+    conn.commit()
+    conn.close()
 
 def save_email_body(uid, body):
     """Save email body content separately (loaded only when viewing specific emails)"""
@@ -78,7 +86,7 @@ def get_inbox(limit=10):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time, flagged
+            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time, flagged, attachments
             FROM emails
             ORDER BY date DESC, time DESC
             LIMIT ?
@@ -94,7 +102,7 @@ def get_email(email_uid):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, uid, sender as "from", subject, date, time, flagged, body
+            SELECT id, uid, sender as "from", subject, date, time, flagged, body, attachments
             FROM emails
             WHERE uid = ?
         """, (str(email_uid),))
@@ -111,7 +119,7 @@ def search_emails(keyword, limit=10):
         cursor = conn.cursor()
         search_term = f"%{keyword}%"
         cursor.execute("""
-            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time, flagged
+            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time, flagged, attachments
             FROM emails
             WHERE subject LIKE ? OR sender LIKE ? or body LIKE ?
             ORDER BY date DESC, time DESC
@@ -144,7 +152,7 @@ def search_emails_by_flag_status(flagged_status, limit=10):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time, flagged
+            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time, flagged, attachments
             FROM emails
             WHERE flagged = ?
             ORDER BY date DESC, time DESC
@@ -156,3 +164,32 @@ def search_emails_by_flag_status(flagged_status, limit=10):
     except Exception as e:
         status_name = "flagged" if flagged_status else "unflagged"
         raise RuntimeError(f"Failed to retrieve {status_name} emails: {e}")
+    
+def search_emails_with_attachments(limit=10):
+    """Retrieve emails that have attachments"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT uid as id, uid, subject, sender as "from", recipient as "to", date, time, flagged, attachments
+            FROM emails
+            WHERE attachments IS NOT NULL AND attachments != ''
+            ORDER BY date DESC, time DESC
+            LIMIT ?
+        """, (limit,))
+        emails = cursor.fetchall()
+        conn.close()
+        return [dict(email) for email in emails]
+    except Exception as e:
+        raise RuntimeError(f"Failed to retrieve emails with attachments: {e}")
+    
+def delete_email(email_uid):
+    """Delete an email from the local database by UID"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM emails WHERE uid = ?", (str(email_uid),))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        raise RuntimeError(f"Failed to delete email {email_uid}: {e}")

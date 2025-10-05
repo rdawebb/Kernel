@@ -73,15 +73,19 @@ class TestStorage(unittest.TestCase):
         conn.commit()
         conn.close()
         
-        # Use the correct function signature: uid, sender, subject, recipient, date, time
-        save_email_metadata(
-            uid='test_uid_123',
-            sender='sender@example.com',
-            subject='Test Subject',
-            recipient='recipient@example.com',
-            date='2025-10-02',
-            time='10:30:00'
-        )
+        # Use the new dict-based function signature
+        test_email = {
+            'uid': 'test_uid_123',
+            'from': 'sender@example.com',
+            'subject': 'Test Subject',
+            'to': 'recipient@example.com',
+            'date': '2025-10-02',
+            'time': '10:30:00',
+            'body': '',
+            'flagged': False,
+            'attachments': []
+        }
+        save_email_metadata(test_email)
         
         actual_db_path = get_db_path()
         conn = sqlite3.connect(actual_db_path)
@@ -103,15 +107,19 @@ class TestStorage(unittest.TestCase):
     def test_save_email_body(self):
         initialize_db()
         
-        # First save email metadata with correct function signature
-        save_email_metadata(
-            uid='test_uid_123',
-            sender='sender@example.com', 
-            subject='Test Subject',
-            recipient='recipient@example.com',
-            date='2025-10-02',
-            time='10:30:00'
-        )
+        # First save email metadata with new dict-based function signature
+        test_email = {
+            'uid': 'test_uid_123',
+            'from': 'sender@example.com',
+            'subject': 'Test Subject',
+            'to': 'recipient@example.com',
+            'date': '2025-10-02',
+            'time': '10:30:00',
+            'body': '',
+            'flagged': False,
+            'attachments': []
+        }
+        save_email_metadata(test_email)
         
         save_email_body('test_uid_123', 'This is the email body')
         
@@ -168,14 +176,19 @@ class TestStorage(unittest.TestCase):
         ]
         
         for email in test_emails:
-            save_email_metadata(
-                uid=email['uid'],
-                sender=email['sender'], 
-                subject=email['subject'],
-                recipient=email['recipient'],
-                date=email['date'],
-                time=email['time']
-            )
+            # Convert to new format with required fields
+            email_dict = {
+                'uid': email['uid'],
+                'from': email['sender'],
+                'subject': email['subject'],
+                'to': email['recipient'],
+                'date': email['date'],
+                'time': email['time'],
+                'body': '',
+                'flagged': False,
+                'attachments': []
+            }
+            save_email_metadata(email_dict)
         
         inbox = get_inbox()
         
@@ -196,14 +209,18 @@ class TestStorage(unittest.TestCase):
         
         # Add 5 test emails
         for i in range(5):
-            save_email_metadata(
-                uid=f'test_uid_{i}',
-                sender=f'sender{i}@example.com', 
-                subject=f'Email {i}',
-                recipient='recipient@example.com',
-                date=f'2025-10-0{i+1}',
-                time='10:30:00'
-            )
+            email_dict = {
+                'uid': f'test_uid_{i}',
+                'from': f'sender{i}@example.com',
+                'subject': f'Email {i}',
+                'to': 'recipient@example.com',
+                'date': f'2025-10-0{i+1}',
+                'time': '10:30:00',
+                'body': '',
+                'flagged': False,
+                'attachments': []
+            }
+            save_email_metadata(email_dict)
         
         inbox = get_inbox(limit=3)
         
@@ -219,14 +236,18 @@ class TestStorage(unittest.TestCase):
         conn.commit()
         conn.close()
         
-        save_email_metadata(
-            uid='test_uid_123',
-            sender='sender@example.com', 
-            subject='Test Email',
-            recipient='recipient@example.com',
-            date='2025-10-02',
-            time='10:30:00'
-        )
+        test_email = {
+            'uid': 'test_uid_123',
+            'from': 'sender@example.com',
+            'subject': 'Test Email',
+            'to': 'recipient@example.com',
+            'date': '2025-10-02',
+            'time': '10:30:00',
+            'body': '',
+            'flagged': False,
+            'attachments': []
+        }
+        save_email_metadata(test_email)
         
         email = get_email('test_uid_123')
         
@@ -265,7 +286,18 @@ class TestStorage(unittest.TestCase):
         ]
         
         for uid, sender, subject, recipient, date, time in test_emails:
-            save_email_metadata(uid, sender, subject, recipient, date, time)
+            email_dict = {
+                'uid': uid,
+                'from': sender,
+                'subject': subject,
+                'to': recipient,
+                'date': date,
+                'time': time,
+                'body': '',
+                'flagged': False,
+                'attachments': []
+            }
+            save_email_metadata(email_dict)
             save_email_body(uid, f"Body content for {subject}")
         
         # Test search by subject keyword
@@ -297,7 +329,18 @@ class TestStorage(unittest.TestCase):
         conn.close()
         
         # Save test email
-        save_email_metadata('test_uid', 'sender@example.com', 'Test Subject', 'recipient@example.com', '2025-10-03', '10:00:00')
+        test_email = {
+            'uid': 'test_uid',
+            'from': 'sender@example.com',
+            'subject': 'Test Subject',
+            'to': 'recipient@example.com',
+            'date': '2025-10-03',
+            'time': '10:00:00',
+            'body': '',
+            'flagged': False,
+            'attachments': []
+        }
+        save_email_metadata(test_email)
         
         # Test flagging an email
         mark_email_flagged('test_uid', True)
@@ -343,7 +386,18 @@ class TestStorage(unittest.TestCase):
         ]
         
         for uid, sender, subject, recipient, date, time in test_emails:
-            save_email_metadata(uid, sender, subject, recipient, date, time)
+            email_dict = {
+                'uid': uid,
+                'from': sender,
+                'subject': subject,
+                'to': recipient,
+                'date': date,
+                'time': time,
+                'body': '',
+                'flagged': False,
+                'attachments': []
+            }
+            save_email_metadata(email_dict)
         
         # Flag some emails
         mark_email_flagged('uid1', True)
@@ -382,7 +436,18 @@ class TestStorage(unittest.TestCase):
         ]
         
         for uid, sender, subject, recipient, date, time in test_emails:
-            save_email_metadata(uid, sender, subject, recipient, date, time)
+            email_dict = {
+                'uid': uid,
+                'from': sender,
+                'subject': subject,
+                'to': recipient,
+                'date': date,
+                'time': time,
+                'body': '',
+                'flagged': False,
+                'attachments': []
+            }
+            save_email_metadata(email_dict)
         
         # Flag one email
         mark_email_flagged('uid1', True)
@@ -415,7 +480,18 @@ class TestStorage(unittest.TestCase):
         # Save multiple flagged emails
         for i in range(5):
             uid = f'uid{i}'
-            save_email_metadata(uid, 'sender@example.com', f'Email {i}', 'recipient@example.com', '2025-10-03', f'1{i}:00:00')
+            email_dict = {
+                'uid': uid,
+                'from': 'sender@example.com',
+                'subject': f'Email {i}',
+                'to': 'recipient@example.com',
+                'date': '2025-10-03',
+                'time': f'1{i}:00:00',
+                'body': '',
+                'flagged': False,
+                'attachments': []
+            }
+            save_email_metadata(email_dict)
             mark_email_flagged(uid, True)
         
         # Test limit functionality
@@ -438,7 +514,18 @@ class TestStorage(unittest.TestCase):
         conn.close()
         
         # Save test email and flag it
-        save_email_metadata('test_uid', 'sender@example.com', 'Test Subject', 'recipient@example.com', '2025-10-03', '10:00:00')
+        test_email = {
+            'uid': 'test_uid',
+            'from': 'sender@example.com',
+            'subject': 'Test Subject',
+            'to': 'recipient@example.com',
+            'date': '2025-10-03',
+            'time': '10:00:00',
+            'body': '',
+            'flagged': False,
+            'attachments': []
+        }
+        save_email_metadata(test_email)
         mark_email_flagged('test_uid', True)
         
         # Test that search_emails includes flagged column

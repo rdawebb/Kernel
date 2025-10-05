@@ -116,6 +116,12 @@ def parse_email(email_data, email_id):
         date_, time_ = parse_email_date(date_header)
 
         body = ""
+        
+        # Extract attachment filenames using the same logic as download functions
+        attachment_list = _extract_attachment_filenames(email_data)
+        # Convert to comma-separated string for consistency with database storage
+        attachments = ','.join(attachment_list)
+        
         for part in email_data.walk() if email_data.is_multipart() else [email_data]:
             content_type = part.get_content_type()
             content_disposition = str(part.get("Content-Disposition"))
@@ -130,7 +136,7 @@ def parse_email(email_data, email_id):
                 except Exception:
                     body = str(part.get_payload())
                 break
-        
+
         return {
             "id": email_id,
             "uid": email_id,
@@ -139,7 +145,9 @@ def parse_email(email_data, email_id):
             "subject": subject,
             "date": date_,
             "time": time_,
-            "body": body
+            "body": body,
+            "flagged": False,
+            "attachments": attachments
         }
 
     except Exception as e:
@@ -152,5 +160,170 @@ def parse_email(email_data, email_id):
             "subject": subject,
             "date": date_,
             "time": time_,
-            "body": body
+            "body": body,
+            "flagged": False,
+            "attachments": []
         }
+
+def _fetch_email_by_uid(mail, email_uid):
+    """Helper function to fetch and parse an email by UID"""
+
+    status, messages = mail.search(None, f"UID {email_uid}")
+    if status != "OK" or not messages[0]:
+        raise RuntimeError(f"Email with UID {email_uid} not found")
+    
+    status, email_data = mail.fetch(email_uid, "(RFC822)")
+    if status != "OK":
+        raise RuntimeError(f"Failed to fetch email {email_uid}")
+    
+    return email.message_from_bytes(email_data[0][1])
+
+def _extract_attachment_filenames(email_message):
+    """Helper function to extract just attachment filenames from an email message"""
+    filenames = []
+    
+    for part in email_message.walk():
+        content_disposition = str(part.get("Content-Disposition", ""))
+        
+        if "attachment" in content_disposition.lower():
+            filename = part.get_filename()
+            if filename:
+                # Decode filename if needed (same logic as in _extract_attachments_from_email)
+                decoded_filename = decode_header(filename)[0]
+                if isinstance(decoded_filename[0], bytes):
+                    filename = decoded_filename[0].decode(decoded_filename[1] or 'utf-8')
+                else:
+                    filename = decoded_filename[0]
+                
+                filenames.append(filename)
+    
+    return filenames
+
+def _extract_attachments_from_email(email_message):
+    """Helper function to extract attachment information from an email message"""
+    attachments = []
+    
+    for part in email_message.walk():
+        content_disposition = str(part.get("Content-Disposition", ""))
+        
+        if "attachment" in content_disposition.lower():
+            filename = part.get_filename()
+            if filename:
+                # Decode filename if needed
+                decoded_filename = decode_header(filename)[0]
+                if isinstance(decoded_filename[0], bytes):
+                    filename = decoded_filename[0].decode(decoded_filename[1] or 'utf-8')
+                else:
+                    filename = decoded_filename[0]
+                
+                # Get attachment content
+                content = part.get_payload(decode=True)
+                if content:
+                    attachments.append({
+                        'filename': filename,
+                        'content': content
+                    })
+    
+    return attachments
+
+def _save_attachment_to_disk(filename, content, download_path):
+    """Helper function to save attachment content to disk with duplicate handling"""
+    import os
+    
+    # Create download directory if it doesn't exist
+    os.makedirs(download_path, exist_ok=True)
+    
+    file_path = os.path.join(download_path, filename)
+    
+    # Handle duplicate filenames
+    counter = 1
+    original_file_path = file_path
+    while os.path.exists(file_path):
+        name, ext = os.path.splitext(original_file_path)
+        file_path = f"{name}_{counter}{ext}"
+        counter += 1
+    
+    # Save the file
+    with open(file_path, 'wb') as f:
+        f.write(content)
+    
+    return file_path
+
+def download_all_attachments(config, email_uid, download_path="./attachments"):
+    """Download all attachments from an email by UID"""
+    mail = connect_to_imap(config)
+    if not mail:
+        raise RuntimeError("Failed to connect to IMAP server")
+    
+    try:
+        email_message = _fetch_email_by_uid(mail, email_uid)
+        attachments = _extract_attachments_from_email(email_message)
+        
+        downloaded_files = []
+        for attachment in attachments:
+            file_path = _save_attachment_to_disk(
+                attachment['filename'], 
+                attachment['content'], 
+                download_path
+            )
+            downloaded_files.append(file_path)
+        
+        return downloaded_files
+        
+    finally:
+        mail.close()
+        mail.logout()
+
+def download_attachment_by_index(config, email_uid, attachment_index, download_path="./attachments"):
+    """Download a specific attachment from an email by UID and index"""
+    mail = connect_to_imap(config)
+    if not mail:
+        raise RuntimeError("Failed to connect to IMAP server")
+    
+    try:
+        email_message = _fetch_email_by_uid(mail, email_uid)
+        attachments = _extract_attachments_from_email(email_message)
+        
+        if attachment_index >= len(attachments) or attachment_index < 0:
+            raise RuntimeError(f"Invalid attachment index {attachment_index}. Available attachments: 0-{len(attachments)-1}")
+        
+        attachment = attachments[attachment_index]
+        file_path = _save_attachment_to_disk(
+            attachment['filename'], 
+            attachment['content'], 
+            download_path
+        )
+        return file_path
+        
+    finally:
+        mail.close()
+        mail.logout()
+
+def get_attachment_list(config, email_uid):
+    """Get list of attachment filenames from an email by UID without downloading"""
+    mail = connect_to_imap(config)
+    if not mail:
+        raise RuntimeError("Failed to connect to IMAP server")
+    
+    try:
+        email_message = _fetch_email_by_uid(mail, email_uid)
+        return _extract_attachment_filenames(email_message)
+        
+    finally:
+        mail.close()
+        mail.logout()
+
+def delete_email(config, email_uid):
+    """Delete an email by UID from the server"""
+    mail = connect_to_imap(config)
+    if not mail:
+        raise RuntimeError("Failed to connect to IMAP server")
+    
+    try:
+        # Mark the email for deletion
+        mail.uid('STORE', email_uid, '+FLAGS', r'(\Deleted)')
+        mail.expunge()
+        
+    finally:
+        mail.close()
+        mail.logout()
