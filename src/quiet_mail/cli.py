@@ -12,6 +12,47 @@ except Exception as e:
     console.print(f"[red]Failed to initialize database: {e}[/]")
     exit(1)
 
+# Helper functions for common operations
+def get_email_or_exit(email_id):
+    """Get email by ID or exit with error message if not found"""
+    try:
+        email_data = storage.get_email(email_id)
+        if not email_data:
+            console.print(f"[red]Email with ID {email_id} not found.[/]")
+            return None
+        return email_data
+    except Exception as e:
+        console.print(f"[red]Failed to retrieve email {email_id}: {e}[/]")
+        return None
+
+def confirm_action(message):
+    """Get user confirmation for an action"""
+    return input(f"{message} (y/n): ").lower() == 'y'
+
+def handle_download_action(cfg, email_id, args):
+    """Handle attachment download logic"""
+    try:
+        if args.all:
+            downloaded_files = imap_client.download_all_attachments(cfg, email_id, "./attachments")
+            if downloaded_files:
+                for file_path in downloaded_files:
+                    console.print(f"[green]Downloaded: {file_path}[/]")
+                console.print(f"[green]Successfully downloaded {len(downloaded_files)} attachment(s) for email ID {email_id}.[/]")
+            else:
+                console.print(f"[yellow]No attachments found for email ID {email_id}.[/]")
+        elif args.index is not None:
+            file_path = imap_client.download_attachment_by_index(cfg, email_id, args.index, "./attachments")
+            console.print(f"[green]Downloaded: {file_path}[/]")
+            console.print(f"[green]Successfully downloaded 1 attachment for email ID {email_id}.[/]")
+        else:
+            # Default: download first attachment only
+            file_path = imap_client.download_attachment_by_index(cfg, email_id, 0, "./attachments")
+            console.print(f"[green]Downloaded: {file_path}[/]")
+            console.print(f"[green]Successfully downloaded 1 attachment for email ID {email_id}.[/]")
+    except Exception as e:
+        console.print(f"[red]Failed to download attachments: {e}[/]")
+        raise
+
 def setup_argument_parser():
     """Configure and return the argument parser with all subcommands"""
     parser = argparse.ArgumentParser(
@@ -64,7 +105,7 @@ def setup_argument_parser():
         ])
     ]
 
-    # Create subparsers from configuration
+    # Dynamically create subparsers from configuration
     for command_name, command_help, arguments in commands_config:
         subparser = subparsers.add_parser(command_name, help=command_help)
         for arg_name, arg_config in arguments:
@@ -88,18 +129,19 @@ def main():
             emails = storage.get_inbox(limit=args.limit)
             inbox_viewer.display_inbox(emails)
         except Exception as e:
-                console.print(f"[red]Failed to load emails: {e}[/]")
+            console.print(f"[red]Failed to load emails: {e}[/]")
 
     elif args.command == "refresh":
         try:
             if args.all:
                 console.print("[yellow]Warning: Fetching all emails can be slow and may hit server limits.[/]")
-                if input("Are you sure you want to fetch all emails? (y/n): ").lower() != 'y':
+                if not confirm_action("Are you sure you want to fetch all emails?"):
                     console.print("[yellow]Fetch cancelled.[/]")
                     return
                 console.print("[bold cyan]Fetching all emails from server...[/]")
                 fetched_count = imap_client.fetch_new_emails(cfg, fetch_all=True)
             else:
+                # Incremental refresh: only fetch emails newer than what we have
                 console.print("[bold cyan]Fetching new emails from server...[/]")
                 fetched_count = imap_client.fetch_new_emails(cfg, fetch_all=False)
             
@@ -112,16 +154,12 @@ def main():
 
     elif args.command == "view":
         console.print(f"[bold cyan]Fetching email {args.id}...[/]")
-
-        try:
-            email_data = storage.get_email(args.id)
-            if not email_data:
-                console.print(f"[red]Email with ID {args.id} not found.[/]")
-                return
-
-            email_viewer.display_email(email_data)
-        except Exception as e:
-            console.print(f"[red]Failed to retrieve or display email: {e}[/]")
+        email_data = get_email_or_exit(args.id)
+        if email_data:
+            try:
+                email_viewer.display_email(email_data)
+            except Exception as e:
+                console.print(f"[red]Failed to display email: {e}[/]")
 
     elif args.command == "search":
         console.print(f"[bold cyan]Searching emails for '{args.keyword}'...[/]")
@@ -144,22 +182,20 @@ def main():
             console.print(f"[red]Failed to retrieve {status_text} emails: {e}[/]")
 
     elif args.command == "flag":
+        # Ensure user specified exactly one flag operation (not both or neither)
         if args.flag == args.unflag:
             console.print("[red]Please specify either --flag or --unflag.[/]")
             return
 
-        try:
-            email_data = storage.get_email(args.id)
-            if not email_data:
-                console.print(f"[red]Email with ID {args.id} not found.[/]")
-                return
-
-            flag_status = True if args.flag else False
-            storage.mark_email_flagged(args.id, flag_status)
-            action = "Flagged" if args.flag else "Unflagged"
-            console.print(f"[green]{action} email ID {args.id} successfully.[/]")
-        except Exception as e:
-            console.print(f"[red]Failed to update flag status: {e}[/]")
+        email_data = get_email_or_exit(args.id)
+        if email_data:
+            try:
+                flag_status = True if args.flag else False
+                storage.mark_email_flagged(args.id, flag_status)
+                action = "Flagged" if args.flag else "Unflagged"
+                console.print(f"[green]{action} email ID {args.id} successfully.[/]")
+            except Exception as e:
+                console.print(f"[red]Failed to update flag status: {e}[/]")
 
     elif args.command == "attachments":
         console.print("[bold cyan]Loading emails with attachments...[/]")
@@ -192,98 +228,55 @@ def main():
     elif args.command == "download":
         console.print(f"[bold cyan]Downloading attachments for email {args.id}...[/]")
         
-        try:
-            email_data = storage.get_email(args.id)
-            if not email_data:
-                console.print(f"[red]Email with ID {args.id} not found.[/]")
-                return
+        email_data = get_email_or_exit(args.id)
+        if not email_data:
+            return
 
+        try:
             attachments_raw = email_data.get('attachments', '')
             if not attachments_raw or not attachments_raw.strip():
-                # No attachments in database, try to fetch directly from server
+                # Fallback: if no attachments in database, try fetching directly from server
                 console.print("[yellow]No attachments found in database, checking server...[/]")
                 
-                try:
-                    if args.all:
-                        if input(f"Are you sure you want to download attachments for email ID {args.id}? (y/n): ").lower() != 'y':
-                            console.print("[yellow]Download cancelled.[/]")
-                            return
-                        downloaded_files = imap_client.download_all_attachments(cfg, args.id, "./attachments")
-                        if downloaded_files:
-                            for file_path in downloaded_files:
-                                console.print(f"[green]Downloaded: {file_path}[/]")
-                            console.print(f"[green]Successfully downloaded {len(downloaded_files)} attachment(s) for email ID {args.id}.[/]")
-                        else:
-                            console.print(f"[yellow]No attachments found for email ID {args.id}.[/]")
-
-                    elif args.index is not None:
-                        file_path = imap_client.download_attachment_by_index(cfg, args.id, args.index, "./attachments")
-                        console.print(f"[green]Downloaded: {file_path}[/]")
-                        console.print(f"[green]Successfully downloaded 1 attachment for email ID {args.id}.[/]")
-
-                    else:
-                        # Default: download first attachment only
-                        file_path = imap_client.download_attachment_by_index(cfg, args.id, 0, "./attachments")
-                        console.print(f"[green]Downloaded: {file_path}[/]")
-                        console.print(f"[green]Successfully downloaded 1 attachment for email ID {args.id}.[/]")
+                if args.all and not confirm_action(f"Are you sure you want to download attachments for email ID {args.id}?"):
+                    console.print("[yellow]Download cancelled.[/]")
                     return
                 
-                except Exception as e:
-                    console.print(f"[red]Failed to download attachments from server: {e}[/]")
-                    return
+                handle_download_action(cfg, args.id, args)
+                return
 
+            # Attachment filenames are stored as comma-separated strings
             attachments = [att.strip() for att in attachments_raw.split(',') if att.strip()]
             if not attachments:
                 console.print(f"[yellow]No valid attachments to download for email ID {args.id}.[/]")
                 return
 
-            if args.all:
-                downloaded_files = imap_client.download_all_attachments(cfg, args.id, "./attachments")
-                if downloaded_files:
-                    for file_path in downloaded_files:
-                        console.print(f"[green]Downloaded: {file_path}[/]")
-                    console.print(f"[green]Successfully downloaded {len(downloaded_files)} attachment(s) for email ID {args.id}.[/]")
+            if args.index is not None and (args.index >= len(attachments) or args.index < 0):
+                console.print(f"[red]Invalid attachment index {args.index}. Available attachments: 0-{len(attachments)-1}[/]")
+                return
 
-                else:
-                    console.print(f"[yellow]No attachments found for email ID {args.id}.[/]")
+            handle_download_action(cfg, args.id, args)
 
-            elif args.index is not None:
-                if args.index >= len(attachments) or args.index < 0:
-                    console.print(f"[red]Invalid attachment index {args.index}. Available attachments: 0-{len(attachments)-1}[/]")
-                    return
-
-                file_path = imap_client.download_attachment_by_index(cfg, args.id, args.index, "./attachments")
-                console.print(f"[green]Downloaded: {file_path}[/]")
-                console.print(f"[green]Successfully downloaded 1 attachment for email ID {args.id}.[/]")
-
-            else:
-                # Default: download first attachment only
-                file_path = imap_client.download_attachment_by_index(cfg, args.id, 0, "./attachments")
-                console.print(f"[green]Downloaded: {file_path}[/]")
-                console.print(f"[green]Successfully downloaded 1 attachment for email ID {args.id}.[/]")
         except Exception as e:
             console.print(f"[red]Failed to download attachments: {e}[/]")
 
     elif args.command == "delete":
-        if input(f"Are you sure you want to delete email ID {args.id}? (y/n): ").lower() != 'y':
+        if not confirm_action(f"Are you sure you want to delete email ID {args.id}?"):
             console.print("[yellow]Deletion cancelled.[/]")
             return
         
-        try:
-            email_data = storage.get_email(args.id)
-            if not email_data:
-                console.print(f"[red]Email with ID {args.id} not found.[/]")
-                return
-
-            if args.all:
-                storage.delete_email(args.id)
-                imap_client.delete_email(cfg, args.id)
-                console.print(f"[green]Deleted email ID {args.id} from local database and server.[/]")
-            else:
-                storage.delete_email(args.id)
-                console.print(f"[green]Deleted email ID {args.id} from local database.[/]")
-        except Exception as e:
-            console.print(f"[red]Failed to delete email: {e}[/]")
+        email_data = get_email_or_exit(args.id)
+        if email_data:
+            try:
+                if args.all:
+                    storage.delete_email(args.id)
+                    imap_client.delete_email(cfg, args.id)
+                    console.print(f"[green]Deleted email ID {args.id} from local database and server.[/]")
+                else:
+                    storage.delete_email(args.id)
+                    console.print(f"[green]Deleted email ID {args.id} from local database.[/]")
+            except Exception as e:
+                console.print(f"[red]Failed to delete email: {e}[/]")
 
 if __name__ == "__main__":
     main()
