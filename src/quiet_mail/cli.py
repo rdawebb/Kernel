@@ -1,8 +1,9 @@
 import argparse
 from rich.console import Console
 from quiet_mail.core import imap_client, storage
-from quiet_mail.ui import inbox_viewer, email_viewer, search_viewer
+from quiet_mail.ui import inbox_viewer, email_viewer, search_viewer, composer
 from quiet_mail.utils import config
+from quiet_mail.utils.ui_helpers import confirm_action
 
 console = Console()
 
@@ -24,10 +25,6 @@ def get_email_or_exit(email_id):
     except Exception as e:
         console.print(f"[red]Failed to retrieve email {email_id}: {e}[/]")
         return None
-
-def confirm_action(message):
-    """Get user confirmation for an action"""
-    return input(f"{message} (y/n): ").lower() == 'y'
 
 def handle_download_action(cfg, email_id, args):
     """Handle attachment download logic"""
@@ -102,7 +99,8 @@ def setup_argument_parser():
         ("delete", "Delete email in local database", [
             ("id", {"help": "Email ID (from list command)"}),
             ("--all", {"action": "store_true", "help": "Delete in local database and server"}),
-        ])
+        ]),
+        ("compose", "Compose and send a new email", [])
     ]
 
     # Dynamically create subparsers from configuration
@@ -277,6 +275,14 @@ def main():
                     console.print(f"[green]Deleted email ID {args.id} from local database.[/]")
             except Exception as e:
                 console.print(f"[red]Failed to delete email: {e}[/]")
+
+    elif args.command == "compose":
+        try:
+            result = composer.compose_email()
+            if not result:
+                console.print("[yellow]Email composition cancelled or failed.[/yellow]")
+        except Exception as e:
+            console.print(f"[red]Failed to compose/send email: {e}[/]")
 
 if __name__ == "__main__":
     main()

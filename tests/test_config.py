@@ -56,7 +56,7 @@ class TestConfig(unittest.TestCase):
         with self.assertRaises(RuntimeError) as context:
             load_config()
         
-        self.assertIn("IMAP_SERVER, EMAIL, and PASSWORD must be set", str(context.exception))
+        self.assertIn("IMAP_SERVER, SMTP_SERVER, EMAIL, and PASSWORD must be set", str(context.exception))
     
     def test_load_config_invalid_port(self):
         os.environ.update({
