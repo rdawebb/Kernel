@@ -9,214 +9,238 @@ tests/
 ├── __init__.py                 # Test package initialization
 ├── test_config.py             # Configuration loading tests (5 tests)
 ├── test_storage.py            # Database/storage tests (21 tests)
-├── test_imap_client.py        # IMAP client tests (7 tests)
-├── test_connection.py         # IMAP connection integration test (1 test)
+├── test_imap_client.py        # IMAP client tests (22 tests)
+├── test_smtp_client.py        # SMTP client tests (7 tests)
+├── test_composer.py           # Email composer tests (13 tests)
+├── test_connection.py         # Connection tests - IMAP & SMTP (10 tests)
 ├── test_ui.py                 # UI component tests (15 tests)
 ├── test_cli.py                # CLI integration tests (23 tests)
-├── run_tests.py               # Test runner script
+├── run_tests.py               # Legacy test runner script
 └── README.md                  # This file
 ```
 
-**Total: 72 comprehensive tests covering all functionality**
-
-## Quick Start
-
-### Check Your Python Command
-
-```bash
-# Test which Python command works on your system:
-python --version    # Should show Python 3.x
-python3 --version   # Alternative on macOS/Linux
-
-# If python shows Python 2.x, use python3 for all commands below
-```
-
-## Running Tests
-
-> **Note**: Replace `python` with `python3` if your system requires it (common on macOS/Linux).
-> In virtual environments, `python` typically points to the correct version.
-
-### Run All Tests (Recommended)
-
-```bash
-# Using pytest (recommended - provides better output)
-python -m pytest tests/ -v
-
-# Quick run
-python -m pytest tests/ -q
-
-# From the project root (alternative)
-python -m tests.run_tests
-
-# Or from the tests directory
-python run_tests.py
-```
-
-### Run Specific Test Modules
-
-````bash
-# Run only configuration tests
-python -m pytest tests/test_config.py -v
-
-# Run only storage tests
-python -m pytest tests/test_storage.py -v
-
-# Run only IMAP tests
-python -m pytest tests/test_imap_client.py -v
-
-# Run only UI tests
-python -m pytest tests/test_ui.py -v
-
-# Run only CLI tests
-python -m pytest tests/test_cli.py -v
-
-# Run connection integration test
-python -m pytest tests/test_connection.py -v
-```### Run Individual Test Methods
-
-```bash
-# Run specific test file directly
-python -m unittest tests.test_config.TestConfig.test_load_config_defaults
-python -m unittest tests.test_storage.TestStorage.test_search_emails_by_keyword
-
-# Run specific test class
-python -m unittest tests.test_cli.TestCLI
-python -m unittest tests.test_ui.TestSearchViewer
-
-# Note: Use 'python3' instead of 'python' if required by your system
-````
-
-## Test Coverage
-
-### Configuration Tests (`test_config.py`) - 5 tests
-
-- ✅ Valid environment variable loading
-- ✅ Missing required variables handling
-- ✅ Invalid port number handling
-- ✅ Default value assignment
-- ✅ SSL flag parsing variations
-
-### Storage Tests (`test_storage.py`) - 21 tests
-
-**Core Database Operations:**
-
-- ✅ Database connection creation
-- ✅ Database initialization with flagged column
-- ✅ Email metadata saving
-- ✅ Email body saving
-- ✅ Inbox retrieval with limits
-- ✅ Individual email retrieval
-- ✅ Error handling for database operations
-
-**Email Management Features:**
-
-- ✅ Email flagging/unflagging functionality
-- ✅ Search emails by keyword (subject, sender, body)
-- ✅ Search flagged emails only
-- ✅ Search unflagged emails only
-- ✅ Limit functionality with proper ordering
-- ✅ Flagged column inclusion in all search results
-- ✅ Database schema validation
-
-**New Attachment and Deletion Features:**
-
-- ✅ Search emails with attachments functionality
-- ✅ Get highest UID for incremental email fetching
-- ✅ Delete email from local database
-- ✅ Handle deletion of non-existent emails gracefully
-
-### IMAP Client Tests (`test_imap_client.py`) - 7 tests
-
-**Connection Management:**
-
-- ✅ IMAP connection success/failure scenarios
-- ✅ Login authentication testing
-- ✅ Exception handling for network errors
-
-**Email Processing:**
-
-- ✅ Email header decoding with encoding handling
-- ✅ Attachment filename decoding
-- ✅ Attachment filename extraction from emails
-- ✅ Attachment file saving with duplicate handling
-
-### Connection Tests (`test_connection.py`) - 1 test
-
-- ✅ Integration test for IMAP server connectivity
-
-### UI Tests (`test_ui.py`) - 15 tests
-
-**Inbox Viewer (4 tests):**
-
-- ✅ Inbox table display with flagged status
-- ✅ Empty inbox handling
-- ✅ Flagged column and emoji display
-- ✅ Missing field graceful handling
-
-**Email Viewer (4 tests):**
-
-- ✅ Complete email detail display
-- ✅ Missing body handling
-- ✅ Missing field handling
-- ✅ Data integrity verification
-
-**Search Viewer (4 tests):**
-
-- ✅ Search results display with flagged status
-- ✅ Empty search results handling
-- ✅ Flagged-only email display
-- ✅ Unflagged-only email display
-
-**Integration Tests (3 tests):**
-
-- ✅ Inbox to email workflow
-- ✅ Empty data handling
-- ✅ Component interaction testing
-
-### CLI Tests (`test_cli.py`) - 23 tests
-
-**Core Commands:**
-
-- ✅ List command default behavior (local database)
-- ✅ Refresh command for fetching new emails from server
-- ✅ List command with limit parameter
-- ✅ View command for existing/nonexistent emails
-- ✅ Configuration and IMAP error handling
-
-**Email Management Commands:**
-
-- ✅ Search command by keyword
-- ✅ Flagged emails listing
-- ✅ Unflagged emails listing
-- ✅ Flag email command
-- ✅ Unflag email command
-- ✅ Flag command error handling (missing options, nonexistent emails)
-
-**Attachment Management Commands:**
-
-- ✅ Attachments command (list emails with attachments)
-- ✅ List-attachments command (show attachment filenames)
-- ✅ Download command with attachments validation
-- ✅ Download command with all/index options
-
-**Email Deletion Commands:**
-
-- ✅ Delete command (local database only)
-- ✅ Delete command (both local and server with --all flag)
-- ✅ Delete command cancellation handling
-- ✅ User confirmation workflow
-
-**System Commands:**
-
-- ✅ Help command functionality
-- ✅ Invalid command handling
-- ✅ Storage operation failure handling
+**Total: 116 comprehensive tests covering all functionality**
 
 ## Test Dependencies
 
 The tests use the following libraries:
 
 - `pytest` - Modern testing framework with excellent output and plugins
+- `unittest.mock` - Built-in mocking library for simulating external dependencies
+- `tempfile` - For creating temporary directories in storage tests
+- `io.StringIO` - For capturing terminal output in CLI tests
+- `rich.console` - For testing styled output rendering
+
+## Coverage Report
+
+The complete test suite provides comprehensive coverage of:
+
+- **Email Operations:** IMAP connection, fetching, parsing, and deletion
+- **SMTP Operations:** Connection, authentication, and email sending
+- **Storage Layer:** Database operations, search, flagging, and data integrity
+- **User Interface:** Display components, search views, and interaction flows
+- **Command Line:** All CLI commands, error handling, and user workflows
+- **Configuration:** Settings management and validation
+- **Email Composition:** Message creation, formatting, and sending
+
+All tests use mocking to avoid external dependencies (email servers, file systems) while maintaining realistic test scenarios.
+
+## Running the Test Suite
+
+### Using the test-suite Script (Recommended)
+
+The project includes a comprehensive `test-suite` script with multiple execution options:
+
+```bash
+# Run all tests with standard output
+./test-suite
+
+# Run all tests with verbose output (-v)
+./test-suite verbose
+
+# Run all tests with coverage report
+./test-suite coverage
+
+# Run tests quickly (without coverage, minimal output)
+./test-suite fast
+
+# Run specific test module
+./test-suite imap        # test_imap_client.py
+./test-suite smtp        # test_smtp_client.py
+./test-suite storage     # test_storage.py
+./test-suite cli         # test_cli.py
+./test-suite ui          # test_ui.py
+./test-suite config      # test_config.py
+./test-suite composer    # test_composer.py
+./test-suite connection  # test_connection.py
+
+# Show test count summary
+./test-suite count
+
+# Show help
+./test-suite help
+```
+
+### Using pytest Directly
+
+```bash
+# Run all tests
+pytest tests/
+
+# Run with verbose output
+pytest -v tests/
+
+# Run with coverage
+pytest --cov=src tests/
+
+# Run specific test file
+pytest tests/test_storage.py
+
+# Run specific test function
+pytest tests/test_cli.py::test_list_command
+```
+
+### Using Python Commands Directly
+
+> **Note**: Replace `python` with `python3` if your system requires it (common on macOS/Linux).
+> In virtual environments, `python` typically points to the correct version.
+
+```bash
+# Test which Python command works on your system:
+python --version    # Should show Python 3.x
+python3 --version   # Alternative on macOS/Linux
+
+# Using pytest (recommended - provides better output)
+python -m pytest tests/ -v
+
+# Quick run with summary
+python -m pytest tests/ --tb=short
+
+# From the project root (alternative)
+python -m tests.run_tests
+```
+
+The test suite automatically detects and activates virtual environments when available.
+
+---
+
+**Total Test Coverage: 116 tests across 8 test modules**
+
+_This comprehensive test suite ensures reliable email client functionality with full coverage of core operations, user interface, and command-line interface._
+
+# Run tests with coverage report
+
+python -m pytest tests/ --cov=src/quiet_mail --cov-report=term-missing
+
+# Or using the test suite script
+
+./test-suite coverage
+
+````
+
+### Run Specific Test Patterns
+
+```bash
+# Run tests matching a pattern
+python -m pytest tests/ -k "connection" -v
+python -m pytest tests/ -k "smtp" -v
+python -m pytest tests/ -k "attachment" -v
+
+# Run tests excluding slow ones
+python -m pytest tests/ -m "not slow" -v
+````
+
+### Debug Test Failures
+
+```bash
+# Show detailed output for failures
+python -m pytest tests/ --tb=long
+
+# Stop on first failure
+python -m pytest tests/ -x
+
+# Run with print statements visible
+python -m pytest tests/ -s
+```
+
+## Test Development Guidelines
+
+### Test Organization
+
+- **Unit Tests**: Test individual functions in isolation
+- **Integration Tests**: Test component interactions
+- **Connection Tests**: Test network connectivity (mocked)
+- **CLI Tests**: Test command-line interface workflows
+
+### Mocking Strategy
+
+- **Network Calls**: All IMAP/SMTP operations are mocked
+- **File System**: Temporary files and directories used
+- **Database**: In-memory SQLite databases for fast tests
+- **User Input**: Rich console interactions mocked appropriately
+
+### Test Performance
+
+- **⚡ Fast Execution**: 116 tests complete in ~2-3 seconds
+- **🔄 Parallel Ready**: Tests are isolated and can run in parallel
+- **💾 Memory Efficient**: Temporary databases are small and cleaned up
+- **🎯 Targeted Mocking**: Only essential components are mocked
+
+## Continuous Integration
+
+The test suite is designed for CI/CD environments:
+
+```bash
+# Run all tests with junit output for CI
+python -m pytest tests/ --junitxml=test-results.xml
+
+# Run with coverage for CI reporting
+python -m pytest tests/ --cov=src/quiet_mail --cov-report=xml
+
+# Performance timing for CI optimization
+python -m pytest tests/ --durations=10
+```
+
+## Test File Descriptions
+
+| File                  | Purpose               | Key Features                                |
+| --------------------- | --------------------- | ------------------------------------------- |
+| `test_config.py`      | Configuration loading | Environment variables, defaults, validation |
+| `test_storage.py`     | Database operations   | SQLite, search, indexing, data integrity    |
+| `test_imap_client.py` | Email retrieval       | IMAP operations, parsing, attachments       |
+| `test_smtp_client.py` | Email sending         | SMTP operations, CC/BCC, formatting         |
+| `test_composer.py`    | Email composition     | Interactive UI, validation, preview         |
+| `test_connection.py`  | Network connectivity  | IMAP/SMTP connections, SSL/STARTTLS         |
+| `test_ui.py`          | User interface        | Rich console, display formatting, themes    |
+| `test_cli.py`         | Command line          | All CLI commands, arguments, workflows      |
+
+## Troubleshooting
+
+### Common Test Issues
+
+1. **Import Errors**: Ensure you're in the project root directory
+2. **Database Errors**: Tests use temporary databases that should clean up automatically
+3. **Network Timeouts**: Connection tests are mocked and shouldn't make real network calls
+4. **Permission Errors**: Ensure test files have write permissions
+
+### Test Environment Setup
+
+```bash
+# Ensure all dependencies are installed
+pip install -r requirements.txt
+pip install pytest pytest-cov
+
+# Run a quick test to verify setup
+./test-suite count
+```
+
+### Getting Help
+
+- Use `./test-suite help` for all testing options
+- Check individual test files for specific test documentation
+- Review mock configurations for network-dependent tests
+- Use `pytest --tb=long` for detailed error information
+
 - `unittest` (built-in) - Base testing framework
 - `unittest.mock` (built-in) - Mocking external dependencies
 - `tempfile` (built-in) - Temporary files/directories for testing
@@ -414,7 +438,7 @@ These tests are designed for CI/CD environments and provide:
 
 The test suite is optimized for speed:
 
-- **⚡ Fast Execution**: 58 tests complete in ~2-3 seconds
+- **⚡ Fast Execution**: 116 tests complete in ~3 seconds
 - **🔄 Parallel Ready**: Tests are isolated and can run in parallel
 - **💾 Memory Efficient**: Temporary databases are small and cleaned up
 - **🎯 Targeted Mocking**: Only essential components are mocked
