@@ -4,6 +4,7 @@ from rich.console import Console
 console = Console()
 
 def display_inbox(table_name, emails):
+    """Display a list of emails in a formatted table with attachments and flags"""
     table = Table(title=table_name.capitalize())
 
     table.add_column("ID", justify="right", style="cyan", no_wrap=True)

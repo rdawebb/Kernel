@@ -35,7 +35,6 @@ def decode_email_header(header_value):
             return decoded.decode(encoding)
         return str(decoded)
     except Exception:
-        # Fallback to original string if decoding fails
         return str(header_value)
 
 def decode_filename(filename):
@@ -50,7 +49,6 @@ def decode_filename(filename):
         else:
             return decoded_filename[0]
     except Exception:
-        # Fallback to original filename if decoding fails
         return str(filename)
 
 def process_email_message(msg_part):
@@ -129,10 +127,8 @@ def fetch_new_emails(config, fetch_all=False):
         else:
             highest_uid = storage.get_highest_uid()
             if highest_uid:
-                # Fetch only emails newer than what we have
                 status, messages = mail.uid('search', None, f'UID {highest_uid + 1}:*')
             else:
-                # No emails in database yet, fetch all
                 status, messages = mail.search(None, "ALL")
         
         if status != "OK":
@@ -145,7 +141,6 @@ def fetch_new_emails(config, fetch_all=False):
         
         emails_saved = 0
         
-        # Use UID fetch for incremental sync, regular fetch for full sync
         fetch_method = mail.uid if not fetch_all and storage.get_highest_uid() else mail
         
         for email_id in email_ids:
@@ -192,11 +187,9 @@ def parse_email_date(date_str):
         if parsed_date:
             timestamp = time.mktime(parsed_date[:9])
             
-            # Adjust for email's timezone offset to get UTC
             if parsed_date[9] is not None:
                 timestamp -= parsed_date[9]
             
-            # Convert UTC timestamp to local system time
             local_datetime = datetime.datetime.fromtimestamp(timestamp)
             return local_datetime.strftime("%Y-%m-%d"), local_datetime.strftime("%H:%M:%S")
     except Exception:
@@ -253,7 +246,6 @@ def parse_email(email_data, email_id):
 
     except Exception as e:
         print(f"Error parsing email: {e}")
-        # Return partial data with safe defaults
         return {
             "id": email_id,
             "uid": email_id,
@@ -324,7 +316,6 @@ def _save_attachment_to_disk(filename, content, download_path):
     
     file_path = os.path.join(download_path, filename)
     
-    # Handle filename conflicts by appending counter
     counter = 1
     original_file_path = file_path
     while os.path.exists(file_path):

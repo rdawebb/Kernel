@@ -2,10 +2,10 @@ import os
 from dotenv import load_dotenv
 
 def load_config():
+    """Load email configuration from environment variables with validation and defaults"""
     try:
         load_dotenv()
 
-        # Parse IMAP_PORT and SMTP_PORT with error handling
         try:
             imap_port = int(os.getenv("IMAP_PORT", 993))
         except ValueError:

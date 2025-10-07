@@ -19,7 +19,6 @@ def get_db_connection():
         db_path = get_db_path()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(db_path)
-        # Enable row_factory for dict-like access to query results
         conn.row_factory = sqlite3.Row
         return conn
     except Exception as e:
@@ -53,14 +52,14 @@ def convert_emails_to_dict_list(emails):
     """Convert cursor results to list of dictionaries"""
     return [dict(email) for email in emails]
 
-# Base email columns shared by all tables (includes attachments since all tables have it)
 _BASE_EMAIL_COLUMNS_WITH_ATTACHMENTS = """uid, subject, sender as "from", recipient as "to", date, time, attachments"""
 
-# Additional columns
 _FLAGGED_COLUMN = "flagged"
 _BODY_COLUMN = "body"
+_DELETED_DATE_COLUMN = "deleted_at"
+_SENT_STATUS = "sent_status"
+_SEND_AT = "send_at"
 
-# Constructed column constants
 STANDARD_EMAIL_COLUMNS = f"{_BASE_EMAIL_COLUMNS_WITH_ATTACHMENTS}, {_FLAGGED_COLUMN}"
 STANDARD_EMAIL_COLUMNS_WITH_BODY = f"{_BASE_EMAIL_COLUMNS_WITH_ATTACHMENTS}, {_FLAGGED_COLUMN}, {_BODY_COLUMN}"
 STANDARD_EMAIL_COLUMNS_NO_FLAG = _BASE_EMAIL_COLUMNS_WITH_ATTACHMENTS
@@ -68,7 +67,6 @@ STANDARD_EMAIL_COLUMNS_NO_FLAG_WITH_BODY = f"{_BASE_EMAIL_COLUMNS_WITH_ATTACHMEN
 
 STANDARD_EMAIL_ORDER = "ORDER BY date DESC, time DESC"
 
-# Table schema constants
 _BASE_SCHEMA_COLUMNS = """uid TEXT PRIMARY KEY,
     subject TEXT,
     sender TEXT,
@@ -79,14 +77,32 @@ _BASE_SCHEMA_COLUMNS = """uid TEXT PRIMARY KEY,
     attachments TEXT DEFAULT ''"""
 
 FLAGGED_COLUMN = "flagged BOOLEAN DEFAULT 0"
+DELETED_AT_COLUMN = "deleted_at TEXT"
+SENT_STATUS_COLUMN = "sent_status TEXT DEFAULT 'pending'"
+SEND_AT_COLUMN = "send_at TEXT"
 
-def create_email_table(table_name, include_flagged=False):
-    """Create a standardized email table with optional flagged column"""
+def create_email_table(table_name, include_flagged=False, include_deleted=False, include_sent_status=False, include_send_at=False):
+    """Create a standardized email table with optional flagged, deleted, and sent status columns"""
     schema = _BASE_SCHEMA_COLUMNS
+    
     if include_flagged:
-        # Insert flagged column before body
         schema = schema.replace("body TEXT,", f"{FLAGGED_COLUMN},\n    body TEXT,")
     
+    additional_columns = []
+    
+    if include_deleted:
+        additional_columns.append(DELETED_AT_COLUMN)
+    
+    if include_sent_status:
+        additional_columns.append(SENT_STATUS_COLUMN)
+    
+    if include_send_at:
+        additional_columns.append(SEND_AT_COLUMN)
+    
+    if additional_columns:
+        additional_cols_str = ",\n    " + ",\n    ".join(additional_columns)
+        schema = schema.replace("attachments TEXT DEFAULT ''", f"attachments TEXT DEFAULT ''{additional_cols_str}")
+
     return f"""
         CREATE TABLE IF NOT EXISTS {table_name} (
             {schema}
@@ -96,10 +112,10 @@ def create_email_table(table_name, include_flagged=False):
 def initialize_db():
     try:
         execute_query(create_email_table("inbox", include_flagged=True), commit=True)
-        
-        execute_query(create_email_table("sent_emails"), commit=True)
+
+        execute_query(create_email_table("sent_emails", include_sent_status=True, include_send_at=True), commit=True)
         execute_query(create_email_table("drafts"), commit=True)
-        execute_query(create_email_table("deleted_emails"), commit=True)
+        execute_query(create_email_table("deleted_emails", include_deleted=True), commit=True)
 
     except Exception as e:
         raise RuntimeError(f"Failed to initialize database: {e}")
@@ -118,7 +134,7 @@ def backup_db(backup_path=None):
             with sqlite3.connect(backup_path) as dest_conn:
                 source_conn.backup(dest_conn)
         
-        return str(backup_path)  # Return the actual backup path used
+        return str(backup_path)
                 
     except Exception as e:
         raise RuntimeError(f"Failed to backup database: {e}")
@@ -249,7 +265,6 @@ def search_emails_with_attachments(table_name, limit=10):
 def get_highest_uid():
     """Get the highest UID from the database to determine where to start fetching new emails"""
     try:
-        # Cast UID to INTEGER for proper numeric comparison
         result = execute_query("SELECT MAX(CAST(uid AS INTEGER)) FROM inbox", fetch_one=True, fetch_all=False)
         return int(result[0]) if result[0] is not None else None
     except Exception as e:
@@ -263,15 +278,16 @@ def delete_email(email_uid):
     except Exception as e:
         raise RuntimeError(f"Failed to delete email {email_uid}: {e}")
 
-### Generic helper functions for working with multiple email tables ###
+# Generic helper functions for working with multiple email tables
 
 def save_email_to_table(table_name, email):
     """Save email to any email table (sent_emails, drafts, deleted_emails, etc.)"""
     attachments_str = ','.join(email.get("attachments", []))
     
-    # Check if table has flagged column (only emails table)
     has_flagged = table_name == "emails"
-    
+    has_deleted = table_name == "deleted_emails"
+    has_sent_status = table_name == "sent_emails"
+
     if has_flagged:
         execute_query(f"""
             INSERT OR REPLACE INTO {table_name} (uid, subject, sender, recipient, date, time, body, flagged, attachments)
@@ -287,6 +303,40 @@ def save_email_to_table(table_name, email):
             email["flagged"],
             attachments_str
         ), commit=True)
+
+    elif has_deleted:
+        execute_query(f"""
+            INSERT OR REPLACE INTO {table_name} (uid, subject, sender, recipient, date, time, body, attachments, deleted_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            email["uid"],
+            email["subject"],
+            email["from"],
+            email["to"], 
+            email["date"],
+            email["time"],
+            email["body"],
+            attachments_str,
+            email.get("deleted_at")
+        ), commit=True)
+
+    elif has_sent_status:
+        execute_query(f"""
+            INSERT OR REPLACE INTO {table_name} (uid, subject, sender, recipient, date, time, body, attachments, sent_status, send_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            email["uid"],
+            email["subject"],
+            email["from"],
+            email["to"], 
+            email["date"],
+            email["time"],
+            email["body"],
+            attachments_str,
+            email.get("sent_status", "pending"),
+            email.get("send_at")
+        ), commit=True)
+
     else:
         execute_query(f"""
             INSERT OR REPLACE INTO {table_name} (uid, subject, sender, recipient, date, time, body, attachments)
@@ -305,7 +355,6 @@ def save_email_to_table(table_name, email):
 def get_emails_from_table(table_name, limit=10):
     """Get emails from any email table with standard columns and ordering"""
     try:
-        # Determine which columns to select based on table
         if table_name == "emails":
             columns = STANDARD_EMAIL_COLUMNS
         else:
@@ -324,7 +373,6 @@ def get_emails_from_table(table_name, limit=10):
 def get_email_from_table(table_name, email_uid):
     """Get a specific email from any email table"""
     try:
-        # Include body and determine if flagged column exists
         if table_name == "inbox":
             columns = STANDARD_EMAIL_COLUMNS_WITH_BODY
         else:
@@ -369,7 +417,7 @@ def move_email_between_tables(source_table, dest_table, email_uid):
     except Exception as e:
         raise RuntimeError(f"Failed to move email {email_uid} from {source_table} to {dest_table}: {e}")
 
-### Specific functions for sent_emails, drafts, deleted_emails tables ###
+# Specific functions for sent_emails, drafts, deleted_emails tables
 
 def save_sent_email(email):
     """Save email to sent_emails table"""
@@ -410,3 +458,48 @@ def search_draft_emails(keyword, limit=10):
 def search_deleted_emails(keyword, limit=10):
     """Search deleted emails by keyword"""
     return search_emails("deleted_emails", keyword, limit)
+
+def get_pending_emails():
+    """Get all emails with pending status from sent_emails table"""
+    try:
+        emails = execute_query("""
+            SELECT uid, subject, sender, recipient, date, time, body, attachments, sent_status, send_at
+            FROM sent_emails
+            WHERE sent_status = 'pending'
+            ORDER BY send_at ASC
+        """)
+        return convert_emails_to_dict_list(emails)
+    except Exception as e:
+        raise RuntimeError(f"Failed to retrieve pending emails: {e}")
+
+def update_email_status(email_uid, new_status):
+    """Update the status of an email in sent_emails table"""
+    try:
+        execute_query("""
+            UPDATE sent_emails
+            SET sent_status = ?
+            WHERE uid = ?
+        """, (new_status, str(email_uid)), commit=True)
+    except Exception as e:
+        raise RuntimeError(f"Failed to update email status for {email_uid}: {e}")
+
+def get_all_emails_from_table(table_name):
+    """Get all emails from a specific table (used by scheduler)"""
+    try:
+        if table_name == "inbox":
+            columns = STANDARD_EMAIL_COLUMNS_WITH_BODY
+        elif table_name == "sent_emails":
+            columns = f"{STANDARD_EMAIL_COLUMNS_NO_FLAG_WITH_BODY}, sent_status, send_at"
+        elif table_name == "deleted_emails":
+            columns = f"{STANDARD_EMAIL_COLUMNS_NO_FLAG_WITH_BODY}, deleted_at"
+        else:
+            columns = STANDARD_EMAIL_COLUMNS_NO_FLAG_WITH_BODY
+        
+        emails = execute_query(f"""
+            SELECT {columns}
+            FROM {table_name}
+            {STANDARD_EMAIL_ORDER}
+        """)
+        return convert_emails_to_dict_list(emails)
+    except Exception as e:
+        raise RuntimeError(f"Failed to retrieve all emails from {table_name}: {e}")

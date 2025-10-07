@@ -6,11 +6,12 @@ from src.quiet_mail.ui.composer import compose_email
 class TestComposeEmail:
     """Test the interactive email composer"""
     
+    @patch('src.quiet_mail.ui.composer.save_sent_email')
     @patch('src.quiet_mail.ui.composer.send_email')
     @patch('src.quiet_mail.ui.composer.confirm_action')
     @patch('src.quiet_mail.ui.composer.validate_email')
     @patch('src.quiet_mail.ui.composer.console')
-    def test_compose_email_success(self, mock_console, mock_validate, mock_confirm, mock_send):
+    def test_compose_email_success(self, mock_console, mock_validate, mock_confirm, mock_send, mock_save_sent):
         """Test successful email composition and sending"""
         # Setup
         mock_validate.return_value.email = 'test@example.com'  # valid email
@@ -20,7 +21,8 @@ class TestComposeEmail:
             'Line 1',           # body line 1
             'Line 2',           # body line 2
             '',                 # empty line
-            ''                  # second empty line to finish
+            '',                 # second empty line to finish
+            ''                  # send time (empty = immediate)
         ]
         mock_confirm.return_value = True  # confirm send
         mock_send.return_value = True     # send succeeds
@@ -36,6 +38,7 @@ class TestComposeEmail:
             body='Line 1\nLine 2'
         )
         mock_confirm.assert_called_once_with("\nSend this email?")
+        mock_save_sent.assert_called_once()
     
     @patch('src.quiet_mail.ui.composer.console')
     def test_compose_email_empty_recipient(self, mock_console):
@@ -144,11 +147,12 @@ class TestComposeEmail:
         assert result is False
         mock_confirm.assert_called_once_with("Body is empty, continue anyway?")
     
+    @patch('src.quiet_mail.ui.composer.save_sent_email')
     @patch('src.quiet_mail.ui.composer.send_email')
     @patch('src.quiet_mail.ui.composer.validate_email')
     @patch('src.quiet_mail.ui.composer.confirm_action')
     @patch('src.quiet_mail.ui.composer.console')
-    def test_compose_email_empty_body_continue(self, mock_console, mock_confirm, mock_validate, mock_send):
+    def test_compose_email_empty_body_continue(self, mock_console, mock_confirm, mock_validate, mock_send, mock_save_sent):
         """Test composer with empty body and user continues"""
         # Setup
         mock_validate.return_value.email = 'test@example.com'
@@ -156,7 +160,8 @@ class TestComposeEmail:
             'test@example.com',  # recipient
             'Test Subject',      # subject
             '',                  # empty body line
-            ''                   # second empty line to finish
+            '',                  # second empty line to finish
+            ''                   # send time (empty = immediate)
         ]
         mock_confirm.side_effect = [True, True]  # continue with empty body, send
         mock_send.return_value = True
@@ -174,10 +179,11 @@ class TestComposeEmail:
             body=''
         )
     
+    @patch('src.quiet_mail.ui.composer.save_draft_email')
     @patch('src.quiet_mail.ui.composer.validate_email')
     @patch('src.quiet_mail.ui.composer.confirm_action')
     @patch('src.quiet_mail.ui.composer.console')
-    def test_compose_email_user_cancels_send(self, mock_console, mock_confirm, mock_validate):
+    def test_compose_email_user_cancels_send(self, mock_console, mock_confirm, mock_validate, mock_save_draft):
         """Test composer when user cancels at final confirmation"""
         # Setup
         mock_validate.return_value.email = 'test@example.com'
@@ -196,13 +202,15 @@ class TestComposeEmail:
         # Verify
         assert result is False
         mock_confirm.assert_called_once_with("\nSend this email?")
-        mock_console.print.assert_called_with("[yellow]Email cancelled.[/yellow]")
+        mock_console.print.assert_called_with("[yellow]Email cancelled - saved as draft.[/yellow]")
+        mock_save_draft.assert_called_once()
     
+    @patch('src.quiet_mail.ui.composer.save_sent_email')
     @patch('src.quiet_mail.ui.composer.send_email')
     @patch('src.quiet_mail.ui.composer.validate_email')
     @patch('src.quiet_mail.ui.composer.confirm_action')
     @patch('src.quiet_mail.ui.composer.console')
-    def test_compose_email_send_failure(self, mock_console, mock_confirm, mock_validate, mock_send):
+    def test_compose_email_send_failure(self, mock_console, mock_confirm, mock_validate, mock_send, mock_save_sent):
         """Test composer when email sending fails"""
         # Setup
         mock_validate.return_value.email = 'test@example.com'
@@ -211,7 +219,8 @@ class TestComposeEmail:
             'Test Subject',      # subject
             'Test body',         # body
             '',                  # empty line
-            ''                   # second empty line to finish
+            '',                  # second empty line to finish
+            ''                   # send time (empty = immediate)
         ]
         mock_confirm.return_value = True  # confirm send
         mock_send.return_value = False    # send fails
@@ -221,13 +230,15 @@ class TestComposeEmail:
         
         # Verify
         assert result is False
-        mock_console.print.assert_called_with("[bold red]Failed to send email.[/bold red]")
+        mock_console.print.assert_called_with("[bold red]Failed to send email - will try again later.[/bold red]")
+        mock_save_sent.assert_called_once()
     
+    @patch('src.quiet_mail.ui.composer.save_sent_email')
     @patch('src.quiet_mail.ui.composer.send_email')
     @patch('src.quiet_mail.ui.composer.validate_email')
     @patch('src.quiet_mail.ui.composer.confirm_action')
     @patch('src.quiet_mail.ui.composer.console')
-    def test_compose_email_send_exception(self, mock_console, mock_confirm, mock_validate, mock_send):
+    def test_compose_email_send_exception(self, mock_console, mock_confirm, mock_validate, mock_send, mock_save_sent):
         """Test composer when email sending raises exception"""
         # Setup
         mock_validate.return_value.email = 'test@example.com'
@@ -236,7 +247,8 @@ class TestComposeEmail:
             'Test Subject',      # subject
             'Test body',         # body
             '',                  # empty line
-            ''                   # second empty line to finish
+            '',                  # second empty line to finish
+            ''                   # send time (empty = immediate)
         ]
         mock_confirm.return_value = True  # confirm send
         mock_send.side_effect = RuntimeError("SMTP error")
@@ -246,13 +258,15 @@ class TestComposeEmail:
         
         # Verify
         assert result is False
-        mock_console.print.assert_called_with("[bold red]Error sending email: SMTP error[/bold red]")
+        mock_console.print.assert_called_with("[bold red]Error sending email: SMTP error - will try again later.[/bold red]")
+        mock_save_sent.assert_called_once()
     
+    @patch('src.quiet_mail.ui.composer.save_sent_email')
     @patch('src.quiet_mail.ui.composer.send_email')
     @patch('src.quiet_mail.ui.composer.validate_email')
     @patch('src.quiet_mail.ui.composer.confirm_action')
     @patch('src.quiet_mail.ui.composer.console')
-    def test_compose_email_multiline_body(self, mock_console, mock_confirm, mock_validate, mock_send):
+    def test_compose_email_multiline_body(self, mock_console, mock_confirm, mock_validate, mock_send, mock_save_sent):
         """Test composer with multi-line body"""
         # Setup
         mock_validate.return_value.email = 'test@example.com'
@@ -264,7 +278,8 @@ class TestComposeEmail:
             '',                  # empty line
             'Third line',        # body line 3
             '',                  # empty line
-            ''                   # second consecutive empty line to finish
+            '',                  # second consecutive empty line to finish
+            ''                   # send time (empty = immediate)
         ]
         mock_confirm.return_value = True
         mock_send.return_value = True

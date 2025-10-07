@@ -40,7 +40,6 @@ def send_email(to_email=None, subject="Test Email from quiet_mail", body="This i
     try:
         config = load_config()
         
-        # Default to sending to self if no recipient specified
         if not to_email:
             to_email = config['email']
         
@@ -56,7 +55,6 @@ def send_email(to_email=None, subject="Test Email from quiet_mail", body="This i
         
         msg.attach(MIMEText(body, 'plain'))
 
-        # Send the email using context manager
         with smtp_connection() as server:
             recipients = [to_email]
             if cc:

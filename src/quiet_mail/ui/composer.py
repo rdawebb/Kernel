@@ -12,7 +12,7 @@ console = Console()
 def create_email_dict(subject, sender, recipient, body, attachments=None):
     """Create a standardized email dictionary for storage"""
     return {
-        "uid": str(uuid.uuid4()),  # Generate unique ID
+        "uid": str(uuid.uuid4()),
         "subject": subject,
         "from": sender,
         "to": recipient,
@@ -23,9 +23,7 @@ def create_email_dict(subject, sender, recipient, body, attachments=None):
     }
 
 def compose_email():
-    """
-    Interactive email composer - prompts user for all email details
-    """
+    """Interactive email composer - prompts user for all email details"""
     console.print("[bold green]Compose a new email[/bold green]")
 
     recipient = console.input("To: ")
@@ -45,7 +43,6 @@ def compose_email():
         if not confirm_action("Subject is empty, continue anyway?"):
             return False
 
-    # Get body with multi-line support
     console.print("Body (press Enter twice when finished):")
     body_lines = []
     while True:
@@ -54,7 +51,7 @@ def compose_email():
             break
         body_lines.append(line)
     
-    email_body = "\n".join(body_lines[:-1])  # Remove the last empty line
+    email_body = "\n".join(body_lines[:-1])
     
     if not email_body or email_body.strip() == "":
         if not confirm_action("Body is empty, continue anyway?"):
@@ -65,7 +62,6 @@ def compose_email():
     console.print(f"[bold]Subject:[/bold] {email_subject}")
     console.print(f"[bold]Body:[/bold]\n{email_body}")
     
-    # Create email dictionary once for potential storage
     config = load_config()
     email_data = create_email_dict(
         subject=email_subject,
@@ -73,27 +69,49 @@ def compose_email():
         recipient=recipient,
         body=email_body
     )
-    
+
     if not confirm_action("\nSend this email?"):
-        console.print("[yellow]Email cancelled.[/yellow]")
+        console.print("[yellow]Email cancelled - saved as draft.[/yellow]")
         save_draft_email(email_data)
         return False
 
-    try:
-        success = send_email(
-            to_email=recipient,
-            subject=email_subject,
-            body=email_body
-        )
-        if success:
-            console.print("[bold green]Email sent successfully![/bold green]")
+    send_at = console.input("To send later, enter send time (YYYY-MM-DD HH:MM) or leave blank for immediate: ").strip()
+    
+    is_scheduled = bool(send_at)
+    
+    if is_scheduled:
+        try:
+            datetime.datetime.strptime(send_at, "%Y-%m-%d %H:%M")
+            email_data["send_at"] = send_at
+            email_data["sent_status"] = "pending"
+            console.print(f"[yellow]Email scheduled for {send_at} - saved to sent_emails.[/yellow]")
             save_sent_email(email_data)
             return True
-        else:
-            console.print("[bold red]Failed to send email.[/bold red]")
-            save_draft_email(email_data)
+        except ValueError:
+            console.print("[red]Invalid date format. Please use YYYY-MM-DD HH:MM[/red]")
             return False
-    except Exception as e:
-        console.print(f"[bold red]Error sending email: {e}[/bold red]")
-        save_draft_email(email_data)
-        return False
+    else:
+        try:
+            success = send_email(
+                to_email=recipient,
+                subject=email_subject,
+                body=email_body
+            )
+            if success:
+                console.print("[bold green]Email sent successfully![/bold green]")
+                email_data["sent_status"] = "sent"
+                email_data["send_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                save_sent_email(email_data)
+                return True
+            else:
+                console.print("[bold red]Failed to send email - will try again later.[/bold red]")
+                email_data["sent_status"] = "pending"
+                email_data["send_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                save_sent_email(email_data)
+                return False
+        except Exception as e:
+            console.print(f"[bold red]Error sending email: {e} - will try again later.[/bold red]")
+            email_data["sent_status"] = "pending"
+            email_data["send_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            save_sent_email(email_data)
+            return False

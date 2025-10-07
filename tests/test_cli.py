@@ -341,19 +341,24 @@ class TestCLIArgumentParsing(unittest.TestCase):
     @patch('src.quiet_mail.cli.storage.get_email_from_table')
     @patch('src.quiet_mail.cli.storage.delete_email')
     @patch('src.quiet_mail.cli.storage.save_deleted_email')
+    @patch('src.quiet_mail.cli.storage.email_exists')
     @patch('builtins.input', return_value='y')  # Mock user confirmation
-    def test_delete_command_local_only(self, mock_input, mock_save_deleted, mock_delete_email, mock_get_email, mock_console, mock_init_db):
+    def test_delete_command_local_only(self, mock_input, mock_email_exists, mock_save_deleted, mock_delete_email, mock_get_email, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'delete', '123']):
             mock_email_data = {
                 'uid': '123',
                 'subject': 'Email to delete'
             }
             mock_get_email.return_value = mock_email_data
+            mock_email_exists.return_value = False  # Email not in deleted_emails table yet
             
             main()
             
+            mock_email_exists.assert_called_once_with('deleted_emails', '123')
             mock_get_email.assert_called_once_with('inbox', '123')
-            mock_save_deleted.assert_called_once_with(mock_email_data)
+            # Verify the email_data includes deleted_at timestamp
+            saved_email = mock_save_deleted.call_args[0][0]
+            self.assertIn('deleted_at', saved_email)
             mock_delete_email.assert_called_once_with('123')
             # Should not call imap delete for local-only deletion
 
@@ -363,19 +368,24 @@ class TestCLIArgumentParsing(unittest.TestCase):
     @patch('src.quiet_mail.cli.storage.delete_email')
     @patch('src.quiet_mail.cli.storage.save_deleted_email')
     @patch('src.quiet_mail.cli.imap_client.delete_email')
+    @patch('src.quiet_mail.cli.storage.email_exists')
     @patch('builtins.input', return_value='y')  # Mock user confirmation
-    def test_delete_command_server_and_local(self, mock_input, mock_imap_delete, mock_save_deleted, mock_storage_delete, mock_get_email, mock_console, mock_init_db):
+    def test_delete_command_server_and_local(self, mock_input, mock_email_exists, mock_imap_delete, mock_save_deleted, mock_storage_delete, mock_get_email, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'delete', '123', '--all']):
             mock_email_data = {
                 'uid': '123',
                 'subject': 'Email to delete'
             }
             mock_get_email.return_value = mock_email_data
+            mock_email_exists.return_value = False  # Email not in deleted_emails table yet
             
             main()
             
+            mock_email_exists.assert_called_once_with('deleted_emails', '123')
             mock_get_email.assert_called_once_with('inbox', '123')
-            mock_save_deleted.assert_called_once_with(mock_email_data)
+            # Verify the email_data includes deleted_at timestamp
+            saved_email = mock_save_deleted.call_args[0][0]
+            self.assertIn('deleted_at', saved_email)
             mock_storage_delete.assert_called_once_with('123')
             mock_imap_delete.assert_called_once()
 

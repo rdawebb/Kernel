@@ -4,6 +4,7 @@ from rich.console import Console
 console = Console()
 
 def display_search_results(table_name, emails, keyword):
+    """Display search results in a formatted table with dynamic columns based on source"""
     if not emails:
         console.print(f"[yellow]No emails found in '{table_name}' matching '{keyword}'.[/]")
         return
@@ -17,15 +18,14 @@ def display_search_results(table_name, emails, keyword):
     table.add_column("Time", justify="right", style="yellow")
     table.add_column("", style="blue", width=3)  # Attachments column
 
-    # For "all emails", add a source column and check if any emails have flagged data
     has_flagged_emails = False
     if table_name == "all emails":
         table.add_column("Source", style="bright_white", width=12)
         has_flagged_emails = any(email.get("flagged") is not None for email in emails)
         if has_flagged_emails:
-            table.add_column("", justify="center", style="red", width=3) # Flagged column
+            table.add_column("", justify="center", style="red", width=3)  # Flagged column
     elif table_name == "inbox":
-        table.add_column("", justify="center", style="red", width=3) # Flagged column
+        table.add_column("", justify="center", style="red", width=3)  # Flagged column
 
     for email in emails:
         attachments_raw = email.get("attachments", "")
@@ -44,7 +44,6 @@ def display_search_results(table_name, emails, keyword):
         if table_name == "all emails":
             source_table = email.get("source_table", "unknown")
             
-            # Map database table names to display names
             source_display = {
                 "inbox": "Inbox",
                 "sent_emails": "Sent", 

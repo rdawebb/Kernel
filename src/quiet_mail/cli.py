@@ -2,6 +2,7 @@ import argparse
 import os
 import platform
 import subprocess
+from datetime import datetime
 from rich.console import Console
 from quiet_mail.core import imap_client, storage
 from quiet_mail.ui import inbox_viewer, email_viewer, search_viewer, composer
@@ -10,12 +11,13 @@ from quiet_mail.utils.ui_helpers import confirm_action
 
 console = Console()
 
-try:
-    storage.initialize_db()
-
-except Exception as e:
-    console.print(f"[red]Failed to initialize database: {e}[/]")
-    exit(1)
+def initialize_database():
+    """Initialize the database - called from main() to avoid issues during imports"""
+    try:
+        storage.initialize_db()
+    except Exception as e:
+        console.print(f"[red]Failed to initialize database: {e}[/]")
+        exit(1)
 
 def handle_download_action(cfg, email_id, args):
     """Handle attachment download logic"""
@@ -37,7 +39,6 @@ def handle_download_action(cfg, email_id, args):
             console.print(f"[green]Successfully downloaded 1 attachment for email ID {email_id}.[/]")
         
         else:
-            # Default: download first attachment only
             file_path = imap_client.download_attachment_by_index(cfg, email_id, 0, "./attachments")
             console.print(f"[green]Downloaded: {file_path}[/]")
             console.print(f"[green]Successfully downloaded 1 attachment for email ID {email_id}.[/]")
@@ -55,7 +56,6 @@ def setup_argument_parser():
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # Command configurations: (name, help, arguments)
     commands_config = [
         ("list", "List recent emails", [
             ("--limit", {"type": int, "default": 10, "help": "Number of emails to display"}),
@@ -119,7 +119,6 @@ def setup_argument_parser():
         ])
     ]
 
-    # Dynamically create subparsers from configuration
     for command_name, command_help, arguments in commands_config:
         subparser = subparsers.add_parser(command_name, help=command_help)
         for arg_name, arg_config in arguments:
@@ -128,6 +127,8 @@ def setup_argument_parser():
     return parser
 
 def main():
+    initialize_database()
+    
     parser = setup_argument_parser()
     args = parser.parse_args()
 
@@ -158,7 +159,6 @@ def main():
                 fetched_count = imap_client.fetch_new_emails(cfg, fetch_all=True)
                 
             else:
-                # Incremental refresh: only fetch emails newer than what we have
                 console.print("[bold cyan]Fetching new emails from server...[/]")
                 fetched_count = imap_client.fetch_new_emails(cfg, fetch_all=False)
             
@@ -215,7 +215,6 @@ def main():
             console.print(f"[red]Failed to retrieve {status_text} emails: {e}[/]")
 
     elif args.command == "flag":
-        # Ensure user specified exactly one flag operation (not both or neither)
         if args.flag == args.unflag:
             console.print("[red]Please specify either --flag or --unflag.[/]")
             return
@@ -274,7 +273,6 @@ def main():
         try:
             attachments_raw = email_data.get('attachments', '')
             if not attachments_raw or not attachments_raw.strip():
-                # Fallback: if no attachments in database, try fetching directly from server
                 console.print("[yellow]No attachments found in database, checking server...[/]")
                 
                 if args.all and not confirm_action(f"Are you sure you want to download attachments for email ID {args.id}?"):
@@ -284,7 +282,6 @@ def main():
                 handle_download_action(cfg, args.id, args)
                 return
 
-            # Attachment filenames are stored as comma-separated strings
             attachments = [att.strip() for att in attachments_raw.split(',') if att.strip()]
             if not attachments:
                 console.print(f"[yellow]No valid attachments to download for email ID {args.id}.[/]")
@@ -337,7 +334,7 @@ def main():
                 console.print("[red]Attachments folder does not exist.[/]")
                 return
             
-            # Ensure filename doesn't contain path separators
+            # Prevent path traversal attacks by rejecting filenames with path separators
             if os.path.sep in args.filename or ".." in args.filename:
                 console.print("[red]Invalid filename. Please use only the filename from downloads list.[/]")
                 return
@@ -350,11 +347,11 @@ def main():
             console.print(f"[bold cyan]Opening attachment '{args.filename}'...[/]")
             try:
                 if platform.system() == "Darwin":
-                    subprocess.run(["open", file_path], check=True) # macOS
+                    subprocess.run(["open", file_path], check=True)
                 elif platform.system() == "Windows":
-                    os.startfile(file_path) # Windows
+                    os.startfile(file_path)
                 else:
-                    subprocess.run(["xdg-open", file_path], check=True) # Linux and others
+                    subprocess.run(["xdg-open", file_path], check=True)
 
             except subprocess.CalledProcessError as e:
                 console.print(f"[red]Failed to open attachment: {e}[/]")
@@ -374,20 +371,24 @@ def main():
             if not confirm_action(f"Are you sure you want to delete email ID {args.id}?"):
                 console.print("[yellow]Deletion cancelled.[/]")
                 return
-        
+
             email_data = storage.get_email_from_table("inbox", args.id)
             if not email_data:
                 console.print(f"[red]Email with ID {args.id} not found in inbox.[/]")
                 return
                 
             try:
+                email_data["deleted_at"] = datetime.now().strftime("%Y-%m-%d")
+                
                 if args.all:
+                    # Delete from both local database and server
                     storage.save_deleted_email(email_data)
                     storage.delete_email(args.id)
                     imap_client.delete_email(cfg, args.id)
                     console.print(f"[green]Deleted email ID {args.id} from local database and server.[/]")
 
                 else:
+                    # Only delete from local database, keep on server
                     storage.save_deleted_email(email_data)
                     storage.delete_email(args.id)
                     console.print(f"[green]Deleted email ID {args.id} from local database.[/]")
@@ -478,6 +479,7 @@ def main():
                 console.print("[yellow]Database deletion cancelled.[/]")
                 return
 
+            # Second confirmation for extra safety on destructive operation
             if not confirm_action("This is your last chance to cancel. Proceed with deletion?"):
                 console.print("[yellow]Database deletion cancelled.[/]")
                 return
