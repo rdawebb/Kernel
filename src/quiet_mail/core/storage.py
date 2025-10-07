@@ -88,7 +88,7 @@ def create_email_table(table_name, include_flagged=False):
 
 def initialize_db():
     try:
-        execute_query(create_email_table("emails", include_flagged=True), commit=True)
+        execute_query(create_email_table("inbox", include_flagged=True), commit=True)
         
         execute_query(create_email_table("sent_emails"), commit=True)
         execute_query(create_email_table("drafts"), commit=True)
@@ -98,13 +98,13 @@ def initialize_db():
         raise RuntimeError(f"Failed to initialize database: {e}")
 
 def save_email_metadata(email):
-    """Save email metadata to the emails table."""
-    save_email_to_table("emails", email)
+    """Save email metadata to the inbox table."""
+    save_email_to_table("inbox", email)
 
 def save_email_body(uid, body):
     """Save email body content separately (loaded only when viewing specific emails)"""
     execute_query("""
-        UPDATE emails
+        UPDATE inbox
         SET body = ?
         WHERE uid = ?
     """, (body, uid), commit=True)
@@ -113,45 +113,70 @@ def get_inbox(limit=10):
     try:
         emails = execute_query(f"""
             SELECT {STANDARD_EMAIL_COLUMNS}
-            FROM emails
+            FROM inbox
             {STANDARD_EMAIL_ORDER}
             LIMIT ?
         """, (limit,))
         return convert_emails_to_dict_list(emails)
+    
     except Exception as e:
         raise RuntimeError(f"Failed to retrieve inbox: {e}")
-
-def get_email(email_uid):
-    try:
-        email = execute_query(f"""
-            SELECT {STANDARD_EMAIL_COLUMNS_WITH_BODY}
-            FROM emails
-            WHERE uid = ?
-        """, (str(email_uid),), fetch_one=True, fetch_all=False)
-        return dict(email) if email else None
-    except Exception as e:
-        raise RuntimeError(f"Failed to retrieve email {email_uid}: {e}")
     
-def search_emails(keyword, limit=10):
+def search_emails(table_name, keyword, limit=10):
     """Search emails by keyword in subject or sender"""
     try:
         search_term = f"%{keyword}%"
+        
+        if table_name == "inbox":
+            columns = STANDARD_EMAIL_COLUMNS
+        else:
+            columns = STANDARD_EMAIL_COLUMNS_NO_FLAG
+        
         emails = execute_query(f"""
-            SELECT {STANDARD_EMAIL_COLUMNS}
-            FROM emails
+            SELECT {columns}
+            FROM {table_name}
             WHERE subject LIKE ? OR sender LIKE ? or body LIKE ?
             {STANDARD_EMAIL_ORDER}
             LIMIT ?
         """, (search_term, search_term, search_term, limit))
         return convert_emails_to_dict_list(emails)
+    
     except Exception as e:
-        raise RuntimeError(f"Failed to search emails with keyword '{keyword}': {e}")
+        raise RuntimeError(f"Failed to search emails with keyword '{keyword}' in {table_name}: {e}")
+
+def search_all_emails(keyword, limit=50):
+    """Search all email tables by keyword in subject or sender"""
+    try:
+        search_term = f"%{keyword}%"
+        all_emails = []
+        
+        for table_name in ["inbox", "sent_emails", "drafts", "deleted_emails"]:
+            if table_name == "inbox":
+                columns = STANDARD_EMAIL_COLUMNS
+            else:
+                columns = STANDARD_EMAIL_COLUMNS_NO_FLAG
+            
+            emails = execute_query(f"""
+                SELECT {columns}, '{table_name}' AS source_table
+                FROM {table_name}
+                WHERE subject LIKE ? OR sender LIKE ? OR body LIKE ?
+                {STANDARD_EMAIL_ORDER}
+                LIMIT ?
+            """, (search_term, search_term, search_term, limit))
+            all_emails.extend(convert_emails_to_dict_list(emails))
+
+        all_emails.sort(key=lambda email: (email['date'], email['time']), reverse=True)
+
+        return all_emails[:limit]
+    
+    except Exception as e:
+        raise RuntimeError(f"Failed to search all emails with keyword '{keyword}': {e}")
     
 def mark_email_flagged(email_uid, flagged=True):
     """Mark or unmark an email as flagged"""
     try:
         execute_query("""
-            UPDATE emails
+            UPDATE inbox
             SET flagged = ?
             WHERE uid = ?
         """, (1 if flagged else 0, str(email_uid)), commit=True)
@@ -163,7 +188,7 @@ def search_emails_by_flag_status(flagged_status, limit=10):
     try:
         emails = execute_query(f"""
             SELECT {STANDARD_EMAIL_COLUMNS}
-            FROM emails
+            FROM inbox
             WHERE flagged = ?
             {STANDARD_EMAIL_ORDER}
             LIMIT ?
@@ -173,12 +198,12 @@ def search_emails_by_flag_status(flagged_status, limit=10):
         status_name = "flagged" if flagged_status else "unflagged"
         raise RuntimeError(f"Failed to retrieve {status_name} emails: {e}")
     
-def search_emails_with_attachments(limit=10):
+def search_emails_with_attachments(table_name, limit=10):
     """Retrieve emails that have attachments"""
     try:
         emails = execute_query(f"""
             SELECT {STANDARD_EMAIL_COLUMNS}
-            FROM emails
+            FROM {table_name}
             WHERE attachments IS NOT NULL AND attachments != ''
             {STANDARD_EMAIL_ORDER}
             LIMIT ?
@@ -191,7 +216,7 @@ def get_highest_uid():
     """Get the highest UID from the database to determine where to start fetching new emails"""
     try:
         # Cast UID to INTEGER for proper numeric comparison
-        result = execute_query("SELECT MAX(CAST(uid AS INTEGER)) FROM emails", fetch_one=True, fetch_all=False)
+        result = execute_query("SELECT MAX(CAST(uid AS INTEGER)) FROM inbox", fetch_one=True, fetch_all=False)
         return int(result[0]) if result[0] is not None else None
     except Exception as e:
         print(f"Error getting highest UID: {e}")
@@ -200,7 +225,7 @@ def get_highest_uid():
 def delete_email(email_uid):
     """Delete an email from the local database by UID"""
     try:
-        execute_query("DELETE FROM emails WHERE uid = ?", (str(email_uid),), commit=True)
+        execute_query("DELETE FROM inbox WHERE uid = ?", (str(email_uid),), commit=True)
     except Exception as e:
         raise RuntimeError(f"Failed to delete email {email_uid}: {e}")
 
@@ -266,7 +291,7 @@ def get_email_from_table(table_name, email_uid):
     """Get a specific email from any email table"""
     try:
         # Include body and determine if flagged column exists
-        if table_name == "emails":
+        if table_name == "inbox":
             columns = STANDARD_EMAIL_COLUMNS_WITH_BODY
         else:
             columns = STANDARD_EMAIL_COLUMNS_NO_FLAG_WITH_BODY
@@ -312,3 +337,19 @@ def get_draft_emails(limit=10):
 def get_deleted_emails(limit=10):
     """Get deleted emails"""
     return get_emails_from_table("deleted_emails", limit)
+
+def search_inbox_emails(keyword, limit=10):
+    """Search inbox emails by keyword"""
+    return search_emails("inbox", keyword, limit)
+
+def search_sent_emails(keyword, limit=10):
+    """Search sent emails by keyword"""
+    return search_emails("sent_emails", keyword, limit)
+
+def search_draft_emails(keyword, limit=10):
+    """Search draft emails by keyword"""
+    return search_emails("drafts", keyword, limit)
+
+def search_deleted_emails(keyword, limit=10):
+    """Search deleted emails by keyword"""
+    return search_emails("deleted_emails", keyword, limit)

@@ -9,6 +9,7 @@ console = Console()
 
 try:
     storage.initialize_db()
+
 except Exception as e:
     console.print(f"[red]Failed to initialize database: {e}[/]")
     exit(1)
@@ -17,11 +18,12 @@ except Exception as e:
 def get_email_or_exit(email_id):
     """Get email by ID or exit with error message if not found"""
     try:
-        email_data = storage.get_email(email_id)
+        email_data = storage.get_email_from_table("inbox", email_id)
         if not email_data:
             console.print(f"[red]Email with ID {email_id} not found.[/]")
             return None
         return email_data
+    
     except Exception as e:
         console.print(f"[red]Failed to retrieve email {email_id}: {e}[/]")
         return None
@@ -31,21 +33,26 @@ def handle_download_action(cfg, email_id, args):
     try:
         if args.all:
             downloaded_files = imap_client.download_all_attachments(cfg, email_id, "./attachments")
+            
             if downloaded_files:
                 for file_path in downloaded_files:
                     console.print(f"[green]Downloaded: {file_path}[/]")
                 console.print(f"[green]Successfully downloaded {len(downloaded_files)} attachment(s) for email ID {email_id}.[/]")
+            
             else:
                 console.print(f"[yellow]No attachments found for email ID {email_id}.[/]")
+        
         elif args.index is not None:
             file_path = imap_client.download_attachment_by_index(cfg, email_id, args.index, "./attachments")
             console.print(f"[green]Downloaded: {file_path}[/]")
             console.print(f"[green]Successfully downloaded 1 attachment for email ID {email_id}.[/]")
+        
         else:
             # Default: download first attachment only
             file_path = imap_client.download_attachment_by_index(cfg, email_id, 0, "./attachments")
             console.print(f"[green]Downloaded: {file_path}[/]")
             console.print(f"[green]Successfully downloaded 1 attachment for email ID {email_id}.[/]")
+    
     except Exception as e:
         console.print(f"[red]Failed to download attachments: {e}[/]")
         raise
@@ -72,6 +79,8 @@ def setup_argument_parser():
             ("id", {"help": "Email ID (from list command)"})
         ]),
         ("search", "Search emails by keyword", [
+            ("table_name", {"nargs": "?", "choices": ["inbox", "sent", "drafts", "deleted"], "help": "Table to search (not used with --all)"}),
+            ("--all", {"action": "store_true", "help": "Search all emails"}),
             ("keyword", {"help": "Keyword to search in emails"})
         ]),
         ("flagged", "List flagged emails", [
@@ -117,6 +126,7 @@ def main():
 
     try:
         cfg = config.load_config()
+
     except Exception as e:
         console.print(f"[red]Configuration error: {e}[/]")
         return
@@ -125,7 +135,8 @@ def main():
         console.print("[bold cyan]Loading emails...[/]")
         try:
             emails = storage.get_inbox(limit=args.limit)
-            inbox_viewer.display_inbox(emails)
+            inbox_viewer.display_inbox("inbox", emails)
+
         except Exception as e:
             console.print(f"[red]Failed to load emails: {e}[/]")
 
@@ -138,6 +149,7 @@ def main():
                     return
                 console.print("[bold cyan]Fetching all emails from server...[/]")
                 fetched_count = imap_client.fetch_new_emails(cfg, fetch_all=True)
+                
             else:
                 # Incremental refresh: only fetch emails newer than what we have
                 console.print("[bold cyan]Fetching new emails from server...[/]")
@@ -146,13 +158,15 @@ def main():
             console.print(f"[green]Fetched {fetched_count} new email(s) from server.[/]")
             console.print("[bold cyan]Loading emails...[/]")
             emails = storage.get_inbox(limit=args.limit)
-            inbox_viewer.display_inbox(emails)
+            inbox_viewer.display_inbox("inbox", emails)
+
         except Exception as e:
             console.print(f"[red]Failed to fetch or load emails: {e}[/]")
 
     elif args.command == "view":
         console.print(f"[bold cyan]Fetching email {args.id}...[/]")
         email_data = get_email_or_exit(args.id)
+
         if email_data:
             try:
                 email_viewer.display_email(email_data)
@@ -160,11 +174,22 @@ def main():
                 console.print(f"[red]Failed to display email: {e}[/]")
 
     elif args.command == "search":
-        console.print(f"[bold cyan]Searching emails for '{args.keyword}'...[/]")
-        
         try:
-            search_results = storage.search_emails(args.keyword)
-            search_viewer.display_search_results(search_results, args.keyword)
+            # Validate arguments
+            if not args.all and not args.table_name:
+                console.print("[red]Error: Must specify either table_name or --all flag[/]")
+                return
+            
+            if args.all:
+                console.print(f"[bold cyan]Searching all emails for '{args.keyword}'...[/]")
+                search_results = storage.search_all_emails(args.keyword)
+                search_viewer.display_search_results("all emails", search_results, args.keyword)
+
+            else:
+                console.print(f"[bold cyan]Searching {args.table_name} for '{args.keyword}'...[/]")
+                search_results = storage.search_emails(args.table_name, args.keyword)
+                search_viewer.display_search_results(args.table_name, search_results, args.keyword)
+
         except Exception as e:
             console.print(f"[red]Failed to search emails: {e}[/]")
 
@@ -175,7 +200,8 @@ def main():
         
         try:
             emails = storage.search_emails_by_flag_status(flagged_status, limit=args.limit)
-            search_viewer.display_search_results(emails, f"{status_text} emails")
+            search_viewer.display_search_results("inbox", emails, f"{status_text} emails")
+
         except Exception as e:
             console.print(f"[red]Failed to retrieve {status_text} emails: {e}[/]")
 
@@ -192,6 +218,7 @@ def main():
                 storage.mark_email_flagged(args.id, flag_status)
                 action = "Flagged" if args.flag else "Unflagged"
                 console.print(f"[green]{action} email ID {args.id} successfully.[/]")
+
             except Exception as e:
                 console.print(f"[red]Failed to update flag status: {e}[/]")
 
@@ -199,11 +226,12 @@ def main():
         console.print("[bold cyan]Loading emails with attachments...[/]")
         
         try:
-            emails = storage.search_emails_with_attachments(limit=args.limit)
+            emails = storage.search_emails_with_attachments("inbox", limit=args.limit)
             if not emails:
                 console.print("[yellow]No emails with attachments found.[/]")
                 return
-            inbox_viewer.display_inbox(emails)
+            inbox_viewer.display_inbox("inbox", emails)
+
         except Exception as e:
             console.print(f"[red]Failed to retrieve emails with attachments: {e}[/]")
 
@@ -271,10 +299,12 @@ def main():
                     storage.delete_email(args.id)
                     imap_client.delete_email(cfg, args.id)
                     console.print(f"[green]Deleted email ID {args.id} from local database and server.[/]")
+
                 else:
                     storage.save_deleted_email(email_data)
                     storage.delete_email(args.id)
                     console.print(f"[green]Deleted email ID {args.id} from local database.[/]")
+
             except Exception as e:
                 console.print(f"[red]Failed to delete email: {e}[/]")
 
@@ -283,6 +313,7 @@ def main():
             result = composer.compose_email()
             if not result:
                 console.print("[yellow]Email composition cancelled or failed.[/yellow]")
+
         except Exception as e:
             console.print(f"[red]Failed to compose/send email: {e}[/]")
 

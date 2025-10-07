@@ -6,9 +6,10 @@ from unittest.mock import patch
 
 from src.quiet_mail.core.storage import (
     get_db_path, get_db_connection, initialize_db,
-    save_email_metadata, save_email_body, get_inbox, get_email,
+    save_email_metadata, save_email_body, get_inbox, get_email_from_table,
     search_emails, mark_email_flagged, search_emails_by_flag_status,
-    search_emails_with_attachments, get_highest_uid, delete_email
+    search_emails_with_attachments, get_highest_uid, delete_email,
+    search_all_emails, save_email_to_table
 )
 
 
@@ -52,7 +53,7 @@ class TestStorage(unittest.TestCase):
         conn = sqlite3.connect(actual_db_path)
         cursor = conn.cursor()
         
-        cursor.execute("PRAGMA table_info(emails)")
+        cursor.execute("PRAGMA table_info(inbox)")
         columns = cursor.fetchall()
         
         column_names = [col[1] for col in columns]
@@ -70,7 +71,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -91,7 +92,7 @@ class TestStorage(unittest.TestCase):
         actual_db_path = get_db_path()
         conn = sqlite3.connect(actual_db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM emails")
+        cursor.execute("SELECT uid, subject, sender, recipient, date, time, body, flagged FROM inbox")
         rows = cursor.fetchall()
         
         self.assertEqual(len(rows), 1)
@@ -127,7 +128,7 @@ class TestStorage(unittest.TestCase):
         actual_db_path = get_db_path()
         conn = sqlite3.connect(actual_db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT body FROM emails WHERE uid = ?", ('test_uid_123',))
+        cursor.execute("SELECT body FROM inbox WHERE uid = ?", ('test_uid_123',))
         result = cursor.fetchone()
         conn.close()
         
@@ -140,7 +141,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -153,7 +154,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -204,7 +205,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -233,7 +234,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -250,7 +251,7 @@ class TestStorage(unittest.TestCase):
         }
         save_email_metadata(test_email)
         
-        email = get_email('test_uid_123')
+        email = get_email_from_table('inbox', 'test_uid_123')
         
         self.assertIsNotNone(email)
         self.assertEqual(email['subject'], 'Test Email')
@@ -262,11 +263,11 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
-        email = get_email('nonexistent_uid')
+        email = get_email_from_table('inbox', 'nonexistent_uid')
         self.assertIsNone(email)
     
     def test_search_emails_by_keyword(self):
@@ -275,7 +276,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -302,21 +303,21 @@ class TestStorage(unittest.TestCase):
             save_email_body(uid, f"Body content for {subject}")
         
         # Test search by subject keyword
-        results = search_emails('Meeting')
+        results = search_emails('inbox', 'Meeting')
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]['subject'], 'Important Meeting')
         
         # Test search by sender keyword
-        results = search_emails('important')
+        results = search_emails('inbox', 'important')
         self.assertEqual(len(results), 2)  # Should match subject "Important Meeting" and sender "important@example.com"
         
         # Test search by body keyword
-        results = search_emails('Status Update')
+        results = search_emails('inbox', 'Status Update')
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]['subject'], 'Status Update')
         
         # Test no results
-        results = search_emails('nonexistent')
+        results = search_emails('inbox', 'nonexistent')
         self.assertEqual(len(results), 0)
     
     def test_mark_email_flagged(self):
@@ -325,7 +326,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -349,7 +350,7 @@ class TestStorage(unittest.TestCase):
         # Verify it's flagged
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT flagged FROM emails WHERE uid = ?", ('test_uid',))
+        cursor.execute("SELECT flagged FROM inbox WHERE uid = ?", ('test_uid',))
         result = cursor.fetchone()
         conn.close()
         
@@ -362,7 +363,7 @@ class TestStorage(unittest.TestCase):
         # Verify it's unflagged
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT flagged FROM emails WHERE uid = ?", ('test_uid',))
+        cursor.execute("SELECT flagged FROM inbox WHERE uid = ?", ('test_uid',))
         result = cursor.fetchone()
         conn.close()
         
@@ -375,7 +376,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -425,7 +426,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -474,7 +475,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -510,7 +511,7 @@ class TestStorage(unittest.TestCase):
         # Clear any existing data
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM emails")
+        cursor.execute("DELETE FROM inbox")
         conn.commit()
         conn.close()
         
@@ -530,7 +531,7 @@ class TestStorage(unittest.TestCase):
         mark_email_flagged('test_uid', True)
         
         # Test that search_emails includes flagged column
-        results = search_emails('Test')
+        results = search_emails('inbox', 'Test')
         self.assertEqual(len(results), 1)
         self.assertIn('flagged', results[0])
         self.assertEqual(results[0]['flagged'], 1)
@@ -578,7 +579,7 @@ class TestStorage(unittest.TestCase):
         save_email_metadata(email_without_attachments)
         
         # Test searching emails with attachments
-        results = search_emails_with_attachments(limit=10)
+        results = search_emails_with_attachments("inbox", limit=10)
         
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["subject"], "Email with attachments")
@@ -608,6 +609,75 @@ class TestStorage(unittest.TestCase):
         highest_uid = get_highest_uid()
         self.assertEqual(highest_uid, 12)
 
+    def test_search_all_emails(self):
+        """Test searching across all email tables"""
+        initialize_db()
+        
+        # Create test emails in different tables
+        inbox_email = {
+            "uid": "inbox_001",
+            "subject": "Important inbox message",
+            "from": "sender@example.com",
+            "to": "recipient@example.com",
+            "date": "2025-10-05",
+            "time": "10:00:00",
+            "body": "This is a test message in inbox",
+            "flagged": True,
+            "attachments": ""
+        }
+        
+        sent_email = {
+            "uid": "sent_001", 
+            "subject": "Sent important message",
+            "from": "sender@example.com",
+            "to": "recipient@example.com",
+            "date": "2025-10-05",
+            "time": "11:00:00",
+            "body": "This is a test message in sent",
+            "attachments": ""
+        }
+        
+        draft_email = {
+            "uid": "draft_001",
+            "subject": "Draft message about importance", 
+            "from": "sender@example.com",
+            "to": "recipient@example.com",
+            "date": "2025-10-05",
+            "time": "12:00:00",
+            "body": "This is a test message in drafts",
+            "attachments": ""
+        }
+        
+        # Save emails to different tables
+        save_email_metadata(inbox_email)  # Goes to inbox
+        save_email_to_table("sent_emails", sent_email)
+        save_email_to_table("drafts", draft_email)
+        
+        # Test search across all tables
+        results = search_all_emails("important")
+        
+        # Should find emails from multiple tables
+        self.assertGreaterEqual(len(results), 2)  # At least inbox and sent
+        
+        # Verify results include source_table field
+        for result in results:
+            self.assertIn('source_table', result)
+            self.assertIn(result['source_table'], ['inbox', 'sent_emails', 'drafts', 'deleted_emails'])
+        
+        # Verify specific emails are found
+        subjects = [result['subject'] for result in results]
+        self.assertIn("Important inbox message", subjects)
+        self.assertIn("Sent important message", subjects)
+        
+        # Test search with no results
+        no_results = search_all_emails("nonexistent_keyword")
+        self.assertEqual(len(no_results), 0)
+        
+        # Test that flagged data is preserved for inbox emails
+        inbox_results = [r for r in results if r.get('source_table') == 'inbox']
+        if inbox_results:
+            self.assertIn('flagged', inbox_results[0])
+
     def test_delete_email(self):
         initialize_db()
         
@@ -627,7 +697,7 @@ class TestStorage(unittest.TestCase):
         save_email_metadata(test_email)
         
         # Verify email exists
-        retrieved_email = get_email("delete_test_001")
+        retrieved_email = get_email_from_table("inbox", "delete_test_001")
         self.assertIsNotNone(retrieved_email)
         self.assertEqual(retrieved_email["subject"], "Email to delete")
         
@@ -635,7 +705,7 @@ class TestStorage(unittest.TestCase):
         delete_email("delete_test_001")
         
         # Verify email is deleted
-        deleted_email = get_email("delete_test_001")
+        deleted_email = get_email_from_table("inbox", "delete_test_001")
         self.assertIsNone(deleted_email)
 
     def test_delete_email_nonexistent(self):

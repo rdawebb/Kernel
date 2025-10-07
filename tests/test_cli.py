@@ -57,7 +57,7 @@ class TestCLI(unittest.TestCase):
     @patch('sys.argv', ['cli.py', 'view', '1'])
     @patch('quiet_mail.core.storage.initialize_db')
     @patch('quiet_mail.ui.email_viewer.display_email')
-    @patch('quiet_mail.core.storage.get_email')
+    @patch('quiet_mail.core.storage.get_email_from_table')
     @patch('src.quiet_mail.cli.console')  # Mock the global console object
     def test_view_command_existing_email(self, mock_console, mock_get_email, mock_display_email, mock_init_db):
         mock_email = {
@@ -72,12 +72,12 @@ class TestCLI(unittest.TestCase):
         main()
         
         # CLI passes string arguments, not integers
-        mock_get_email.assert_called_once_with('1')
+        mock_get_email.assert_called_once_with('inbox', '1')
         mock_display_email.assert_called_once_with(mock_email)
     
     @patch('sys.argv', ['cli.py', 'view', '999'])
     @patch('quiet_mail.core.storage.initialize_db')
-    @patch('quiet_mail.core.storage.get_email')
+    @patch('quiet_mail.core.storage.get_email_from_table')
     @patch('src.quiet_mail.cli.console')  # Mock the global console object
     def test_view_command_nonexistent_email(self, mock_console, mock_get_email, mock_init_db):
         mock_get_email.return_value = None
@@ -171,7 +171,7 @@ class TestCLI(unittest.TestCase):
         loading_found = any('Loading emails' in call for call in calls)
         self.assertTrue(loading_found)
 
-    @patch('sys.argv', ['cli.py', 'search', 'test_keyword'])
+    @patch('sys.argv', ['cli.py', 'search', 'inbox', 'test_keyword'])
     @patch('src.quiet_mail.cli.console')
     @patch('quiet_mail.core.storage.search_emails')
     @patch('quiet_mail.ui.search_viewer.display_search_results')
@@ -182,8 +182,8 @@ class TestCLI(unittest.TestCase):
         
         main()
         
-        mock_search_emails.assert_called_once_with('test_keyword')
-        mock_display_results.assert_called_once_with(mock_search_emails.return_value, 'test_keyword')
+        mock_search_emails.assert_called_once_with('inbox', 'test_keyword')
+        mock_display_results.assert_called_once_with('inbox', mock_search_emails.return_value, 'test_keyword')
     
     @patch('sys.argv', ['cli.py', 'flagged', '--limit', '5'])
     @patch('src.quiet_mail.cli.console')
@@ -197,7 +197,7 @@ class TestCLI(unittest.TestCase):
         main()
         
         mock_search_flagged.assert_called_once_with(True, limit=5)
-        mock_display_results.assert_called_once_with(mock_search_flagged.return_value, 'flagged emails')
+        mock_display_results.assert_called_once_with('inbox', mock_search_flagged.return_value, 'flagged emails')
     
     @patch('sys.argv', ['cli.py', 'unflagged', '--limit', '3'])
     @patch('src.quiet_mail.cli.console')
@@ -211,18 +211,18 @@ class TestCLI(unittest.TestCase):
         main()
         
         mock_search_unflagged.assert_called_once_with(False, limit=3)
-        mock_display_results.assert_called_once_with(mock_search_unflagged.return_value, 'unflagged emails')
+        mock_display_results.assert_called_once_with('inbox', mock_search_unflagged.return_value, 'unflagged emails')
     
     @patch('sys.argv', ['cli.py', 'flag', 'test_uid', '--flag'])
     @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage.get_email')
+    @patch('quiet_mail.core.storage.get_email_from_table')
     @patch('quiet_mail.core.storage.mark_email_flagged')
     def test_flag_command_flag(self, mock_mark_flagged, mock_get_email, mock_console):
         mock_get_email.return_value = {'id': 'test_uid', 'subject': 'Test Email'}
         
         main()
         
-        mock_get_email.assert_called_once_with('test_uid')
+        mock_get_email.assert_called_once_with('inbox', 'test_uid')
         mock_mark_flagged.assert_called_once_with('test_uid', True)
         mock_console.print.assert_called()
         calls = [str(call) for call in mock_console.print.call_args_list]
@@ -231,14 +231,14 @@ class TestCLI(unittest.TestCase):
     
     @patch('sys.argv', ['cli.py', 'flag', 'test_uid', '--unflag'])
     @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage.get_email')
+    @patch('quiet_mail.core.storage.get_email_from_table')
     @patch('quiet_mail.core.storage.mark_email_flagged')
     def test_flag_command_unflag(self, mock_mark_flagged, mock_get_email, mock_console):
         mock_get_email.return_value = {'id': 'test_uid', 'subject': 'Test Email'}
         
         main()
         
-        mock_get_email.assert_called_once_with('test_uid')
+        mock_get_email.assert_called_once_with('inbox', 'test_uid')
         mock_mark_flagged.assert_called_once_with('test_uid', False)
         mock_console.print.assert_called()
         calls = [str(call) for call in mock_console.print.call_args_list]
@@ -257,13 +257,13 @@ class TestCLI(unittest.TestCase):
     
     @patch('sys.argv', ['cli.py', 'flag', 'nonexistent_uid', '--flag'])
     @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage.get_email')
+    @patch('quiet_mail.core.storage.get_email_from_table')
     def test_flag_command_nonexistent_email(self, mock_get_email, mock_console):
         mock_get_email.return_value = None
         
         main()
         
-        mock_get_email.assert_called_once_with('nonexistent_uid')
+        mock_get_email.assert_called_once_with('inbox', 'nonexistent_uid')
         mock_console.print.assert_called()
         calls = [str(call) for call in mock_console.print.call_args_list]
         error_found = any('Email with ID nonexistent_uid not found' in call for call in calls)
@@ -303,7 +303,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
             
             main()
             
-            mock_search_attachments.assert_called_once_with(limit=5)
+            mock_search_attachments.assert_called_once_with('inbox', limit=5)
             mock_display_inbox.assert_called_once()
 
     @patch('src.quiet_mail.core.storage.initialize_db')
@@ -321,7 +321,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
 
     @patch('src.quiet_mail.core.storage.initialize_db')
     @patch('src.quiet_mail.cli.console')
-    @patch('src.quiet_mail.cli.storage.get_email')
+    @patch('src.quiet_mail.cli.storage.get_email_from_table')
     @patch('src.quiet_mail.cli.handle_download_action')
     def test_download_command_with_attachments(self, mock_handle_download, mock_get_email, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'download', '123', '--all']):
@@ -333,12 +333,12 @@ class TestCLIArgumentParsing(unittest.TestCase):
             
             main()
             
-            mock_get_email.assert_called_once_with('123')
+            mock_get_email.assert_called_once_with('inbox', '123')
             mock_handle_download.assert_called_once()
 
     @patch('src.quiet_mail.core.storage.initialize_db')
     @patch('src.quiet_mail.cli.console')
-    @patch('src.quiet_mail.cli.storage.get_email')
+    @patch('src.quiet_mail.cli.storage.get_email_from_table')
     @patch('src.quiet_mail.cli.storage.delete_email')
     @patch('src.quiet_mail.cli.storage.save_deleted_email')
     @patch('builtins.input', return_value='y')  # Mock user confirmation
@@ -352,14 +352,14 @@ class TestCLIArgumentParsing(unittest.TestCase):
             
             main()
             
-            mock_get_email.assert_called_once_with('123')
+            mock_get_email.assert_called_once_with('inbox', '123')
             mock_save_deleted.assert_called_once_with(mock_email_data)
             mock_delete_email.assert_called_once_with('123')
             # Should not call imap delete for local-only deletion
 
     @patch('src.quiet_mail.core.storage.initialize_db')
     @patch('src.quiet_mail.cli.console')
-    @patch('src.quiet_mail.cli.storage.get_email')
+    @patch('src.quiet_mail.cli.storage.get_email_from_table')
     @patch('src.quiet_mail.cli.storage.delete_email')
     @patch('src.quiet_mail.cli.storage.save_deleted_email')
     @patch('src.quiet_mail.cli.imap_client.delete_email')
@@ -374,7 +374,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
             
             main()
             
-            mock_get_email.assert_called_once_with('123')
+            mock_get_email.assert_called_once_with('inbox', '123')
             mock_save_deleted.assert_called_once_with(mock_email_data)
             mock_storage_delete.assert_called_once_with('123')
             mock_imap_delete.assert_called_once()
