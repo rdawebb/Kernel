@@ -22,7 +22,7 @@ def display_inbox(emails):
         attachments = "📎" if has_attachments else ""
         
         table.add_row(
-            str(email.get("id")),
+            str(email.get("uid")),
             email.get("from", "N/A"),
             email.get("subject", "No Subject"),
             email.get("date", "Unknown Date"),

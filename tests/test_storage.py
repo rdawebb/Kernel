@@ -56,7 +56,7 @@ class TestStorage(unittest.TestCase):
         columns = cursor.fetchall()
         
         column_names = [col[1] for col in columns]
-        expected_columns = ['id', 'uid', 'subject', 'sender', 'recipient', 'date', 'time', 'body', 'flagged']
+        expected_columns = ['uid', 'subject', 'sender', 'recipient', 'date', 'time', 'body', 'flagged']
         
         for col in expected_columns:
             self.assertIn(col, column_names)
@@ -96,12 +96,12 @@ class TestStorage(unittest.TestCase):
         
         self.assertEqual(len(rows), 1)
         row = rows[0]
-        self.assertEqual(row[1], 'test_uid_123')  # uid
-        self.assertEqual(row[2], 'Test Subject')  # subject
-        self.assertEqual(row[3], 'sender@example.com')  # sender
-        self.assertEqual(row[4], 'recipient@example.com')  # recipient
-        self.assertEqual(row[5], '2025-10-02')  # date
-        self.assertEqual(row[6], '10:30:00')  # time
+        self.assertEqual(row[0], 'test_uid_123')  # uid (now PRIMARY KEY, first column)
+        self.assertEqual(row[1], 'Test Subject')  # subject
+        self.assertEqual(row[2], 'sender@example.com')  # sender
+        self.assertEqual(row[3], 'recipient@example.com')  # recipient
+        self.assertEqual(row[4], '2025-10-02')  # date
+        self.assertEqual(row[5], '10:30:00')  # time
         
         conn.close()
     

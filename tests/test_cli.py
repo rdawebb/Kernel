@@ -61,7 +61,7 @@ class TestCLI(unittest.TestCase):
     @patch('src.quiet_mail.cli.console')  # Mock the global console object
     def test_view_command_existing_email(self, mock_console, mock_get_email, mock_display_email, mock_init_db):
         mock_email = {
-            'id': 1,
+            'uid': '1',
             'from': 'test@example.com',
             'subject': 'Test Email',
             'date': '2025-10-02',
@@ -340,17 +340,20 @@ class TestCLIArgumentParsing(unittest.TestCase):
     @patch('src.quiet_mail.cli.console')
     @patch('src.quiet_mail.cli.storage.get_email')
     @patch('src.quiet_mail.cli.storage.delete_email')
+    @patch('src.quiet_mail.cli.storage.save_deleted_email')
     @patch('builtins.input', return_value='y')  # Mock user confirmation
-    def test_delete_command_local_only(self, mock_input, mock_delete_email, mock_get_email, mock_console, mock_init_db):
+    def test_delete_command_local_only(self, mock_input, mock_save_deleted, mock_delete_email, mock_get_email, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'delete', '123']):
-            mock_get_email.return_value = {
-                'id': '123',
+            mock_email_data = {
+                'uid': '123',
                 'subject': 'Email to delete'
             }
+            mock_get_email.return_value = mock_email_data
             
             main()
             
             mock_get_email.assert_called_once_with('123')
+            mock_save_deleted.assert_called_once_with(mock_email_data)
             mock_delete_email.assert_called_once_with('123')
             # Should not call imap delete for local-only deletion
 
@@ -358,18 +361,21 @@ class TestCLIArgumentParsing(unittest.TestCase):
     @patch('src.quiet_mail.cli.console')
     @patch('src.quiet_mail.cli.storage.get_email')
     @patch('src.quiet_mail.cli.storage.delete_email')
+    @patch('src.quiet_mail.cli.storage.save_deleted_email')
     @patch('src.quiet_mail.cli.imap_client.delete_email')
     @patch('builtins.input', return_value='y')  # Mock user confirmation
-    def test_delete_command_server_and_local(self, mock_input, mock_imap_delete, mock_storage_delete, mock_get_email, mock_console, mock_init_db):
+    def test_delete_command_server_and_local(self, mock_input, mock_imap_delete, mock_save_deleted, mock_storage_delete, mock_get_email, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'delete', '123', '--all']):
-            mock_get_email.return_value = {
-                'id': '123',
+            mock_email_data = {
+                'uid': '123',
                 'subject': 'Email to delete'
             }
+            mock_get_email.return_value = mock_email_data
             
             main()
             
             mock_get_email.assert_called_once_with('123')
+            mock_save_deleted.assert_called_once_with(mock_email_data)
             mock_storage_delete.assert_called_once_with('123')
             mock_imap_delete.assert_called_once()
 

@@ -267,10 +267,12 @@ def main():
         if email_data:
             try:
                 if args.all:
+                    storage.save_deleted_email(email_data)
                     storage.delete_email(args.id)
                     imap_client.delete_email(cfg, args.id)
                     console.print(f"[green]Deleted email ID {args.id} from local database and server.[/]")
                 else:
+                    storage.save_deleted_email(email_data)
                     storage.delete_email(args.id)
                     console.print(f"[green]Deleted email ID {args.id} from local database.[/]")
             except Exception as e:

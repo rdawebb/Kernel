@@ -74,6 +74,7 @@ test_emails.db
 attachments/*
 !attachments/.gitkeep
 data/*
+!data/.gitkeep
 
 # Logs
 *.log

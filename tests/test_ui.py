@@ -271,7 +271,7 @@ class TestUIIntegration(unittest.TestCase):
     
     def test_ui_components_dont_interfere(self):
         """Test that both UI components can be used together without issues"""
-        emails = [{'id': 1, 'from': 'test@example.com', 'subject': 'Test', 'date': '2025-10-02'}]
+        emails = [{'uid': '1', 'from': 'test@example.com', 'subject': 'Test', 'date': '2025-10-02'}]
         
         f = io.StringIO()
         with contextlib.redirect_stdout(f):
