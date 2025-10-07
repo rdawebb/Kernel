@@ -29,7 +29,8 @@ def load_config():
             "smtp_use_ssl": smtp_use_ssl,
             "email": os.getenv("EMAIL"),
             "password": os.getenv("PASSWORD"),
-            "db_path": os.path.expanduser(os.getenv("DB_PATH", "emails.db"))
+            "db_path": os.path.expanduser(os.getenv("DB_PATH", "emails.db")),
+            "backup_path": os.path.expanduser(os.getenv("BACKUP_PATH", "backup.db"))
         }
 
         if not all([config["imap_server"], config["smtp_server"], config["email"], config["password"]]):

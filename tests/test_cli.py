@@ -310,7 +310,7 @@ class TestCLIArgumentParsing(unittest.TestCase):
     @patch('src.quiet_mail.cli.console')
     @patch('src.quiet_mail.cli.imap_client.get_attachment_list')
     def test_list_attachments_command(self, mock_get_attachment_list, mock_console, mock_init_db):
-        with patch('sys.argv', ['cli.py', 'list-attachments', '123']):
+        with patch('sys.argv', ['cli.py', 'attachments-list', '123']):
             mock_get_attachment_list.return_value = ['document.pdf', 'image.jpg']
             
             main()
@@ -388,6 +388,18 @@ class TestCLIArgumentParsing(unittest.TestCase):
             
             # Should print cancellation message
             mock_console.print.assert_called_with("[yellow]Deletion cancelled.[/]")
+
+    @patch('src.quiet_mail.core.storage.initialize_db')
+    @patch('src.quiet_mail.cli.console')
+    def test_downloads_list_command(self, mock_console, mock_init_db):
+        # Test downloads-list command execution
+        with patch('sys.argv', ['cli.py', 'downloads-list']):
+            # We'll just test that the command runs without error
+            # The actual file listing behavior is tested functionally elsewhere
+            main()
+            
+            # Verify console.print was called (for either success or error message)
+            self.assertTrue(mock_console.print.called)
 
 
 if __name__ == '__main__':

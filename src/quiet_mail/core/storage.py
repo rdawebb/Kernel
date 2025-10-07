@@ -3,9 +3,16 @@ from pathlib import Path
 from contextlib import contextmanager
 from quiet_mail.utils.config import load_config
 
-def get_db_path():
+def get_config_path(path_key):
+    """Get a path from config by key name"""
     config = load_config()
-    return Path(config["db_path"])
+    return Path(config[path_key])
+
+def get_db_path():
+    return get_config_path("db_path")
+
+def get_backup_path():
+    return get_config_path("backup_path")
 
 def get_db_connection():
     try:
@@ -96,6 +103,33 @@ def initialize_db():
 
     except Exception as e:
         raise RuntimeError(f"Failed to initialize database: {e}")
+
+def backup_db(backup_path=None):
+    try:
+        db_path = get_db_path()
+        if backup_path is None:
+            backup_path = get_backup_path()
+        else:
+            backup_path = Path(backup_path)
+        
+        backup_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with sqlite3.connect(db_path) as source_conn:
+            with sqlite3.connect(backup_path) as dest_conn:
+                source_conn.backup(dest_conn)
+        
+        return str(backup_path)  # Return the actual backup path used
+                
+    except Exception as e:
+        raise RuntimeError(f"Failed to backup database: {e}")
+
+def delete_db():
+    try:
+        db_path = get_db_path()
+        if db_path.exists():
+            db_path.unlink()
+    except Exception as e:
+        raise RuntimeError(f"Failed to delete database: {e}")
 
 def save_email_metadata(email):
     """Save email metadata to the inbox table."""
@@ -311,6 +345,29 @@ def delete_email_from_table(table_name, email_uid):
         execute_query(f"DELETE FROM {table_name} WHERE uid = ?", (str(email_uid),), commit=True)
     except Exception as e:
         raise RuntimeError(f"Failed to delete email {email_uid} from {table_name}: {e}")
+    
+def email_exists(table_name, email_uid):
+    """Check if an email exists in the specified table"""
+    try:
+        result = execute_query(f"""
+            SELECT uid FROM {table_name} 
+            WHERE uid = ?
+        """, (str(email_uid),), fetch_one=True, fetch_all=False)
+        return result is not None
+    except Exception as e:
+        raise RuntimeError(f"Failed to check if email {email_uid} exists in {table_name}: {e}")
+    
+def move_email_between_tables(source_table, dest_table, email_uid):
+    """Move an email from one table to another (e.g., inbox to deleted_emails)"""
+    try:
+        email = get_email_from_table(source_table, email_uid)
+        if not email:
+            raise ValueError(f"Email {email_uid} not found in {source_table}")
+        
+        save_email_to_table(dest_table, email)
+        delete_email_from_table(source_table, email_uid)
+    except Exception as e:
+        raise RuntimeError(f"Failed to move email {email_uid} from {source_table} to {dest_table}: {e}")
 
 ### Specific functions for sent_emails, drafts, deleted_emails tables ###
 

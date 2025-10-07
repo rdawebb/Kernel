@@ -1,4 +1,7 @@
 import argparse
+import os
+import platform
+import subprocess
 from rich.console import Console
 from quiet_mail.core import imap_client, storage
 from quiet_mail.ui import inbox_viewer, email_viewer, search_viewer, composer
@@ -13,20 +16,6 @@ try:
 except Exception as e:
     console.print(f"[red]Failed to initialize database: {e}[/]")
     exit(1)
-
-# Helper functions for common operations
-def get_email_or_exit(email_id):
-    """Get email by ID or exit with error message if not found"""
-    try:
-        email_data = storage.get_email_from_table("inbox", email_id)
-        if not email_data:
-            console.print(f"[red]Email with ID {email_id} not found.[/]")
-            return None
-        return email_data
-    
-    except Exception as e:
-        console.print(f"[red]Failed to retrieve email {email_id}: {e}[/]")
-        return None
 
 def handle_download_action(cfg, email_id, args):
     """Handle attachment download logic"""
@@ -76,7 +65,8 @@ def setup_argument_parser():
             ("--all", {"action": "store_true", "help": "Fetch all emails from server"})
         ]),
         ("view", "View a specific email by ID", [
-            ("id", {"help": "Email ID (from list command)"})
+            ("id", {"help": "Email ID (from list command)"}),
+            ("--table", {"default": "inbox", "choices": ["inbox", "sent_emails", "drafts", "deleted_emails"], "help": "Table to search in (default: inbox)"})
         ]),
         ("search", "Search emails by keyword", [
             ("table_name", {"nargs": "?", "choices": ["inbox", "sent", "drafts", "deleted"], "help": "Table to search (not used with --all)"}),
@@ -97,19 +87,36 @@ def setup_argument_parser():
         ("attachments", "List emails with attachments", [
             ("--limit", {"type": int, "default": 10, "help": "Number of attachments to display"})
         ]),
-        ("list-attachments", "List attachment filenames for a specific email", [
+        ("attachments-list", "List attachment filenames for a specific email", [
             ("id", {"help": "Email ID (from list command)"})
         ]),
         ("download", "Download email attachments", [
             ("id", {"help": "Email ID (from list command)"}),
+            ("--table", {"default": "inbox", "choices": ["inbox", "sent_emails", "drafts", "deleted_emails"], "help": "Table to search in (default: inbox)"}),
             ("--all", {"action": "store_true", "help": "Download all attachments"}),
             ("--index", {"type": int, "help": "Index of the attachment to download (0-based)"})
+        ]),
+        ("downloads-list", "List all downloaded attachments", []),
+        ("open", "Open downloaded attachment", [
+            ("filename", {"help": "Filename of the downloaded attachment to open (from downloads-list command)"})
         ]),
         ("delete", "Delete email in local database", [
             ("id", {"help": "Email ID (from list command)"}),
             ("--all", {"action": "store_true", "help": "Delete in local database and server"}),
         ]),
-        ("compose", "Compose and send a new email", [])
+        ("compose", "Compose and send a new email", []),
+        ("move", "Move email to another folder", [
+            ("id", {"help": "Email ID (from list command)"}),
+            ("--source", {"help": "Current folder of the email"}),
+            ("--target", {"help": "Target folder to move the email to"})
+        ]),
+        ("backup", "Backup the database", [
+            ("--path", {"help": "Custom backup path (optional, defaults to config)"})
+        ]),
+        ("delete-db", "Delete the local database", [
+            ("--path", {"help": "Custom path to the database file (optional, defaults to config)"}),
+            ("--confirm", {"action": "store_true", "help": "Confirm deletion of the database"})
+        ])
     ]
 
     # Dynamically create subparsers from configuration
@@ -164,18 +171,20 @@ def main():
             console.print(f"[red]Failed to fetch or load emails: {e}[/]")
 
     elif args.command == "view":
-        console.print(f"[bold cyan]Fetching email {args.id}...[/]")
-        email_data = get_email_or_exit(args.id)
+        console.print(f"[bold cyan]Fetching email {args.id} from {args.table}...[/]")
+        email_data = storage.get_email_from_table(args.table, args.id)
+        
+        if not email_data:
+            console.print(f"[red]Email with ID {args.id} not found in '{args.table}'.[/]")
+            return
 
-        if email_data:
-            try:
-                email_viewer.display_email(email_data)
-            except Exception as e:
-                console.print(f"[red]Failed to display email: {e}[/]")
+        try:
+            email_viewer.display_email(email_data)
+        except Exception as e:
+            console.print(f"[red]Failed to display email: {e}[/]")
 
     elif args.command == "search":
         try:
-            # Validate arguments
             if not args.all and not args.table_name:
                 console.print("[red]Error: Must specify either table_name or --all flag[/]")
                 return
@@ -211,16 +220,19 @@ def main():
             console.print("[red]Please specify either --flag or --unflag.[/]")
             return
 
-        email_data = get_email_or_exit(args.id)
-        if email_data:
-            try:
-                flag_status = True if args.flag else False
-                storage.mark_email_flagged(args.id, flag_status)
-                action = "Flagged" if args.flag else "Unflagged"
-                console.print(f"[green]{action} email ID {args.id} successfully.[/]")
+        email_data = storage.get_email_from_table("inbox", args.id)
+        if not email_data:
+            console.print(f"[red]Email with ID {args.id} not found in inbox.[/]")
+            return
+            
+        try:
+            flag_status = True if args.flag else False
+            storage.mark_email_flagged(args.id, flag_status)
+            action = "Flagged" if args.flag else "Unflagged"
+            console.print(f"[green]{action} email ID {args.id} successfully.[/]")
 
-            except Exception as e:
-                console.print(f"[red]Failed to update flag status: {e}[/]")
+        except Exception as e:
+            console.print(f"[red]Failed to update flag status: {e}[/]")
 
     elif args.command == "attachments":
         console.print("[bold cyan]Loading emails with attachments...[/]")
@@ -235,7 +247,7 @@ def main():
         except Exception as e:
             console.print(f"[red]Failed to retrieve emails with attachments: {e}[/]")
 
-    elif args.command == "list-attachments":
+    elif args.command == "attachments-list":
         console.print(f"[bold cyan]Loading attachment list for email {args.id}...[/]")
         try:
             attachment_list = imap_client.get_attachment_list(cfg, args.id)
@@ -252,10 +264,11 @@ def main():
             console.print(f"[red]Failed to get attachment list: {e}[/]")
 
     elif args.command == "download":
-        console.print(f"[bold cyan]Downloading attachments for email {args.id}...[/]")
+        console.print(f"[bold cyan]Downloading attachments for email {args.id} from {args.table}...[/]")
         
-        email_data = get_email_or_exit(args.id)
+        email_data = storage.get_email_from_table(args.table, args.id)
         if not email_data:
+            console.print(f"[red]Email with ID {args.id} not found in '{args.table}'.[/]")
             return
 
         try:
@@ -286,13 +299,87 @@ def main():
         except Exception as e:
             console.print(f"[red]Failed to download attachments: {e}[/]")
 
+    elif args.command == "downloads-list":
+        try:
+            attachments_path = "./attachments"
+            if not os.path.exists(attachments_path):
+                console.print("[yellow]Attachments folder does not exist.[/]")
+                return
+                
+            downloaded_files = os.listdir(attachments_path)
+            if not downloaded_files:
+                console.print("[yellow]No downloaded attachments found in attachments folder.[/]")
+                return
+
+            console.print(f"[green]Found {len(downloaded_files)} downloaded attachment(s):[/]")
+            for filename in downloaded_files:
+                try:
+                    file_path = os.path.join(attachments_path, filename)
+                    file_size = os.path.getsize(file_path)
+                    size_kb = file_size / 1024
+                    if size_kb < 1:
+                        size_str = f"{file_size}B"
+                    elif size_kb < 1024:
+                        size_str = f"{size_kb:.1f}KB"
+                    else:
+                        size_str = f"{size_kb/1024:.1f}MB"
+                    console.print(f"  [cyan]{filename}[/] [dim]({size_str})[/]")
+                except OSError:
+                    console.print(f"  [cyan]{filename}[/] [dim](size unknown)[/]")
+
+        except Exception as e:
+            console.print(f"[red]Failed to list downloaded attachments: {e}[/]")
+
+    elif args.command == "open":
+        try:
+            attachments_path = "./attachments"
+            if not os.path.exists(attachments_path):
+                console.print("[red]Attachments folder does not exist.[/]")
+                return
+            
+            # Ensure filename doesn't contain path separators
+            if os.path.sep in args.filename or ".." in args.filename:
+                console.print("[red]Invalid filename. Please use only the filename from downloads list.[/]")
+                return
+
+            file_path = os.path.join(attachments_path, args.filename)
+            if not os.path.exists(file_path):
+                console.print(f"[red]File '{args.filename}' not found in attachments folder.[/]")
+                return
+            
+            console.print(f"[bold cyan]Opening attachment '{args.filename}'...[/]")
+            try:
+                if platform.system() == "Darwin":
+                    subprocess.run(["open", file_path], check=True) # macOS
+                elif platform.system() == "Windows":
+                    os.startfile(file_path) # Windows
+                else:
+                    subprocess.run(["xdg-open", file_path], check=True) # Linux and others
+
+            except subprocess.CalledProcessError as e:
+                console.print(f"[red]Failed to open attachment: {e}[/]")
+            except FileNotFoundError:
+                console.print(f"[red]No application found to open the file '{args.filename}'.[/]")
+
+        except Exception as e:
+            console.print(f"[red]Failed to open attachment: {e}[/]")
+
     elif args.command == "delete":
-        if not confirm_action(f"Are you sure you want to delete email ID {args.id}?"):
-            console.print("[yellow]Deletion cancelled.[/]")
+        if args.id is None:
+            console.print("[red]Email ID is required for deletion.[/]")
             return
         
-        email_data = get_email_or_exit(args.id)
-        if email_data:
+        if not storage.email_exists("deleted_emails", args.id):
+        
+            if not confirm_action(f"Are you sure you want to delete email ID {args.id}?"):
+                console.print("[yellow]Deletion cancelled.[/]")
+                return
+        
+            email_data = storage.get_email_from_table("inbox", args.id)
+            if not email_data:
+                console.print(f"[red]Email with ID {args.id} not found in inbox.[/]")
+                return
+                
             try:
                 if args.all:
                     storage.save_deleted_email(email_data)
@@ -308,6 +395,18 @@ def main():
             except Exception as e:
                 console.print(f"[red]Failed to delete email: {e}[/]")
 
+        else:
+            if not confirm_action("Are you sure you want to permanently delete this email? This action cannot be undone."):
+                console.print("[yellow]Permanent deletion cancelled.[/]")
+                return
+            
+            try:
+                storage.delete_email_from_table("deleted_emails", args.id)
+                console.print(f"[green]Permanently deleted email ID {args.id} from 'deleted' table.[/]")
+
+            except Exception as e:
+                console.print(f"[red]Failed to permanently delete email: {e}[/]")
+
     elif args.command == "compose":
         try:
             result = composer.compose_email()
@@ -316,6 +415,78 @@ def main():
 
         except Exception as e:
             console.print(f"[red]Failed to compose/send email: {e}[/]")
+
+    elif args.command == "move":
+        if not args.source or not args.target:
+            console.print("[red]Both --source and --target folders must be specified.[/]")
+            return
+        
+        if not storage.email_exists(args.source, args.id):
+            console.print(f"[red]Email ID {args.id} not found in source folder '{args.source}'.[/]")
+            return
+
+        email_data = storage.get_email_from_table(args.source, args.id)
+        if not email_data:
+            console.print(f"[red]Email with ID {args.id} not found in '{args.source}'.[/]")
+            return
+        
+        try:
+            valid_tables = ["inbox", "sent_emails", "drafts", "deleted_emails"]
+            if args.source not in valid_tables or args.target not in valid_tables:
+                console.print(f"[red]Invalid source or target folder. Valid options: {', '.join(valid_tables)}[/]")
+                return
+            
+            if args.source == args.target:
+                console.print("[red]Source and target folders must be different.[/]")
+                return
+            
+            storage.move_email_between_tables(args.source, args.target, args.id)
+            console.print(f"[green]Moved email ID {args.id} from '{args.source}' to '{args.target}' successfully.[/]")
+        
+        except Exception as e:
+            console.print(f"[red]Failed to move email: {e}[/]")
+
+    elif args.command == "backup":
+        try:
+            console.print("[bold cyan]Starting database backup...[/]")
+            backup_path = storage.backup_db(args.path)
+            console.print(f"[green]Database backed up successfully to: {backup_path}[/]")
+        
+        except Exception as e:
+            console.print(f"[red]Failed to backup database: {e}[/]")
+
+    elif args.command == "delete-db":
+        try:
+            db_path = args.path if args.path else storage.get_db_path()
+            if not os.path.exists(db_path):
+                console.print(f"[red]Database file '{db_path}' does not exist.[/]")
+                return
+            
+            if not args.confirm:
+                console.print("[red]Deletion requires --confirm flag to proceed.[/]")
+                return
+            
+            if confirm_action("Would you like to back up the database before deletion?"):
+                try:
+                    backup_path = storage.backup_db()
+                    console.print(f"[green]Database backed up successfully to: {backup_path}[/]")
+                except Exception as e:
+                    console.print(f"[red]Failed to backup database: {e}[/]")
+                    return
+            
+            if not confirm_action(f"Are you sure you want to delete the database file at '{db_path}'? This action cannot be undone."):
+                console.print("[yellow]Database deletion cancelled.[/]")
+                return
+
+            if not confirm_action("This is your last chance to cancel. Proceed with deletion?"):
+                console.print("[yellow]Database deletion cancelled.[/]")
+                return
+            
+            storage.delete_db()
+            console.print(f"[green]Database file '{db_path}' deleted successfully.[/]")
+        
+        except Exception as e:
+            console.print(f"[red]Failed to delete database: {e}[/]")
 
 if __name__ == "__main__":
     main()
