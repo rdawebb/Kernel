@@ -116,6 +116,9 @@ def setup_argument_parser():
         ("delete-db", "Delete the local database", [
             ("--path", {"help": "Custom path to the database file (optional, defaults to config)"}),
             ("--confirm", {"action": "store_true", "help": "Confirm deletion of the database"})
+        ]),
+        ("export", "Export all email tables to CSV files", [
+            ("--path", {"help": "Export directory path (default: ./exports)"})
         ])
     ]
 
@@ -489,6 +492,22 @@ def main():
         
         except Exception as e:
             console.print(f"[red]Failed to delete database: {e}[/]")
+
+    elif args.command == "export":
+        try:
+            console.print("[bold cyan]Starting email export to CSV...[/]")
+            export_dir = args.path or "./exports"  # Default to exports directory
+            exported_files = storage.export_db_to_csv(export_dir)
+            
+            if exported_files:
+                console.print(f"[green]Successfully exported {len(exported_files)} CSV file(s) to: {export_dir}[/]")
+                for file_path in exported_files:
+                    console.print(f"  • {file_path}")
+            else:
+                console.print(f"[yellow]No tables found to export. Export directory created at: {export_dir}[/]")
+        
+        except Exception as e:
+            console.print(f"[red]Failed to export emails: {e}[/]")
 
 if __name__ == "__main__":
     main()

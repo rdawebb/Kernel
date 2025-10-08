@@ -1,4 +1,5 @@
 import sqlite3
+import pandas as pd
 from pathlib import Path
 from contextlib import contextmanager
 from quiet_mail.utils.config import load_config
@@ -138,6 +139,34 @@ def backup_db(backup_path=None):
                 
     except Exception as e:
         raise RuntimeError(f"Failed to backup database: {e}")
+    
+def export_db_to_csv(export_dir):
+    try:
+        export_path = Path(export_dir)
+        export_path.mkdir(parents=True, exist_ok=True)
+        
+        tables = ["inbox", "sent_emails", "drafts", "deleted_emails"]
+        exported_files = []
+        
+        with db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            existing_tables = {row[0] for row in cursor.fetchall()}
+
+            for table in tables:
+                if table in existing_tables:
+                    df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
+                    csv_file = export_path / f"{table}.csv"
+                    df.to_csv(csv_file, index=False)
+                    exported_files.append(str(csv_file))
+                    print(f"Exported {len(df)} rows from {table} to {csv_file}")
+                else:
+                    print(f"Table {table} does not exist in the database. Skipping export.")
+        
+        return exported_files
+    
+    except Exception as e:
+        raise RuntimeError(f"Failed to export database to CSV: {e}")
 
 def delete_db():
     try:
