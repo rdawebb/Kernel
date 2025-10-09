@@ -3,3 +3,4 @@ apscheduler==3.11.0
 python-dotenv==1.1.1
 email-validator==2.1.1
 pandas>=2.0.0
+textual==6.2.1

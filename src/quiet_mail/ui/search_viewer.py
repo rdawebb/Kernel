@@ -1,3 +1,11 @@
+"""Search results viewer - displays search results in a formatted table with dynamic columns based on source"""
+
+## TODO: refactor to reduce redundancy, improve error handling
+## TODO: combine with inbox_viewer.py if possible or create shared base class
+## TODO: add pagination for large result sets?
+## TODO: consider adding sorting options
+## TODO: improve handling of missing data (e.g. missing subject, sender)
+
 from rich.table import Table
 from rich.console import Console
 

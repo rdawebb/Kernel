@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
-from src.quiet_mail.core.storage import (
+from src.quiet_mail.core.storage_api import (
     get_db_path, get_db_connection, initialize_db,
     save_email_metadata, save_email_body, get_inbox, get_email_from_table,
     search_emails, mark_email_flagged, search_emails_by_flag_status,
@@ -12,6 +12,9 @@ from src.quiet_mail.core.storage import (
     search_all_emails, save_email_to_table
 )
 
+## TODO: fix two tests that are failing due to changes in storage_api
+## TODO: add tests for new functions in storage_api
+## TODO: refactor to remove redundant code and share setup/teardown logic
 
 class TestStorage(unittest.TestCase):
     
@@ -20,7 +23,7 @@ class TestStorage(unittest.TestCase):
         self.test_db_path = Path(self.temp_dir) / "test_emails.db"
         
         # Mock the config to use our test database
-        self.config_patcher = patch('src.quiet_mail.core.storage.load_config')
+        self.config_patcher = patch('src.quiet_mail.utils.config.load_config')
         self.mock_config = self.config_patcher.start()
         self.mock_config.return_value = {
             'db_path': str(self.test_db_path)
@@ -538,7 +541,7 @@ class TestStorage(unittest.TestCase):
 
     def test_database_error_handling(self):
         # Mock a database connection that raises an exception
-        with patch('src.quiet_mail.core.storage.get_db_connection') as mock_conn:
+        with patch('src.quiet_mail.core.storage_api.get_db_connection') as mock_conn:
             mock_conn.side_effect = sqlite3.Error("Database error")
             
             with self.assertRaises(RuntimeError) as context:

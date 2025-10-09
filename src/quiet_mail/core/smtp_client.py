@@ -1,8 +1,18 @@
+"""SMTP client for sending emails via an SMTP server"""
+
+## TODO: refactor to improve error handling and logging, add support for HTML emails and attachments
+## TODO: Check logging and error handling in all functions
+## TODO: add retry logic for transient errors
+## TODO: add CC and BCC support
+
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from contextlib import contextmanager
 from quiet_mail.utils.config import load_config
+from quiet_mail.utils.logger import get_logger
+
+logger = get_logger()
 
 @contextmanager
 def smtp_connection():
@@ -20,8 +30,10 @@ def smtp_connection():
         yield server
     
     except Exception as e:
-        raise RuntimeError(f"Failed to connect to SMTP server: {e}")
-    
+        logger.error(f"Failed to connect to SMTP server: {e}")
+        print("Unable to connect to the SMTP server. Please check your configuration and try again.")
+        yield None
+
     finally:
         if server:
             server.quit()
@@ -56,6 +68,10 @@ def send_email(to_email=None, subject="Test Email from quiet_mail", body="This i
         msg.attach(MIMEText(body, 'plain'))
 
         with smtp_connection() as server:
+            if server is None:
+                logger.error("SMTP server connection is None, email not sent.")
+                print("Unable to send email due to SMTP connection issues. Please check your configuration and try again.")
+                return False
             recipients = [to_email]
             if cc:
                 recipients.extend(cc if isinstance(cc, list) else [cc])
@@ -66,4 +82,6 @@ def send_email(to_email=None, subject="Test Email from quiet_mail", body="This i
             return True
     
     except Exception as e:
-        raise RuntimeError(f"Failed to send email: {e}")
+        logger.error(f"Failed to send email: {e}")
+        print("Unable to send email. Please check your configuration and try again.")
+        return False

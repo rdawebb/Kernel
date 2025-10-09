@@ -41,6 +41,9 @@ def load_config():
             "send_scheduled_emails_interval": send_scheduled_emails_interval,
             "check_for_new_emails_enabled": os.getenv("CHECK_FOR_NEW_EMAILS_ENABLED", "false").lower() == "true",
             "check_for_new_emails_interval": check_for_new_emails_interval,
+            "log_path": os.path.expanduser(os.getenv("LOG_PATH", "./logs")),
+            "log_file": os.getenv("LOG_FILE", "app.log"),
+            "log_config": os.getenv("LOG_CONFIG", None)
         }
 
         if not all([config["imap_server"], config["smtp_server"], config["email"], config["password"]]):

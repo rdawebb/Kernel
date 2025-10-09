@@ -1,3 +1,5 @@
+"""Email viewer using Rich library for formatted console output"""
+
 from rich.console import Console
 
 console = Console()

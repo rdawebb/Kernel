@@ -1,3 +1,9 @@
+"""Inbox viewer using Rich library to display emails in a formatted table"""
+
+## TODO: add pagination for large inboxes, improve error handling
+## TODO: add color coding for read/unread emails, improve attachment handling
+## TODO: create a shared base class for email table viewers
+
 from rich.table import Table
 from rich.console import Console
 

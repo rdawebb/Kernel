@@ -3,7 +3,7 @@ name = "quiet-mail"
 version = "0.1.0"
 description = "A minimal command-line email client"
 authors = [{ name = "Rob Webb", email = "rdawebb@gmail.com" }]
-requires-python = "~=3.13"
+requires-python = "~=3.13.0"
 readme = "README.md"
 dependencies = [
     "rich==14.1.0",

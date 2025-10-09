@@ -1,3 +1,7 @@
+"""IMAP client for connecting to email server, fetching emails, and handling attachments"""
+
+## TODO: refactor to remove any redundant functions, move parsing to separate module
+
 import imaplib
 import email
 import datetime
@@ -6,6 +10,8 @@ from email.header import decode_header
 from email.utils import parsedate_tz
 from contextlib import contextmanager
 from quiet_mail.utils.config import load_config
+from quiet_mail.core import storage_api
+from quiet_mail.utils import logger
 
 config = load_config()
 
@@ -14,7 +20,10 @@ def imap_connection(config):
     """Context manager for IMAP connections with automatic cleanup"""
     mail = connect_to_imap(config)
     if not mail:
-        raise RuntimeError("Failed to connect to IMAP server")
+        logger.error("Failed to connect to IMAP server")
+        print("Unable to connect to your email server. Please check your settings and try again.")
+        yield None
+        return
     try:
         yield mail
     finally:
@@ -69,11 +78,13 @@ def connect_to_imap(config):
         mail.select("inbox")
 
     except Exception as e:
-        print(f"Error connecting to email server: {e}")
+        logger.error(f"Error connecting to IMAP server: {e}")
+        print("Unable to connect to your email server. Please check your settings and try again.")
         return None
     
     return mail
 
+## TODO: not necessary?
 def fetch_inbox(config, limit=10):
     mail = connect_to_imap(config)
     if not mail:
@@ -83,7 +94,8 @@ def fetch_inbox(config, limit=10):
         status, messages = mail.search(None, "ALL")
         
         if status != "OK":
-            print(f"Error connecting to inbox: {status}")
+            logger.error(f"Error connecting to inbox: {status}")
+            print("Unable to connect to your email server. Please check your settings and try again.")
             return []
         
         email_ids = messages[0].split()
@@ -94,7 +106,8 @@ def fetch_inbox(config, limit=10):
             status, email_data = mail.fetch(email_id, "(RFC822)")
             
             if status != "OK":
-                print(f"Error fetching email ID {email_id}: {status}")
+                logger.error(f"Error fetching email ID {email_id}: {status}")
+                print("Unable to fetch emails. Please check your connection and try again.")
                 continue
 
             for msg_part in email_data:
@@ -105,7 +118,8 @@ def fetch_inbox(config, limit=10):
         return emails
     
     except Exception as e:
-        print(f"Error fetching emails: {e}")
+        logger.error(f"Error fetching emails: {e}")
+        print("Sorry, something went wrong. Please check your settings or try again.")
         return []
     finally:
         try:
@@ -115,7 +129,6 @@ def fetch_inbox(config, limit=10):
 
 def fetch_new_emails(config, fetch_all=False):
     """Fetch new emails from IMAP server and save to database"""
-    from quiet_mail.core import storage
     
     mail = connect_to_imap(config)
     if not mail:
@@ -125,14 +138,15 @@ def fetch_new_emails(config, fetch_all=False):
         if fetch_all:
             status, messages = mail.search(None, "ALL")
         else:
-            highest_uid = storage.get_highest_uid()
+            highest_uid = storage_api.get_highest_uid()
             if highest_uid:
                 status, messages = mail.uid('search', None, f'UID {highest_uid + 1}:*')
             else:
                 status, messages = mail.search(None, "ALL")
         
         if status != "OK":
-            print(f"Error searching for emails: {status}")
+            logger.error(f"Error searching for emails: {status}")
+            print("Unable to fetch emails. Please check your connection and try again.")
             return 0
         
         email_ids = messages[0].split()
@@ -140,35 +154,38 @@ def fetch_new_emails(config, fetch_all=False):
             return 0
         
         emails_saved = 0
-        
-        fetch_method = mail.uid if not fetch_all and storage.get_highest_uid() else mail
-        
+
+        fetch_method = mail.uid if not fetch_all and storage_api.get_highest_uid() else mail
+
         for email_id in email_ids:
             try:
                 status, email_data = fetch_method('fetch', email_id, "(RFC822)")
                 
                 if status != "OK":
-                    print(f"Error fetching email ID {email_id}: {status}")
+                    logger.error(f"Error fetching email ID {email_id}: {status}")
+                    print("Unable to fetch emails. Please check your connection and try again.")
                     continue
 
                 for msg_part in email_data:
                     email_message = process_email_message(msg_part)
                     if email_message:
                         email_dict = parse_email(email_message, email_id.decode())
-                        
-                        storage.save_email_metadata(email_dict)
+
+                        storage_api.save_email_metadata(email_dict)
                         if email_dict.get("body"):
-                            storage.save_email_body(email_dict.get("uid"), email_dict.get("body"))
-                        
+                            storage_api.save_email_body(email_dict.get("uid"), email_dict.get("body"))
+
                         emails_saved += 1
             except Exception as e:
-                print(f"Error processing email {email_id}: {e}")
+                logger.error(f"Error processing email {email_id}: {e}")
+                print("Sorry, something went wrong. Please check your settings or try again.")
                 continue
 
         return emails_saved
     
     except Exception as e:
-        print(f"Error fetching emails: {e}")
+        logger.error(f"Error fetching emails: {e}")
+        print("Sorry, something went wrong. Please check your settings or try again.")
         return 0
     finally:
         try:
@@ -245,7 +262,8 @@ def parse_email(email_data, email_id):
         }
 
     except Exception as e:
-        print(f"Error parsing email: {e}")
+        logger.error(f"Error parsing email: {e}")
+        print("Sorry, something went wrong while parsing an email.")
         return {
             "id": email_id,
             "uid": email_id,
@@ -264,11 +282,15 @@ def _fetch_email_by_uid(mail, email_uid):
 
     status, messages = mail.search(None, f"UID {email_uid}")
     if status != "OK" or not messages[0]:
-        raise RuntimeError(f"Email with UID {email_uid} not found")
-    
+        logger.error(f"Email with UID {email_uid} not found")
+        print("Sorry, unable to find this email. Please check your settings or try again.")
+        return None
+
     status, email_data = mail.fetch(email_uid, "(RFC822)")
     if status != "OK":
-        raise RuntimeError(f"Failed to fetch email {email_uid}")
+        logger.error(f"Failed to fetch email {email_uid}")
+        print("Sorry, failed to fetch email. Please check your settings or try again.")
+        return None
     
     return email.message_from_bytes(email_data[0][1])
 
@@ -328,6 +350,7 @@ def _save_attachment_to_disk(filename, content, download_path):
     
     return file_path
 
+## TODO: not necessary? - combine with below
 def download_all_attachments(config, email_uid, download_path="./attachments"):
     """Download all attachments from an email by UID"""
     with imap_connection(config) as mail:
@@ -350,10 +373,18 @@ def download_attachment_by_index(config, email_uid, attachment_index, download_p
     with imap_connection(config) as mail:
         email_message = _fetch_email_by_uid(mail, email_uid)
         attachments = _extract_attachments_from_email(email_message)
-        
+
+        if not attachments:
+            logger.error(f"No attachments found for email {email_uid}")
+            print("No attachments found. Please check and try again.")
+            return None
+
+        ## TODO: not necessary with TUI?
         if attachment_index >= len(attachments) or attachment_index < 0:
-            raise RuntimeError(f"Invalid attachment index {attachment_index}. Available attachments: 0-{len(attachments)-1}")
-        
+            logger.error(f"Invalid attachment index {attachment_index}. Available attachments: 0-{len(attachments)-1}")
+            print("Invalid attachment index. Please check and try again.")
+            return None
+
         attachment = attachments[attachment_index]
         file_path = _save_attachment_to_disk(
             attachment['filename'], 
@@ -362,6 +393,7 @@ def download_attachment_by_index(config, email_uid, attachment_index, download_p
         )
         return file_path
 
+## TODO: not necessary, but use function name
 def get_attachment_list(config, email_uid):
     """Get list of attachment filenames from an email by UID without downloading"""
     with imap_connection(config) as mail:

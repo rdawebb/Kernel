@@ -4,15 +4,15 @@ import sqlite3
 from datetime import datetime, timedelta
 sys.path.insert(0, 'src')
 
-from quiet_mail.core import storage
-from quiet_mail.core.storage import get_db_path
+from quiet_mail.core import storage_api
+from quiet_mail.core.storage_api import get_db_path
 
 def test_send_later_functionality():
     print("Testing Send Later functionality...")
     
     # Initialize database
-    storage.initialize_db()
-    
+    storage_api.initialize_db()
+
     # Test database schema
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
@@ -50,10 +50,10 @@ def test_send_later_functionality():
         }
         
         print(f"\nSaving test scheduled email for {future_time}...")
-        storage.save_sent_email(test_email)
-        
+        storage_api.save_sent_email(test_email)
+
         # Verify it was saved
-        pending_emails = storage.get_pending_emails()
+        pending_emails = storage_api.get_pending_emails()
         print(f"Found {len(pending_emails)} pending email(s)")
         
         if pending_emails:

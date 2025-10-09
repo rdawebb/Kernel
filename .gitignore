@@ -77,6 +77,8 @@ data/*
 !data/.gitkeep
 exports/*
 !exports/.gitkeep
+logs/*
+!logs/.gitkeep
 
 # Logs
 *.log
