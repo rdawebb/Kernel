@@ -39,7 +39,7 @@ def get_logger(
     logger = logging.getLogger(name)
     logger.setLevel(level)
 
-    if not logger.handlers:
+    if not any(isinstance(handler, RotatingFileHandler) for handler in logger.handlers):
         file_handler = RotatingFileHandler(
             log_file, maxBytes=max_bytes, backupCount=backup_count, encoding='utf-8'
         )
@@ -50,7 +50,7 @@ def get_logger(
 
         logger.addHandler(file_handler)
 
-    if session:
+    if session and not any(isinstance(handler, logging.FileHandler) and handler.baseFilename != str(log_file) for handler in logger.handlers):
         time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         session_file = log_path / f"session_{time.replace(' ', '_').replace(':', '-')}.log"
         session_handler = logging.FileHandler(session_file, encoding='utf-8')
@@ -59,7 +59,7 @@ def get_logger(
         ))
         logger.addHandler(session_handler)
 
-    if console:
+    if console and not any(isinstance(handler, logging.StreamHandler) for handler in logger.handlers):
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
         logger.addHandler(console_handler)

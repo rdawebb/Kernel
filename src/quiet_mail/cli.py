@@ -10,8 +10,7 @@ import platform
 import subprocess
 from datetime import datetime
 from rich.console import Console
-from quiet_mail.core import imap_client
-from quiet_mail.core import storage_api
+from quiet_mail.core import imap_client, storage_api
 from quiet_mail.ui import inbox_viewer, email_viewer, search_viewer, composer
 from quiet_mail.utils import config, logger
 from quiet_mail.utils.ui_helpers import confirm_action

@@ -157,6 +157,7 @@ def save_email_body(uid, body):
     """Save email body content separately"""
     _operations_manager.update_email_body("inbox", uid, body)
 
+## TODO: not needed?
 def get_inbox(limit=10):
     """Get inbox emails"""
     return get_emails_from_table("inbox", limit)
