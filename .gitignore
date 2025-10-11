@@ -79,6 +79,7 @@ exports/*
 !exports/.gitkeep
 logs/*
 !logs/.gitkeep
+tui
 
 # Logs
 *.log
