@@ -6,6 +6,7 @@ This script allows running the application from the root directory.
 import sys
 import os
 from pathlib import Path
+from src.quiet_mail.cli import main
 
 # Get the directory where this script is located
 script_dir = Path(__file__).parent
@@ -16,12 +17,9 @@ if venv_python.exists() and sys.executable != str(venv_python):
     # Re-execute with the virtual environment's Python
     os.execv(str(venv_python), [str(venv_python)] + sys.argv)
 
-# Add src to Python path so we can import quiet_mail
+# Add src to Python path so we can import tui_mail
 src_path = script_dir / "src"
 sys.path.insert(0, str(src_path))
-
-# Import and run the main function
-from src.quiet_mail.cli import main
 
 if __name__ == "__main__":
     main()
