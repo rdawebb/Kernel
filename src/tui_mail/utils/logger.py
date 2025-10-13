@@ -6,7 +6,7 @@ import datetime
 import inspect
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from quiet_mail.utils.config import load_config
+from tui_mail.utils.config import load_config
 
 config = load_config()
 log_path = Path(config.get("log_path"))

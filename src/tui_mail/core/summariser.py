@@ -2,8 +2,8 @@
 
 import subprocess
 import sys
-from quiet_mail.utils import logger
-from quiet_mail.utils.config import load_config
+from tui_mail.utils import logger
+from tui_mail.utils.config import load_config
 
 config = load_config()
 logger = logger.get_logger()

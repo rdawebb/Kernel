@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Launcher script for quiet-mail CLI application.
+Launcher script for tui-mail CLI application.
 This script allows running the application from the root directory.
 """
 import sys
 import os
 from pathlib import Path
-from src.quiet_mail.cli import main
+from src.tui_mail.cli import main
 
 # Get the directory where this script is located
 script_dir = Path(__file__).parent

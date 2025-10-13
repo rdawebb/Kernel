@@ -4,9 +4,9 @@ import imaplib
 import smtplib
 import pytest
 
-from src.quiet_mail.utils.config import load_config
-from src.quiet_mail.core.imap_client import connect_to_imap, imap_connection
-from src.quiet_mail.core.smtp_client import smtp_connection
+from src.tui_mail.utils.config import load_config
+from src.tui_mail.core.imap_client import connect_to_imap, imap_connection
+from src.tui_mail.core.smtp_client import smtp_connection
 
 
 class TestIMAPConnection(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestIMAPConnection(unittest.TestCase):
             'password': 'testpass'
         }
     
-    @patch('src.quiet_mail.core.imap_client.imaplib.IMAP4_SSL')
+    @patch('src.tui_mail.core.imap_client.imaplib.IMAP4_SSL')
     def test_connect_to_imap_success(self, mock_imap_ssl):
         mock_mail = MagicMock()
         mock_imap_ssl.return_value = mock_mail
@@ -36,7 +36,7 @@ class TestIMAPConnection(unittest.TestCase):
         
         self.assertEqual(result, mock_mail)
     
-    @patch('src.quiet_mail.core.imap_client.imaplib.IMAP4_SSL')
+    @patch('src.tui_mail.core.imap_client.imaplib.IMAP4_SSL')
     @patch('builtins.print')
     def test_connect_to_imap_login_failure(self, mock_print, mock_imap_ssl):
         mock_mail = MagicMock()
@@ -50,7 +50,7 @@ class TestIMAPConnection(unittest.TestCase):
         call_args = mock_print.call_args[0][0]
         self.assertIn("Error connecting to email server", call_args)
     
-    @patch('src.quiet_mail.core.imap_client.imaplib.IMAP4_SSL')
+    @patch('src.tui_mail.core.imap_client.imaplib.IMAP4_SSL')
     @patch('builtins.print')
     def test_connect_to_imap_connection_failure(self, mock_print, mock_imap_ssl):
         mock_imap_ssl.side_effect = ConnectionError("Cannot connect to server")
@@ -62,7 +62,7 @@ class TestIMAPConnection(unittest.TestCase):
         call_args = mock_print.call_args[0][0]
         self.assertIn("Error connecting to email server", call_args)
 
-    @patch('src.quiet_mail.core.imap_client.connect_to_imap')
+    @patch('src.tui_mail.core.imap_client.connect_to_imap')
     def test_imap_connection_context_manager_success(self, mock_connect):
         mock_mail = MagicMock()
         mock_connect.return_value = mock_mail
@@ -73,7 +73,7 @@ class TestIMAPConnection(unittest.TestCase):
         mock_mail.close.assert_called_once()
         mock_mail.logout.assert_called_once()
     
-    @patch('src.quiet_mail.core.imap_client.connect_to_imap')
+    @patch('src.tui_mail.core.imap_client.connect_to_imap')
     def test_imap_connection_context_manager_failure(self, mock_connect):
         mock_connect.return_value = None
         
@@ -85,8 +85,8 @@ class TestIMAPConnection(unittest.TestCase):
 class TestSMTPConnection(unittest.TestCase):
     """Test SMTP connection functionality"""
     
-    @patch('src.quiet_mail.core.smtp_client.load_config')
-    @patch('src.quiet_mail.core.smtp_client.smtplib.SMTP_SSL')
+    @patch('src.tui_mail.core.smtp_client.load_config')
+    @patch('src.tui_mail.core.smtp_client.smtplib.SMTP_SSL')
     def test_smtp_connection_ssl_success(self, mock_smtp_ssl, mock_config):
         """Test successful SSL SMTP connection"""
         mock_config.return_value = {
@@ -108,8 +108,8 @@ class TestSMTPConnection(unittest.TestCase):
         mock_server.login.assert_called_once_with('test@example.com', 'testpass')
         mock_server.quit.assert_called_once()
 
-    @patch('src.quiet_mail.core.smtp_client.load_config')
-    @patch('src.quiet_mail.core.smtp_client.smtplib.SMTP')
+    @patch('src.tui_mail.core.smtp_client.load_config')
+    @patch('src.tui_mail.core.smtp_client.smtplib.SMTP')
     def test_smtp_connection_starttls_success(self, mock_smtp, mock_config):
         """Test successful STARTTLS SMTP connection"""
         mock_config.return_value = {
@@ -133,8 +133,8 @@ class TestSMTPConnection(unittest.TestCase):
         mock_server.login.assert_called_once_with('test@example.com', 'testpass')
         mock_server.quit.assert_called_once()
 
-    @patch('src.quiet_mail.core.smtp_client.load_config')
-    @patch('src.quiet_mail.core.smtp_client.smtplib.SMTP_SSL')
+    @patch('src.tui_mail.core.smtp_client.load_config')
+    @patch('src.tui_mail.core.smtp_client.smtplib.SMTP_SSL')
     def test_smtp_connection_login_failure(self, mock_smtp_ssl, mock_config):
         """Test SMTP connection with login failure"""
         mock_config.return_value = {
@@ -153,8 +153,8 @@ class TestSMTPConnection(unittest.TestCase):
             with smtp_connection():
                 pass
 
-    @patch('src.quiet_mail.core.smtp_client.load_config')
-    @patch('src.quiet_mail.core.smtp_client.smtplib.SMTP_SSL')
+    @patch('src.tui_mail.core.smtp_client.load_config')
+    @patch('src.tui_mail.core.smtp_client.smtplib.SMTP_SSL')
     def test_smtp_connection_server_error(self, mock_smtp_ssl, mock_config):
         """Test SMTP connection with server connection error"""
         mock_config.return_value = {

@@ -4,8 +4,8 @@ import sqlite3
 import pandas as pd
 from pathlib import Path
 from contextlib import contextmanager
-from quiet_mail.utils.config import load_config
-from quiet_mail.utils.logger import get_logger
+from tui_mail.utils.config import load_config
+from tui_mail.utils.logger import get_logger
 
 logger = get_logger()
 

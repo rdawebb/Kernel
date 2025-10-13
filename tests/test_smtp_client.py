@@ -1,14 +1,14 @@
 import pytest
 import smtplib
 from unittest.mock import Mock, patch
-from src.quiet_mail.core.smtp_client import send_email
+from src.tui_mail.core.smtp_client import send_email
 
 
 class TestSendEmail:
     """Test the send_email function"""
     
-    @patch('src.quiet_mail.core.smtp_client.smtp_connection')
-    @patch('src.quiet_mail.core.smtp_client.load_config')
+    @patch('src.tui_mail.core.smtp_client.smtp_connection')
+    @patch('src.tui_mail.core.smtp_client.load_config')
     def test_send_email_basic_success(self, mock_config, mock_smtp_conn):
         """Test basic email sending success"""
         # Setup
@@ -35,8 +35,8 @@ class TestSendEmail:
         assert msg['Subject'] == 'Test Subject'
         assert 'Test Body' in str(msg)
     
-    @patch('src.quiet_mail.core.smtp_client.smtp_connection')
-    @patch('src.quiet_mail.core.smtp_client.load_config')
+    @patch('src.tui_mail.core.smtp_client.smtp_connection')
+    @patch('src.tui_mail.core.smtp_client.load_config')
     def test_send_email_default_recipient(self, mock_config, mock_smtp_conn):
         """Test email sending with default recipient (self)"""
         # Setup
@@ -53,8 +53,8 @@ class TestSendEmail:
         msg = call_args[0][0]
         assert msg['To'] == 'sender@test.com'  # Should default to sender
     
-    @patch('src.quiet_mail.core.smtp_client.smtp_connection')
-    @patch('src.quiet_mail.core.smtp_client.load_config')
+    @patch('src.tui_mail.core.smtp_client.smtp_connection')
+    @patch('src.tui_mail.core.smtp_client.load_config')
     def test_send_email_with_cc_bcc(self, mock_config, mock_smtp_conn):
         """Test email sending with CC and BCC recipients"""
         # Setup
@@ -84,8 +84,8 @@ class TestSendEmail:
         expected_recipients = ['recipient@test.com', 'cc1@test.com', 'cc2@test.com', 'bcc@test.com']
         assert set(recipients) == set(expected_recipients)
     
-    @patch('src.quiet_mail.core.smtp_client.smtp_connection')
-    @patch('src.quiet_mail.core.smtp_client.load_config')
+    @patch('src.tui_mail.core.smtp_client.smtp_connection')
+    @patch('src.tui_mail.core.smtp_client.load_config')
     def test_send_email_cc_bcc_strings(self, mock_config, mock_smtp_conn):
         """Test email sending with CC and BCC as strings"""
         # Setup
@@ -107,7 +107,7 @@ class TestSendEmail:
         expected_recipients = ['recipient@test.com', 'cc@test.com', 'bcc@test.com']
         assert set(recipients) == set(expected_recipients)
     
-    @patch('src.quiet_mail.core.smtp_client.smtp_connection')
+    @patch('src.tui_mail.core.smtp_client.smtp_connection')
     def test_send_email_smtp_failure(self, mock_smtp_conn):
         """Test email sending with SMTP failure"""
         # Setup
@@ -117,8 +117,8 @@ class TestSendEmail:
         with pytest.raises(RuntimeError, match="Failed to send email"):
             send_email(to_email='test@test.com')
     
-    @patch('src.quiet_mail.core.smtp_client.smtp_connection')
-    @patch('src.quiet_mail.core.smtp_client.load_config')
+    @patch('src.tui_mail.core.smtp_client.smtp_connection')
+    @patch('src.tui_mail.core.smtp_client.load_config')
     def test_send_email_server_error(self, mock_config, mock_smtp_conn):
         """Test email sending with server error during send"""
         # Setup
@@ -131,8 +131,8 @@ class TestSendEmail:
         with pytest.raises(RuntimeError, match="Failed to send email"):
             send_email(to_email='test@test.com')
     
-    @patch('src.quiet_mail.core.smtp_client.smtp_connection')
-    @patch('src.quiet_mail.core.smtp_client.load_config')
+    @patch('src.tui_mail.core.smtp_client.smtp_connection')
+    @patch('src.tui_mail.core.smtp_client.load_config')
     def test_send_email_default_values(self, mock_config, mock_smtp_conn):
         """Test email sending with default subject and body"""
         # Setup
@@ -147,5 +147,5 @@ class TestSendEmail:
         assert result is True
         call_args = mock_server.send_message.call_args
         msg = call_args[0][0]
-        assert msg['Subject'] == 'Test Email from quiet_mail'
-        assert 'This is a test email sent from the quiet_mail SMTP client.' in str(msg)
+        assert msg['Subject'] == 'Test Email from tui_mail'
+        assert 'This is a test email sent from the tui_mail SMTP client.' in str(msg)

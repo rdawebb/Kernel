@@ -2,9 +2,9 @@ import unittest
 import io
 import contextlib
 
-from src.quiet_mail.ui.inbox_viewer import display_inbox
-from src.quiet_mail.ui.email_viewer import display_email
-from src.quiet_mail.ui.search_viewer import display_search_results
+from src.tui_mail.ui.inbox_viewer import display_inbox
+from src.tui_mail.ui.email_viewer import display_email
+from src.tui_mail.ui.search_viewer import display_search_results
 
 
 class TestInboxViewer(unittest.TestCase):

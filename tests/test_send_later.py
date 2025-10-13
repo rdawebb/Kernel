@@ -4,8 +4,8 @@ import sqlite3
 from datetime import datetime, timedelta
 sys.path.insert(0, 'src')
 
-from quiet_mail.core import storage_api
-from quiet_mail.core.storage_api import get_db_path
+from tui_mail.core import storage_api
+from tui_mail.core.storage_api import get_db_path
 
 def test_send_later_functionality():
     print("Testing Send Later functionality...")

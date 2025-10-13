@@ -1,11 +1,11 @@
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal
 from textual.binding import Binding
-from quiet_mail.tui.layout.sidebar import Sidebar
-from quiet_mail.tui.layout.folder_view import FolderView
-from quiet_mail.tui.layout.message_view import MessageView
-from quiet_mail.tui.widgets.status_bar import StatusBar
-from quiet_mail.tui.widgets.modals.modal_manager import ModalManager
+from tui_mail.tui.layout.sidebar import Sidebar
+from tui_mail.tui.layout.folder_view import FolderView
+from tui_mail.tui.layout.message_view import MessageView
+from tui_mail.tui.widgets.status_bar import StatusBar
+from tui_mail.tui.widgets.modals.modal_manager import ModalManager
 
 class TuiMail(App):
     CSS_PATH = "styles.tcss"

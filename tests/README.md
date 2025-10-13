@@ -1,6 +1,6 @@
-# Tests for Quiet Mail
+# Tests for tui Mail
 
-This directory contains comprehensive unit tests for the Quiet Mail email client.
+This directory contains comprehensive unit tests for the tui Mail email client.
 
 ## Test Structure
 
@@ -130,7 +130,7 @@ _This comprehensive test suite ensures reliable email client functionality with 
 
 # Run tests with coverage report
 
-python -m pytest tests/ --cov=src/quiet_mail --cov-report=term-missing
+python -m pytest tests/ --cov=src/tui_mail --cov-report=term-missing
 
 # Or using the test suite script
 
@@ -195,7 +195,7 @@ The test suite is designed for CI/CD environments:
 python -m pytest tests/ --junitxml=test-results.xml
 
 # Run with coverage for CI reporting
-python -m pytest tests/ --cov=src/quiet_mail --cov-report=xml
+python -m pytest tests/ --cov=src/tui_mail --cov-report=xml
 
 # Performance timing for CI optimization
 python -m pytest tests/ --durations=10

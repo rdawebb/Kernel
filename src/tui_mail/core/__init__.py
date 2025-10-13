@@ -1,5 +1,5 @@
 """
-Core functionality for the quiet_mail email client.
+Core functionality for the tui_mail email client.
 
 This package contains the core modules for email operations:
 - imap_client: IMAP connection and email fetching

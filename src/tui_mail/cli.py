@@ -10,10 +10,10 @@ import platform
 import subprocess
 from datetime import datetime
 from rich.console import Console
-from quiet_mail.core import imap_client, storage_api
-from quiet_mail.ui import inbox_viewer, email_viewer, search_viewer, composer
-from quiet_mail.utils import config, logger
-from quiet_mail.utils.ui_helpers import confirm_action
+from tui_mail.core import imap_client, storage_api
+from tui_mail.ui import inbox_viewer, email_viewer, search_viewer, composer
+from tui_mail.utils import config, logger
+from tui_mail.utils.ui_helpers import confirm_action
 
 console = Console()
 logger = logger.get_logger()
@@ -66,7 +66,7 @@ def handle_download_action(cfg, email_id, args):
 def setup_argument_parser():
     """Configure and return the argument parser with all subcommands"""
     parser = argparse.ArgumentParser(
-        prog="quiet_mail",
+        prog="tui_mail",
         description="Minimal Email Client — fetch, view, send, and manage emails."
     )
 

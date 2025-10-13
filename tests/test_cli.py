@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 import unittest.mock
-from src.quiet_mail.cli import main
+from src.tui_mail.cli import main
 
 class TestCLI(unittest.TestCase):
     
@@ -41,9 +41,9 @@ class TestCLI(unittest.TestCase):
     pass
     
     @patch('sys.argv', ['cli.py', 'list', '--limit', '5'])
-    @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage_api.get_inbox')
-    @patch('quiet_mail.ui.inbox_viewer.display_inbox')
+    @patch('src.tui_mail.cli.console')
+    @patch('tui_mail.core.storage_api.get_inbox')
+    @patch('tui_mail.ui.inbox_viewer.display_inbox')
     def test_list_command_with_limit(self, mock_display_inbox, mock_get_inbox, mock_console):
         # Test list command with limit (should use local database by default)
         mock_get_inbox.return_value = []
@@ -55,10 +55,10 @@ class TestCLI(unittest.TestCase):
         mock_display_inbox.assert_called_once()
     
     @patch('sys.argv', ['cli.py', 'view', '1'])
-    @patch('quiet_mail.core.storage_api.initialize_db')
-    @patch('quiet_mail.ui.email_viewer.display_email')
-    @patch('quiet_mail.core.storage_api.get_email_from_table')
-    @patch('src.quiet_mail.cli.console')  # Mock the global console object
+    @patch('tui_mail.core.storage_api.initialize_db')
+    @patch('tui_mail.ui.email_viewer.display_email')
+    @patch('tui_mail.core.storage_api.get_email_from_table')
+    @patch('src.tui_mail.cli.console')  # Mock the global console object
     def test_view_command_existing_email(self, mock_console, mock_get_email, mock_display_email, mock_init_db):
         mock_email = {
             'uid': '1',
@@ -76,9 +76,9 @@ class TestCLI(unittest.TestCase):
         mock_display_email.assert_called_once_with(mock_email)
     
     @patch('sys.argv', ['cli.py', 'view', '999'])
-    @patch('quiet_mail.core.storage_api.initialize_db')
-    @patch('quiet_mail.core.storage_api.get_email_from_table')
-    @patch('src.quiet_mail.cli.console')  # Mock the global console object
+    @patch('tui_mail.core.storage_api.initialize_db')
+    @patch('tui_mail.core.storage_api.get_email_from_table')
+    @patch('src.tui_mail.cli.console')  # Mock the global console object
     def test_view_command_nonexistent_email(self, mock_console, mock_get_email, mock_init_db):
         mock_get_email.return_value = None
         
@@ -90,8 +90,8 @@ class TestCLI(unittest.TestCase):
         self.assertTrue(error_found)
     
     @patch('sys.argv', ['cli.py', 'list'])
-    @patch('src.quiet_mail.cli.console')  # Mock the global console object
-    @patch('quiet_mail.utils.config.load_config')
+    @patch('src.tui_mail.cli.console')  # Mock the global console object
+    @patch('tui_mail.utils.config.load_config')
     def test_config_error_handling(self, mock_load_config, mock_console):
         mock_load_config.side_effect = ValueError("Missing configuration")
         
@@ -103,8 +103,8 @@ class TestCLI(unittest.TestCase):
         self.assertTrue(error_found)
     
     @patch('sys.argv', ['cli.py', 'refresh'])
-    @patch('src.quiet_mail.cli.console')  # Mock the global console object
-    @patch('quiet_mail.core.imap_client.fetch_new_emails')
+    @patch('src.tui_mail.cli.console')  # Mock the global console object
+    @patch('tui_mail.core.imap_client.fetch_new_emails')
     def test_imap_error_handling(self, mock_fetch_new_emails, mock_console):
         mock_fetch_new_emails.side_effect = Exception("IMAP connection failed")
         
@@ -116,8 +116,8 @@ class TestCLI(unittest.TestCase):
         self.assertTrue(error_found)
     
     @patch('sys.argv', ['cli.py', 'list'])
-    @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage_api.get_inbox')
+    @patch('src.tui_mail.cli.console')
+    @patch('tui_mail.core.storage_api.get_inbox')
     def test_storage_api_operation_failure(self, mock_get_inbox, mock_console):
         # Test storage_api operation failure during runtime
         mock_get_inbox.side_effect = Exception("Failed to load emails")
@@ -130,11 +130,11 @@ class TestCLI(unittest.TestCase):
         self.assertTrue(error_found)
     
     @patch('sys.argv', ['cli.py', 'refresh', '--limit', '3'])
-    @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage_api.initialize_db')
-    @patch('src.quiet_mail.cli.inbox_viewer.display_inbox')
-    @patch('src.quiet_mail.cli.storage_api.get_inbox')
-    @patch('src.quiet_mail.cli.imap_client.fetch_new_emails')
+    @patch('src.tui_mail.cli.console')
+    @patch('tui_mail.core.storage_api.initialize_db')
+    @patch('src.tui_mail.cli.inbox_viewer.display_inbox')
+    @patch('src.tui_mail.cli.storage_api.get_inbox')
+    @patch('src.tui_mail.cli.imap_client.fetch_new_emails')
     def test_list_command_with_refresh(self, mock_fetch_new_emails, mock_get_inbox, mock_display_inbox, mock_init_db, mock_console):
         # Test refresh command (should fetch from server)
         mock_fetch_new_emails.return_value = 3  # Number of emails fetched
@@ -153,9 +153,9 @@ class TestCLI(unittest.TestCase):
         self.assertTrue(fetching_found)
     
     @patch('sys.argv', ['cli.py', 'list', '--limit', '3'])
-    @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage_api.get_inbox')
-    @patch('quiet_mail.ui.inbox_viewer.display_inbox')
+    @patch('src.tui_mail.cli.console')
+    @patch('tui_mail.core.storage_api.get_inbox')
+    @patch('tui_mail.ui.inbox_viewer.display_inbox')
     def test_list_command_default_behavior(self, mock_display_inbox, mock_get_inbox, mock_console):
         # Test list command default behavior (should use local database)
         mock_get_inbox.return_value = [
@@ -172,9 +172,9 @@ class TestCLI(unittest.TestCase):
         self.assertTrue(loading_found)
 
     @patch('sys.argv', ['cli.py', 'search', 'inbox', 'test_keyword'])
-    @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage_api.search_emails')
-    @patch('quiet_mail.ui.search_viewer.display_search_results')
+    @patch('src.tui_mail.cli.console')
+    @patch('tui_mail.core.storage_api.search_emails')
+    @patch('tui_mail.ui.search_viewer.display_search_results')
     def test_search_command(self, mock_display_results, mock_search_emails, mock_console):
         mock_search_emails.return_value = [
             {'id': '1', 'subject': 'Test Email', 'from': 'test@example.com', 'date': '2025-10-03', 'time': '10:00:00', 'flagged': 0}
@@ -186,9 +186,9 @@ class TestCLI(unittest.TestCase):
         mock_display_results.assert_called_once_with('inbox', mock_search_emails.return_value, 'test_keyword')
     
     @patch('sys.argv', ['cli.py', 'flagged', '--limit', '5'])
-    @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage_api.search_emails_by_flag_status')
-    @patch('quiet_mail.ui.search_viewer.display_search_results')
+    @patch('src.tui_mail.cli.console')
+    @patch('tui_mail.core.storage_api.search_emails_by_flag_status')
+    @patch('tui_mail.ui.search_viewer.display_search_results')
     def test_flagged_command(self, mock_display_results, mock_search_flagged, mock_console):
         mock_search_flagged.return_value = [
             {'id': '1', 'subject': 'Flagged Email', 'from': 'test@example.com', 'date': '2025-10-03', 'time': '10:00:00', 'flagged': 1}
@@ -200,9 +200,9 @@ class TestCLI(unittest.TestCase):
         mock_display_results.assert_called_once_with('inbox', mock_search_flagged.return_value, 'flagged emails')
     
     @patch('sys.argv', ['cli.py', 'unflagged', '--limit', '3'])
-    @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage_api.search_emails_by_flag_status')
-    @patch('quiet_mail.ui.search_viewer.display_search_results')
+    @patch('src.tui_mail.cli.console')
+    @patch('tui_mail.core.storage_api.search_emails_by_flag_status')
+    @patch('tui_mail.ui.search_viewer.display_search_results')
     def test_unflagged_command(self, mock_display_results, mock_search_unflagged, mock_console):
         mock_search_unflagged.return_value = [
             {'id': '2', 'subject': 'Unflagged Email', 'from': 'test@example.com', 'date': '2025-10-03', 'time': '11:00:00', 'flagged': 0}
@@ -214,9 +214,9 @@ class TestCLI(unittest.TestCase):
         mock_display_results.assert_called_once_with('inbox', mock_search_unflagged.return_value, 'unflagged emails')
     
     @patch('sys.argv', ['cli.py', 'flag', 'test_uid', '--flag'])
-    @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage_api.get_email_from_table')
-    @patch('quiet_mail.core.storage_api.mark_email_flagged')
+    @patch('src.tui_mail.cli.console')
+    @patch('tui_mail.core.storage_api.get_email_from_table')
+    @patch('tui_mail.core.storage_api.mark_email_flagged')
     def test_flag_command_flag(self, mock_mark_flagged, mock_get_email, mock_console):
         mock_get_email.return_value = {'id': 'test_uid', 'subject': 'Test Email'}
         
@@ -230,9 +230,9 @@ class TestCLI(unittest.TestCase):
         self.assertTrue(success_found)
     
     @patch('sys.argv', ['cli.py', 'flag', 'test_uid', '--unflag'])
-    @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage_api.get_email_from_table')
-    @patch('quiet_mail.core.storage_api.mark_email_flagged')
+    @patch('src.tui_mail.cli.console')
+    @patch('tui_mail.core.storage_api.get_email_from_table')
+    @patch('tui_mail.core.storage_api.mark_email_flagged')
     def test_flag_command_unflag(self, mock_mark_flagged, mock_get_email, mock_console):
         mock_get_email.return_value = {'id': 'test_uid', 'subject': 'Test Email'}
         
@@ -246,7 +246,7 @@ class TestCLI(unittest.TestCase):
         self.assertTrue(success_found)
     
     @patch('sys.argv', ['cli.py', 'flag', 'test_uid'])
-    @patch('src.quiet_mail.cli.console')
+    @patch('src.tui_mail.cli.console')
     def test_flag_command_no_flag_option(self, mock_console):
         main()
         
@@ -256,8 +256,8 @@ class TestCLI(unittest.TestCase):
         self.assertTrue(error_found)
     
     @patch('sys.argv', ['cli.py', 'flag', 'nonexistent_uid', '--flag'])
-    @patch('src.quiet_mail.cli.console')
-    @patch('quiet_mail.core.storage_api.get_email_from_table')
+    @patch('src.tui_mail.cli.console')
+    @patch('tui_mail.core.storage_api.get_email_from_table')
     def test_flag_command_nonexistent_email(self, mock_get_email, mock_console):
         mock_get_email.return_value = None
         
@@ -290,10 +290,10 @@ class TestCLIArgumentParsing(unittest.TestCase):
                     pass  # Invalid command causes SystemExit, which is expected
 
     # New tests for attachment and delete functionality
-    @patch('src.quiet_mail.core.storage_api.initialize_db')
-    @patch('src.quiet_mail.cli.console')
-    @patch('src.quiet_mail.cli.storage_api.search_emails_with_attachments')
-    @patch('src.quiet_mail.cli.inbox_viewer.display_inbox')
+    @patch('src.tui_mail.core.storage_api.initialize_db')
+    @patch('src.tui_mail.cli.console')
+    @patch('src.tui_mail.cli.storage_api.search_emails_with_attachments')
+    @patch('src.tui_mail.cli.inbox_viewer.display_inbox')
     def test_attachments_command(self, mock_display_inbox, mock_search_attachments, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'attachments', '--limit', '5']):
             mock_search_attachments.return_value = [
@@ -306,9 +306,9 @@ class TestCLIArgumentParsing(unittest.TestCase):
             mock_search_attachments.assert_called_once_with('inbox', limit=5)
             mock_display_inbox.assert_called_once()
 
-    @patch('src.quiet_mail.core.storage_api.initialize_db')
-    @patch('src.quiet_mail.cli.console')
-    @patch('src.quiet_mail.cli.imap_client.get_attachment_list')
+    @patch('src.tui_mail.core.storage_api.initialize_db')
+    @patch('src.tui_mail.cli.console')
+    @patch('src.tui_mail.cli.imap_client.get_attachment_list')
     def test_list_attachments_command(self, mock_get_attachment_list, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'attachments-list', '123']):
             mock_get_attachment_list.return_value = ['document.pdf', 'image.jpg']
@@ -319,10 +319,10 @@ class TestCLIArgumentParsing(unittest.TestCase):
             # Verify console.print was called with attachment information
             self.assertTrue(mock_console.print.called)
 
-    @patch('src.quiet_mail.core.storage_api.initialize_db')
-    @patch('src.quiet_mail.cli.console')
-    @patch('src.quiet_mail.cli.storage_api.get_email_from_table')
-    @patch('src.quiet_mail.cli.handle_download_action')
+    @patch('src.tui_mail.core.storage_api.initialize_db')
+    @patch('src.tui_mail.cli.console')
+    @patch('src.tui_mail.cli.storage_api.get_email_from_table')
+    @patch('src.tui_mail.cli.handle_download_action')
     def test_download_command_with_attachments(self, mock_handle_download, mock_get_email, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'download', '123', '--all']):
             mock_get_email.return_value = {
@@ -336,12 +336,12 @@ class TestCLIArgumentParsing(unittest.TestCase):
             mock_get_email.assert_called_once_with('inbox', '123')
             mock_handle_download.assert_called_once()
 
-    @patch('src.quiet_mail.core.storage_api.initialize_db')
-    @patch('src.quiet_mail.cli.console')
-    @patch('src.quiet_mail.cli.storage_api.get_email_from_table')
-    @patch('src.quiet_mail.cli.storage_api.delete_email')
-    @patch('src.quiet_mail.cli.storage_api.save_deleted_email')
-    @patch('src.quiet_mail.cli.storage_api.email_exists')
+    @patch('src.tui_mail.core.storage_api.initialize_db')
+    @patch('src.tui_mail.cli.console')
+    @patch('src.tui_mail.cli.storage_api.get_email_from_table')
+    @patch('src.tui_mail.cli.storage_api.delete_email')
+    @patch('src.tui_mail.cli.storage_api.save_deleted_email')
+    @patch('src.tui_mail.cli.storage_api.email_exists')
     @patch('builtins.input', return_value='y')  # Mock user confirmation
     def test_delete_command_local_only(self, mock_input, mock_email_exists, mock_save_deleted, mock_delete_email, mock_get_email, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'delete', '123']):
@@ -362,13 +362,13 @@ class TestCLIArgumentParsing(unittest.TestCase):
             mock_delete_email.assert_called_once_with('123')
             # Should not call imap delete for local-only deletion
 
-    @patch('src.quiet_mail.core.storage_api.initialize_db')
-    @patch('src.quiet_mail.cli.console')
-    @patch('src.quiet_mail.cli.storage_api.get_email_from_table')
-    @patch('src.quiet_mail.cli.storage_api.delete_email')
-    @patch('src.quiet_mail.cli.storage_api.save_deleted_email')
-    @patch('src.quiet_mail.cli.imap_client.delete_email')
-    @patch('src.quiet_mail.cli.storage_api.email_exists')
+    @patch('src.tui_mail.core.storage_api.initialize_db')
+    @patch('src.tui_mail.cli.console')
+    @patch('src.tui_mail.cli.storage_api.get_email_from_table')
+    @patch('src.tui_mail.cli.storage_api.delete_email')
+    @patch('src.tui_mail.cli.storage_api.save_deleted_email')
+    @patch('src.tui_mail.cli.imap_client.delete_email')
+    @patch('src.tui_mail.cli.storage_api.email_exists')
     @patch('builtins.input', return_value='y')  # Mock user confirmation
     def test_delete_command_server_and_local(self, mock_input, mock_email_exists, mock_imap_delete, mock_save_deleted, mock_storage_api_delete, mock_get_email, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'delete', '123', '--all']):
@@ -389,8 +389,8 @@ class TestCLIArgumentParsing(unittest.TestCase):
             mock_storage_api_delete.assert_called_once_with('123')
             mock_imap_delete.assert_called_once()
 
-    @patch('src.quiet_mail.core.storage_api.initialize_db')
-    @patch('src.quiet_mail.cli.console')
+    @patch('src.tui_mail.core.storage_api.initialize_db')
+    @patch('src.tui_mail.cli.console')
     @patch('builtins.input', return_value='n')  # Mock user declining deletion
     def test_delete_command_cancelled(self, mock_input, mock_console, mock_init_db):
         with patch('sys.argv', ['cli.py', 'delete', '123']):
@@ -399,8 +399,8 @@ class TestCLIArgumentParsing(unittest.TestCase):
             # Should print cancellation message
             mock_console.print.assert_called_with("[yellow]Deletion cancelled.[/]")
 
-    @patch('src.quiet_mail.core.storage_api.initialize_db')
-    @patch('src.quiet_mail.cli.console')
+    @patch('src.tui_mail.core.storage_api.initialize_db')
+    @patch('src.tui_mail.cli.console')
     def test_downloads_list_command(self, mock_console, mock_init_db):
         # Test downloads-list command execution
         with patch('sys.argv', ['cli.py', 'downloads-list']):

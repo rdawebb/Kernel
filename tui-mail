@@ -1,5 +1,5 @@
 #!/bin/sh
-# Launcher script for quiet-mail CLI application
+# Launcher script for tui-mail CLI application
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

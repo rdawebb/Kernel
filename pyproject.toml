@@ -1,5 +1,5 @@
 [project]
-name = "quiet-mail"
+name = "tui-mail"
 version = "0.1.0"
 description = "A minimal command-line email client"
 authors = [{ name = "Rob Webb", email = "rdawebb@gmail.com" }]
@@ -12,19 +12,19 @@ dependencies = [
 ]
 
 [project.scripts]
-quiet-mail = "quiet_mail.cli:main"
+tui-mail = "tui_mail.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0.0,<9"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/quiet_mail"]
+include = ["src/tui_mail"]
 
 [tool.hatch.build.targets.wheel]
-include = ["src/quiet_mail"]
+include = ["src/tui_mail"]
 
 [tool.hatch.build.targets.wheel.sources]
-"src/quiet_mail" = "quiet_mail"
+"src/tui_mail" = "tui_mail"
 
 [build-system]
 requires = ["hatchling"]

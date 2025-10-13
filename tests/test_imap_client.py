@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock, mock_open
 
-from src.quiet_mail.core.imap_client import (
+from src.tui_mail.core.imap_client import (
     fetch_inbox, fetch_new_emails,
     decode_email_header, decode_filename, parse_email_date, parse_email,
     _extract_attachment_filenames, _extract_attachments_from_email,
@@ -66,8 +66,8 @@ class TestImapClient(unittest.TestCase):
         result = parse_email_date(None)
         self.assertIsNotNone(result)  # Should return current time
 
-    @patch('src.quiet_mail.core.imap_client.connect_to_imap')
-    @patch('src.quiet_mail.core.imap_client.process_email_message')
+    @patch('src.tui_mail.core.imap_client.connect_to_imap')
+    @patch('src.tui_mail.core.imap_client.process_email_message')
     def test_fetch_inbox_success(self, mock_process, mock_connect):
         mock_mail = MagicMock()
         mock_connect.return_value = mock_mail
@@ -81,7 +81,7 @@ class TestImapClient(unittest.TestCase):
         mock_message_2 = MagicMock()
         mock_process.side_effect = [mock_message_1, mock_message_2]
         
-        with patch('src.quiet_mail.core.imap_client.parse_email') as mock_parse:
+        with patch('src.tui_mail.core.imap_client.parse_email') as mock_parse:
             mock_parse.side_effect = [
                 {'id': '3', 'subject': 'Test 3'},
                 {'id': '2', 'subject': 'Test 2'}
@@ -93,7 +93,7 @@ class TestImapClient(unittest.TestCase):
             self.assertEqual(result[0]['subject'], 'Test 3')
             self.assertEqual(result[1]['subject'], 'Test 2')
 
-    @patch('src.quiet_mail.core.imap_client.connect_to_imap')
+    @patch('src.tui_mail.core.imap_client.connect_to_imap')
     def test_fetch_inbox_no_emails(self, mock_connect):
         mock_mail = MagicMock()
         mock_connect.return_value = mock_mail
@@ -103,7 +103,7 @@ class TestImapClient(unittest.TestCase):
         
         self.assertEqual(result, [])
 
-    @patch('src.quiet_mail.core.imap_client.connect_to_imap')
+    @patch('src.tui_mail.core.imap_client.connect_to_imap')
     def test_fetch_inbox_connection_failure(self, mock_connect):
         mock_connect.return_value = None
         
@@ -113,7 +113,7 @@ class TestImapClient(unittest.TestCase):
 
     def test_fetch_new_emails_basic(self):
         # Simple test for fetch_new_emails without complex storage mocking
-        with patch('src.quiet_mail.core.imap_client.connect_to_imap') as mock_connect:
+        with patch('src.tui_mail.core.imap_client.connect_to_imap') as mock_connect:
             mock_connect.return_value = None  # Connection failure
             
             result = fetch_new_emails(self.test_config)
@@ -163,10 +163,10 @@ class TestImapClient(unittest.TestCase):
         mock_file().write.assert_called_once_with(b"test content")
         self.assertEqual(result, "/tmp/attachments/test.pdf")
 
-    @patch('src.quiet_mail.core.imap_client._save_attachment_to_disk')
-    @patch('src.quiet_mail.core.imap_client._extract_attachments_from_email')
-    @patch('src.quiet_mail.core.imap_client._fetch_email_by_uid')
-    @patch('src.quiet_mail.core.imap_client.imap_connection')
+    @patch('src.tui_mail.core.imap_client._save_attachment_to_disk')
+    @patch('src.tui_mail.core.imap_client._extract_attachments_from_email')
+    @patch('src.tui_mail.core.imap_client._fetch_email_by_uid')
+    @patch('src.tui_mail.core.imap_client.imap_connection')
     def test_download_all_attachments(self, mock_imap_conn, mock_fetch, mock_extract, mock_save):
         mock_mail = MagicMock()
         mock_imap_conn.return_value.__enter__.return_value = mock_mail
@@ -183,10 +183,10 @@ class TestImapClient(unittest.TestCase):
         self.assertIn('/path/test1.pdf', result)
         self.assertIn('/path/test2.jpg', result)
 
-    @patch('src.quiet_mail.core.imap_client._save_attachment_to_disk')
-    @patch('src.quiet_mail.core.imap_client._extract_attachments_from_email')
-    @patch('src.quiet_mail.core.imap_client._fetch_email_by_uid')
-    @patch('src.quiet_mail.core.imap_client.imap_connection')
+    @patch('src.tui_mail.core.imap_client._save_attachment_to_disk')
+    @patch('src.tui_mail.core.imap_client._extract_attachments_from_email')
+    @patch('src.tui_mail.core.imap_client._fetch_email_by_uid')
+    @patch('src.tui_mail.core.imap_client.imap_connection')
     def test_download_attachment_by_index(self, mock_imap_conn, mock_fetch, mock_extract, mock_save):
         mock_mail = MagicMock()
         mock_imap_conn.return_value.__enter__.return_value = mock_mail
@@ -202,9 +202,9 @@ class TestImapClient(unittest.TestCase):
         self.assertEqual(result, '/path/test2.jpg')
         mock_save.assert_called_once_with('test2.jpg', b'content2', './attachments')
 
-    @patch('src.quiet_mail.core.imap_client._extract_attachment_filenames')
-    @patch('src.quiet_mail.core.imap_client._fetch_email_by_uid')
-    @patch('src.quiet_mail.core.imap_client.imap_connection')
+    @patch('src.tui_mail.core.imap_client._extract_attachment_filenames')
+    @patch('src.tui_mail.core.imap_client._fetch_email_by_uid')
+    @patch('src.tui_mail.core.imap_client.imap_connection')
     def test_get_attachment_list(self, mock_imap_conn, mock_fetch, mock_extract):
         mock_mail = MagicMock()
         mock_imap_conn.return_value.__enter__.return_value = mock_mail
@@ -215,7 +215,7 @@ class TestImapClient(unittest.TestCase):
         
         self.assertEqual(result, ['test1.pdf', 'test2.jpg'])
 
-    @patch('src.quiet_mail.core.imap_client.imap_connection')
+    @patch('src.tui_mail.core.imap_client.imap_connection')
     def test_delete_email_success(self, mock_imap_conn):
         mock_mail = MagicMock()
         mock_imap_conn.return_value.__enter__.return_value = mock_mail
@@ -228,7 +228,7 @@ class TestImapClient(unittest.TestCase):
         mock_mail.uid.assert_called_with('STORE', '123', '+FLAGS', r'(\Deleted)')
         mock_mail.expunge.assert_called_once()
 
-    @patch('src.quiet_mail.core.imap_client.imap_connection')
+    @patch('src.tui_mail.core.imap_client.imap_connection')
     def test_delete_email_failure(self, mock_imap_conn):
         mock_mail = MagicMock()
         mock_imap_conn.return_value.__enter__.return_value = mock_mail
@@ -251,7 +251,7 @@ class TestImapClient(unittest.TestCase):
         mock_email.get_content_type.return_value = "text/plain"
         mock_email.get_payload.return_value = b"Test body content"
         
-        with patch('src.quiet_mail.core.imap_client._extract_attachment_filenames') as mock_extract:
+        with patch('src.tui_mail.core.imap_client._extract_attachment_filenames') as mock_extract:
             mock_extract.return_value = []
             
             result = parse_email(mock_email, 123)
@@ -274,7 +274,7 @@ class TestImapClient(unittest.TestCase):
         mock_email.get_content_type.return_value = "text/plain"
         mock_email.get_payload.return_value = b"Body with attachments"
         
-        with patch('src.quiet_mail.core.imap_client._extract_attachment_filenames') as mock_extract:
+        with patch('src.tui_mail.core.imap_client._extract_attachment_filenames') as mock_extract:
             mock_extract.return_value = ['file1.pdf', 'file2.jpg']
             
             result = parse_email(mock_email, 123)

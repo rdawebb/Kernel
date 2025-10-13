@@ -9,8 +9,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from contextlib import contextmanager
-from quiet_mail.utils.config import load_config
-from quiet_mail.utils.logger import get_logger
+from tui_mail.utils.config import load_config
+from tui_mail.utils.logger import get_logger
 
 logger = get_logger()
 
@@ -38,7 +38,7 @@ def smtp_connection():
         if server:
             server.quit()
 
-def send_email(to_email=None, subject="Test Email from quiet_mail", body="This is a test email sent from the quiet_mail SMTP client.", cc=None, bcc=None):
+def send_email(to_email=None, subject="Test Email from tui_mail", body="This is a test email sent from the tui_mail SMTP client.", cc=None, bcc=None):
     """
     Send an email via SMTP
     

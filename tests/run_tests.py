@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test runner for the quiet_mail project.
+Test runner for the tui_mail project.
 Runs all unit tests and provides a summary.
 """
 

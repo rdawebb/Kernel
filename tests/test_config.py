@@ -2,7 +2,7 @@ import unittest
 import os
 from unittest.mock import patch
 
-from src.quiet_mail.utils.config import load_config
+from src.tui_mail.utils.config import load_config
 
 class TestConfig(unittest.TestCase):
     
@@ -18,7 +18,7 @@ class TestConfig(unittest.TestCase):
                 del os.environ[var]
         
         # Mock load_dotenv to prevent loading actual .env file
-        self.dotenv_patcher = patch('src.quiet_mail.utils.config.load_dotenv')
+        self.dotenv_patcher = patch('src.tui_mail.utils.config.load_dotenv')
         self.mock_dotenv = self.dotenv_patcher.start()
     
     def tearDown(self):

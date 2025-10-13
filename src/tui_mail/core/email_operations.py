@@ -5,7 +5,7 @@
 from typing import List, Dict, Optional
 from .db_manager import DatabaseManager
 from .email_schema import EmailSchemaManager
-from quiet_mail.utils.logger import get_logger
+from tui_mail.utils.logger import get_logger
 
 logger = get_logger()
 
