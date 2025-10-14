@@ -2,7 +2,7 @@ from textual.widget import Widget
 from textual.app import ComposeResult
 from textual.reactive import reactive
 from textual import events
-from tui_mail.tui.widgets.modals.animated_modal import AnimatedModal
+from .animated_modal import AnimatedModal
 
 
 class ModalManager(Widget):

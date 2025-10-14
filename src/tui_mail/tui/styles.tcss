@@ -1,45 +1,45 @@
 Screen {
-  background: $background;
-  color: $text;
+    background: $background;
+    color: $text;
 }
 
 Label.title {
-  content-align: center middle;
-  padding: 1;
-  text-style: bold;
+    content-align: center middle;
+    padding: 1;
+    text-style: bold;
 }
 
 Sidebar {
-  background: $panel;
-  color: $text;
-  border-right: solid $surface;
+    background: $panel;
+    color: $text;
+    border-right: solid $surface;
 }
 
 DataTable {
-  border-right: solid $surface;
-  background: $boost;
-  color: $text;
+    border-right: solid $surface;
+    background: $boost;
+    color: $text;
 }
 
 MessageView {
-  background: $surface;
-  color: $text;
-  padding: 1 2;
+    background: $surface;
+    color: $text;
+    padding: 1 2;
 }
 
 Footer {
-  background: $panel;
-  color: $text-muted;
-  border-top: solid $surface;
+    background: $panel;
+    color: $text-muted;
+    border-top: solid $surface;
 }
 
 Tabs {
-  background: $boost;
-  border-bottom: solid $surface;
+    background: $boost;
+    border-bottom: solid $surface;
 }
 
 Modal {
-  background: $panel;
-  border: solid $accent;
-  padding: 2;
+    background: $panel;
+    border: solid $accent;
+    padding: 2;
 }
