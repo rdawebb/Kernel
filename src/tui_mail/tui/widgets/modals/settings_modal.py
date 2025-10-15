@@ -3,8 +3,8 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Button, Label, Static
 from textual.app import ComposeResult
 from .animated_modal import AnimatedModal
-from .settings_panels.general_panel import GeneralSettingsPanel
-from .settings_panels.appearance_panel import AppearanceSettingsPanel
+from .settings_panels.general_settings import GeneralSettingsPanel
+from .settings_panels.appearance_settings import AppearanceSettingsPanel
 
 
 

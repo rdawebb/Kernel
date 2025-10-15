@@ -1,27 +1,15 @@
-from textual.widgets import ListView, ListItem, Label
-from textual.message import Message
 from textual.containers import Vertical
+from textual.widgets import Button, Static
+
 
 class Sidebar(Vertical):
-    class FolderSelected(Message):
-        def __init__(self, folder: str) -> None:
-            self.folder = folder
-            super().__init__()
-
-    DEFAULT_CSS = """
-    Sidebar {
-        width: 24;
-        background: $boost;
-        border-right: solid $accent;
-    }
-    """
+    """App sidebar with navigation and actions."""
 
     def compose(self):
-        folders = ["Inbox", "Sent", "Drafts", "Trash"]
-        yield Label("📁 Folders", classes="title")
-        self.list = ListView(*[ListItem(Label(f)) for f in folders])
-        yield self.list
-
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        folder = event.item.label.plain
-        self.post_message(self.FolderSelected(folder))
+        yield Static("📫 Kernel", classes="sidebar-title")
+        yield Button("Inbox", id="inbox-btn")
+        yield Button("Sent", id="sent-btn")
+        yield Button("Drafts", id="drafts-btn")
+        yield Button("Trash", id="trash-btn")
+        yield Button("⚙ Settings", id="settings-btn")
+        yield Button("Quit", id="quit-btn", variant="error")

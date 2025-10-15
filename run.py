@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Launcher script for tui-mail CLI application.
+Launcher script for kernel CLI application.
 This script allows running the application from the root directory.
 """
 import sys
@@ -17,7 +17,7 @@ if venv_python.exists() and sys.executable != str(venv_python):
     # Re-execute with the virtual environment's Python
     os.execv(str(venv_python), [str(venv_python)] + sys.argv)
 
-# Add src to Python path so we can import tui_mail
+# Add src to Python path so we can import kernel
 src_path = script_dir / "src"
 sys.path.insert(0, str(src_path))
 
