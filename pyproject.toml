@@ -1,5 +1,5 @@
 [project]
-name = "tui-mail"
+name = "Kernel"
 version = "0.1.0"
 description = "A minimal command-line email client"
 authors = [{ name = "Rob Webb", email = "rdawebb@gmail.com" }]
@@ -9,22 +9,25 @@ dependencies = [
     "rich==14.1.0",
     "apscheduler==3.11.0",
     "python-dotenv==1.1.1",
+    "email_validator==2.1.1",
+    "pandas>=2.0.0",
+    "textual==6.2.1"
 ]
 
 [project.scripts]
-tui-mail = "tui_mail.cli:main"
+kernel = "kernel.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0.0,<9"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/tui_mail"]
+include = ["src/"]
 
 [tool.hatch.build.targets.wheel]
-include = ["src/tui_mail"]
+include = ["src/"]
 
 [tool.hatch.build.targets.wheel.sources]
-"src/tui_mail" = "tui_mail"
+"src/" = "kernel"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Launcher script for tui-mail CLI application
+# Launcher script for Kernel CLI application
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -6,7 +6,7 @@ This script allows running the application from the root directory.
 import sys
 import os
 from pathlib import Path
-from src.tui_mail.cli import main
+from src.cli import main
 
 # Get the directory where this script is located
 script_dir = Path(__file__).parent

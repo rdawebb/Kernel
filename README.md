@@ -1,1 +1,1 @@
-# Tui-Mail
+# Kernel - Minimal Email App
