@@ -40,3 +40,13 @@ class MessageList(VerticalScroll):
                 selected_message = self.messages[i]
                 await self.emit(MessageSelected(selected_message))
                 break
+
+    async def archicve_message(self, message):
+        """Archive the specified message."""
+        self.messages = [msg for msg in self.messages if msg != message]
+        await self.populate(self.messages)
+
+    async def delete_message(self, message):
+        """Delete the specified message."""
+        self.messages = [msg for msg in self.messages if msg != message]
+        await self.populate(self.messages)

@@ -1,5 +1,6 @@
-from textual.containers import VerticalScroll
+from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Static
+from tui.message_actions import MessageActions
 
 MOCK_BODIES = {
     "Project Update": """Hi team,
@@ -22,18 +23,23 @@ slides for the next meeting.""",
     "(draft) Proposal": """Draft proposal content goes here...""",
 }
 
-class MessageViewer(VerticalScroll):
+class MessageViewer(Vertical):
     """Displays full content of the selected message."""
 
     def __init__(self):
         super().__init__(id="message-viewer")
-        self.message = None
+        self.body_container = VerticalScroll()
+        self.actions = MessageActions()
+
+    async def on_mount(self):
+        await self.mount(self.body_container)
+        await self.mount(self.actions)
 
     async def show_message(self, message):
         """Render the full selected message."""
-        self.clear()
+        self.body_container.clear()
         if not message:
-            await self.mount(Static("No message selected.", classes="empty-view"))
+            await self.body_container.mount(Static("No message selected.", classes="empty-view"))
             return
 
         body = MOCK_BODIES.get(message["subject"], "(No content)")
@@ -42,4 +48,4 @@ class MessageViewer(VerticalScroll):
             f"[b]Subject:[/b] {message['subject']}\n"
             f"[b]Date:[/b] {message['date']}\n\n"
         )
-        await self.mount(Static(header + body, classes="message-body"))
+        await self.body_container.mount(Static(header + body, classes="message-body"))

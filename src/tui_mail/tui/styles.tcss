@@ -271,3 +271,42 @@ Button:focus {
     color: var(--secondary);
     italic: true;
 }
+
+#message-actions {
+    dock: bottom;
+    height: 3;
+    padding: 0 1;
+    background: var(--bg-light);
+    border-top: solid gray 1;
+    content-align: center middle;
+}
+
+#message-actions Button {
+    margin: 0 1;
+    min-width: 10;
+}
+
+#reply-modal {
+    width: 80%;
+    height: 70%;
+    border: round gray;
+    background: $surface;
+    padding: 1;
+}
+
+.modal-title {
+    text-align: center;
+    bold: true;
+    margin-bottom: 1;
+}
+
+.modal-actions {
+    padding-top: 1;
+    content-align: right middle;
+}
+
+TextArea {
+    height: 15;
+    border: solid gray 1;
+    margin-y: 1;
+}

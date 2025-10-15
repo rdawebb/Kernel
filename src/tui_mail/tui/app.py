@@ -1,27 +1,34 @@
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal
 from textual.binding import Binding
-from textual.widgets import Static
 from textual import events
-from data.mock_data import MOCK_MESSAGES
 from .layout.sidebar import Sidebar
 from .layout.folder_list import FolderList
 from .layout.message_list import MessageList, MessageSelected
+from .message_actions import MessageAction
 from .widgets.message_viewer import MessageViewer
 from .widgets.status_bar import StatusBar
 from .widgets.hint_bar import HintBar
 from .widgets.modals.modal_manager import ModalManager
 from .widgets.modals.settings_modal import SettingsModal
+from .widgets.modals.reply_modal import ReplyModal, ReplySent
 from .theme.theme_manager import ThemeManager
 from tui_mail.core.config_manager import ConfigManager
+from data.mock_data import MOCK_BODIES
 
 class KernelApp(App):
     CSS_PATH = "styles.tcss"
-    TITLE = "TuiMail - Minimal Email Client"
+    TITLE = "Kernel - Minimal Email Client"
 
     BINDINGS = [
-        Binding("ctrl+s", "open_settings", "Settings"),
-        Binding("ctrl+i", "open_info", "Info"),
+        Binding("s", "open_settings", "Settings"),
+        Binding("i", "open_info", "Info"),
+        Binding("r", "reply", "Reply"),
+        Binding("a", "archive", "Archive"),
+        Binding("f", "flag", "Flag"),
+        Binding("m", "mark_read", "Mark Read"),
+        Binding("d", "delete", "Delete"),
+        Binding("h", "open_help", "Help"),
         Binding("ctrl+q", "quit", "Quit"),
     ]
 
@@ -35,12 +42,16 @@ class KernelApp(App):
         self.folder_list = FolderList()
         self.message_list = MessageList()
         self.message_viewer = MessageViewer()
+        self.reply_modal = ReplyModal()
+        self.selected_message = None
 
     def compose(self) -> ComposeResult:
         self.modal_manager = ModalManager(self)
         yield Horizontal(self.sidebar, self.folder_list, self.message_list, self.message_viewer)
         yield StatusBar()
         yield HintBar()
+        yield self.settings_modal
+        yield self.reply_modal
 
     async def action_open_settings(self):
         await self.modal_manager.push("settings")
@@ -78,10 +89,64 @@ class KernelApp(App):
 
     async def on_folder_selected(self, event: FolderList.FolderSelected) -> None:
         await self.folder_list.load_folder(event.folder_name)
+        self.selected_message = None
         await self.message_viewer.show_message(None)  # Clear message viewer
 
     async def message_selected(self, event: MessageSelected) -> None:
+        self.selected_message = event.message_data
         await self.message_viewer.show_message(event.message_data)
+
+    async def on_message_action(self, event: MessageAction):
+        await self.handle_message_action(event.action_name)
+
+    async def handle_message_action(self, action_name: str):
+        if not self.selected_message:
+            return
+        subject = self.selected_message["subject"]
+        
+        match action_name:
+            case "reply":
+                await self.show_reply_modal()
+            case "archive":
+                await self.message_list.archicve_message(self.selected_message)
+                await self.message_viewer.show_message(None)
+                self.log(f"Archived message: {subject}")
+            case "flag":
+                self.log(f"Flagged message: {subject}")
+            case "mark":
+                await self.message_list.mark_as_read(self.selected_message)
+                self.log(f"Marked as read: {subject}")
+            case "delete":
+                await self.message_list.delete_message(self.selected_message)
+                await self.message_viewer.show_message(None)
+                self.log(f"Deleted message: {subject}")
+
+    async def show_reply_modal(self):
+        if not self.selected_message:
+            return
+        message = self.selected_message
+        self.reply_modal.to_input.value = message["from"]
+        self.reply_modal.subject_input.value = f"Re: {message['subject']}"
+        self.reply_modal.body_input.value = f"\n\n--- On {message['date'], message['from']} wrote: ---\n{MOCK_BODIES.get(message['subject'], '')}"
+        await self.reply_modal.show()
+
+    async def on_reply_sent(self, event: ReplySent):
+        self.log(f"Reply sent to {event.to_addr} - '{event.subject}'")
+
+    async def action_reply(self):
+        await self.handle_message_action("reply")
+
+    async def action_archive(self):
+        await self.handle_message_action("archive")
+
+    async def action_flag(self):
+        await self.handle_message_action("flag")
+
+    async def action_mark_read(self):
+        await self.handle_message_action("mark")
+
+    async def action_delete(self):
+        await self.handle_message_action("delete")
 
 if __name__ == "__main__":
     KernelApp().run()
