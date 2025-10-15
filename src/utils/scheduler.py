@@ -5,11 +5,11 @@
 
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
-from tui_mail.core import storage_api
-from tui_mail.core.imap_client import fetch_new_emails
-from tui_mail.core.smtp_client import send_email
-from tui_mail.utils.config import load_config
-from tui_mail.utils.logger import get_logger
+from core import storage_api
+from core.imap_client import fetch_new_emails
+from core.smtp_client import send_email
+from utils.config import load_config
+from utils.logger import get_logger
 
 scheduler = BackgroundScheduler()
 config = load_config()

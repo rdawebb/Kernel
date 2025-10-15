@@ -1,4 +1,4 @@
-"""UI helper functions for Tui Mail - confirmation prompts, input handling, etc."""
+"""UI helper functions for Kernel - confirmation prompts, input handling, etc."""
 
 ## TODO: move more UI helper functions here to reduce duplication?
 

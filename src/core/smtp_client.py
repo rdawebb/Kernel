@@ -9,8 +9,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from contextlib import contextmanager
-from tui_mail.utils.config import load_config
-from tui_mail.utils.logger import get_logger
+from utils.config import load_config
+from utils.logger import get_logger
 
 logger = get_logger()
 

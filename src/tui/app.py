@@ -13,7 +13,7 @@ from .widgets.modals.modal_manager import ModalManager
 from .widgets.modals.settings_modal import SettingsModal
 from .widgets.modals.reply_modal import ReplyModal, ReplySent
 from .theme.theme_manager import ThemeManager
-from tui_mail.core.config_manager import ConfigManager
+from core.config_manager import ConfigManager
 from data.mock_data import MOCK_BODIES
 
 class KernelApp(App):

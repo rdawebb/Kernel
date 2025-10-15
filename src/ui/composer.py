@@ -6,11 +6,11 @@ import datetime
 import uuid
 from rich.console import Console
 from email_validator import validate_email, EmailNotValidError
-from tui_mail.core.smtp_client import send_email
-from tui_mail.utils.ui_helpers import confirm_action
-from tui_mail.core.storage_api import save_sent_email, save_draft_email
-from tui_mail.utils.config import load_config
-from tui_mail.utils.logger import get_logger
+from core.smtp_client import send_email
+from utils.ui_helpers import confirm_action
+from core.storage_api import save_sent_email, save_draft_email
+from utils.config import load_config
+from utils.logger import get_logger
 
 console = Console()
 logger = get_logger()

@@ -9,9 +9,9 @@ import time
 from email.header import decode_header
 from email.utils import parsedate_tz
 from contextlib import contextmanager
-from tui_mail.utils.config import load_config
-from tui_mail.core import storage_api
-from tui_mail.utils import logger
+from utils.config import load_config
+from core import storage_api
+from utils import logger
 
 config = load_config()
 

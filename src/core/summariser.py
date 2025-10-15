@@ -2,8 +2,8 @@
 
 import subprocess
 import sys
-from tui_mail.utils import logger
-from tui_mail.utils.config import load_config
+from utils import logger
+from utils.config import load_config
 
 config = load_config()
 logger = logger.get_logger()

@@ -1,4 +1,4 @@
-"""Command-line interface for Tui Mail - handles argument parsing and command execution"""
+"""Command-line interface for Kernel - handles argument parsing and command execution"""
 
 ## TODO: refactor to remove redundant code, improve error handling and user feedback
 ## TODO: improve help messages and validation
@@ -10,10 +10,10 @@ import platform
 import subprocess
 from datetime import datetime
 from rich.console import Console
-from tui_mail.core import imap_client, storage_api
-from tui_mail.ui import inbox_viewer, email_viewer, search_viewer, composer
-from tui_mail.utils import config, logger
-from tui_mail.utils.ui_helpers import confirm_action
+from core import imap_client, storage_api
+from ui import inbox_viewer, email_viewer, search_viewer, composer
+from utils import config, logger
+from utils.ui_helpers import confirm_action
 
 console = Console()
 logger = logger.get_logger()

@@ -1,4 +1,4 @@
-"""Logging utility for Tui Mail application"""
+"""Logging utility for Kernel application"""
 
 import logging
 import json
@@ -6,7 +6,7 @@ import datetime
 import inspect
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from tui_mail.utils.config import load_config
+from utils.config import load_config
 
 config = load_config()
 log_path = Path(config.get("log_path"))
@@ -25,7 +25,7 @@ def load_log_config():
     return logging.INFO
 
 def get_logger(
-        name: str = "tui_mail",
+        name: str = "kernel",
         level = None,
         max_bytes: int = 5 * 1024 * 1024,
         backup_count: int = 5,
