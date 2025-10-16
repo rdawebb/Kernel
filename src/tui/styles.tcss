@@ -310,3 +310,15 @@ TextArea {
     border: solid gray 1;
     margin-y: 1;
 }
+
+#search-bar {
+    height: 3;
+    padding: 0 1;
+    background: $surface;
+    border-bottom: solid gray 1;
+}
+
+#search-input {
+    width: 90%;
+    margin-right: 1;
+}

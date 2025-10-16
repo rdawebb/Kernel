@@ -1,11 +1,12 @@
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.binding import Binding
 from textual import events
 from .layout.sidebar import Sidebar
 from .layout.folder_list import FolderList
 from .layout.message_list import MessageList, MessageSelected
 from .message_actions import MessageAction
+from .widgets.search_bar import SearchBar, SearchUpdated
 from .widgets.message_viewer import MessageViewer
 from .widgets.status_bar import StatusBar
 from .widgets.hint_bar import HintBar
@@ -42,12 +43,15 @@ class KernelApp(App):
         self.folder_list = FolderList()
         self.message_list = MessageList()
         self.message_viewer = MessageViewer()
+        self.search_bar = SearchBar()
         self.reply_modal = ReplyModal()
         self.selected_message = None
 
     def compose(self) -> ComposeResult:
         self.modal_manager = ModalManager(self)
-        yield Horizontal(self.sidebar, self.folder_list, self.message_list, self.message_viewer)
+        yield Horizontal(self.sidebar,
+                         self.folder_list, 
+                         Vertical(self.search_bar, self.message_list, self.message_viewer))
         yield StatusBar()
         yield HintBar()
         yield self.settings_modal
@@ -86,6 +90,9 @@ class KernelApp(App):
         if event.key == "escape" and self.settings_modal.visible:
             self.settings_modal.hide()
             event.stop()
+
+    async def on_search_updated(self, event: SearchUpdated) -> None:
+        await self.message_list.set_query(event.query)
 
     async def on_folder_selected(self, event: FolderList.FolderSelected) -> None:
         await self.folder_list.load_folder(event.folder_name)
