@@ -11,8 +11,6 @@ The modular design enables easy extension of functionality while maintaining
 clean separation of concerns between different operational areas.
 """
 
-## TODO: check for redundant functions and any duplicates
-
 from .db_manager import DatabaseManager
 from .email_schema import EmailSchemaManager
 from .email_search import EmailSearchManager
@@ -89,7 +87,7 @@ def save_email_to_table(table_name, email):
 
 def get_emails_from_table(table_name, limit=10):
     """Get emails from any email table"""
-    return _operations_manager.get_emails_from_table(table_name, limit)
+    return _operations_manager.get_emails(table_name, limit=limit)
 
 def get_email_from_table(table_name, email_uid):
     """Get a specific email from any email table"""
@@ -114,10 +112,6 @@ def update_email_status(email_uid, new_status):
 def get_highest_uid():
     """Get the highest UID from the database"""
     return _operations_manager.get_highest_uid()
-
-def get_all_emails_from_table(table_name):
-    """Get all emails from a specific table (used by scheduler)"""
-    return _operations_manager.get_all_emails_from_table(table_name)
 
 
 # ========================================
@@ -153,14 +147,10 @@ def save_email_metadata(email):
     """Save email metadata to the inbox table"""
     save_email_to_table("inbox", email)
 
-def save_email_body(uid, body):
-    """Save email body content separately"""
-    _operations_manager.update_email_body("inbox", uid, body)
-
-## TODO: not needed?
+# TODO: not needed?
 def get_inbox(limit=10):
     """Get inbox emails"""
-    return get_emails_from_table("inbox", limit)
+    return get_emails_from_table("inbox", limit=limit)
 
 def mark_email_flagged(email_uid, flagged=True):
     """Mark or unmark an email as flagged"""
@@ -198,19 +188,3 @@ def get_draft_emails(limit=10):
 def get_deleted_emails(limit=10):
     """Get deleted emails"""
     return get_emails_from_table("deleted_emails", limit)
-
-def search_inbox_emails(keyword, limit=10):
-    """Search inbox emails by keyword"""
-    return search_emails("inbox", keyword, limit)
-
-def search_sent_emails(keyword, limit=10):
-    """Search sent emails by keyword"""
-    return search_emails("sent_emails", keyword, limit)
-
-def search_draft_emails(keyword, limit=10):
-    """Search draft emails by keyword"""
-    return search_emails("drafts", keyword, limit)
-
-def search_deleted_emails(keyword, limit=10):
-    """Search deleted emails by keyword"""
-    return search_emails("deleted_emails", keyword, limit)

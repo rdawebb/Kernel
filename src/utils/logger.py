@@ -6,7 +6,7 @@ import datetime
 import inspect
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from utils.config import load_config
+from .config import load_config
 
 config = load_config()
 log_path = Path(config.get("log_path"))

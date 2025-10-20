@@ -1,163 +1,320 @@
-"""Email search functionality - handles all search operations and queries"""
+"""Email search functionality - handles all search operations and queries with optimized performance"""
 
-## TODO: refactor to consolidate and remove duplication and optimise search methods
-
-from typing import List, Dict
+from typing import List, Dict, Optional
 from .db_manager import DatabaseManager
 from .email_schema import EmailSchemaManager
-from utils.logger import get_logger
+from src.utils.logger import get_logger
 
 logger = get_logger()
 
+
 class EmailSearchManager:
-    """Handles all email search operations"""
+    """Handles all email search operations with unified, optimized methods"""
     
     def __init__(self):
         self.db = DatabaseManager()
         self.schema = EmailSchemaManager()
     
-    def _build_search_query(self, table_name: str, search_fields: List[str], limit: int = 10, 
-                           additional_conditions: str = "") -> tuple:
-        """Build a standardized search query"""
-        columns = self.schema.get_columns_for_table(table_name)
-        placeholders = " OR ".join([f"{field} LIKE ?" for field in search_fields])
+    def _log_error(self, message: str, exception: Exception = None) -> None:
+        """Centralized error logging and user feedback
         
-        query = f"""
-            SELECT {columns}
-            FROM {table_name}
-            WHERE {placeholders}
-            {additional_conditions}
-            {self.schema.STANDARD_EMAIL_ORDER}
-            LIMIT ?
+        Args:
+            message: Error message to log
+            exception: Optional exception object for detailed logging
         """
-        return query, columns
+        if exception:
+            logger.error(f"{message}: {exception}")
+        else:
+            logger.error(message)
+        print(f"{message}. Please check your configuration and try again.")
     
-    def search_by_keyword(self, table_name: str, keyword: str, limit: int = 10, 
-                         search_fields: List[str] = None) -> List[Dict]:
-        """Search emails by keyword in specified fields"""
+    def _validate_table(self, table_name: str) -> bool:
+        """Validate table exists to prevent SQL injection
+        
+        Args:
+            table_name: Table name to validate
+            
+        Returns:
+            True if table exists, False otherwise
+        """
+        return self.db.table_exists(table_name)
+    
+    def _search(
+        self, 
+        table_name: str, 
+        where_clause: str, 
+        params: List, 
+        columns: Optional[str] = None, 
+        order: Optional[str] = None, 
+        limit: Optional[int] = None,
+        offset: Optional[int] = None
+    ) -> List[Dict]:
+        """Unified search method for all search operations
+        
+        Args:
+            table_name: Table to search in
+            where_clause: SQL WHERE clause (without WHERE keyword)
+            params: Query parameters for placeholders
+            columns: Columns to select (defaults to schema columns)
+            order: ORDER BY clause (defaults to standard email order)
+            limit: Optional limit on results
+            offset: Optional offset for pagination
+            
+        Returns:
+            List of email dictionaries
+        """
         try:
-            if search_fields is None:
-                search_fields = ["subject", "sender", "body"]
+            if not self._validate_table(table_name):
+                raise ValueError(f"Invalid table name: {table_name}")
             
-            search_term = f"%{keyword}%"
-            query, _ = self._build_search_query(table_name, search_fields, limit)
+            columns = columns or self.schema.get_columns_for_table(table_name)
+            order = order or self.schema.STANDARD_EMAIL_ORDER
             
-            # Create parameters for each search field plus limit
-            params = [search_term] * len(search_fields) + [limit]
+            query = f"SELECT {columns} FROM {table_name} WHERE {where_clause} {order}"
             
-            emails = self.db.execute_query(query, params)
-            return self.db.convert_emails_to_dict_list(emails)
+            if limit:
+                query += " LIMIT ?"
+                params = list(params) + [limit]
+            
+            if offset:
+                query += " OFFSET ?"
+                params = list(params) + [offset]
+            
+            emails = self.db.execute_query(query, tuple(params))
+            return self.db.convert_emails_to_dict_list(emails) or []
         
         except Exception as e:
-            logger.error(f"Failed to search emails with keyword '{keyword}' in {table_name}: {e}")
-            print("Unable to search emails. Please check your configuration and try again.")
-            return None
+            self._log_error(f"Failed to search emails in {table_name}", e)
+            return []
     
-    def search_all_tables(self, keyword: str, limit: int = 50, 
-                         tables: List[str] = None) -> List[Dict]:
-        """Search all email tables by keyword"""
-        try:
-            if tables is None:
-                tables = ["inbox", "sent_emails", "drafts", "deleted_emails"]
+    def search_by_keyword(
+        self, 
+        table_name: str, 
+        keyword: str, 
+        limit: int = 10, 
+        offset: int = 0,
+        fields: Optional[List[str]] = None
+    ) -> List[Dict]:
+        """Search emails by keyword in specified fields
+        
+        Args:
+            table_name: Table to search in
+            keyword: Keyword to search for
+            limit: Maximum number of results
+            offset: Offset for pagination
+            fields: Fields to search in (defaults to subject, sender, body)
             
-            search_term = f"%{keyword}%"
-            all_emails = []
+        Returns:
+            List of matching email dictionaries
+        """
+        fields = fields or ["subject", "sender", "body"]
+        where_clause = " OR ".join([f"{field} LIKE ?" for field in fields])
+        params = [f"%{keyword}%"] * len(fields)
+        
+        return self._search(table_name, where_clause, params, limit=limit, offset=offset)
+    
+    def search_all_tables(
+        self, 
+        keyword: str, 
+        limit: int = 50, 
+        tables: Optional[List[str]] = None
+    ) -> List[Dict]:
+        """Search all email tables by keyword using SQL UNION for better performance
+        
+        Args:
+            keyword: Keyword to search for
+            limit: Maximum number of results across all tables
+            tables: Tables to search in (defaults to all email tables)
+            
+        Returns:
+            List of matching email dictionaries with source_table field
+        """
+        try:
+            tables = tables or ["inbox", "sent_emails", "drafts", "deleted_emails"]
+            union_queries = []
+            params = []
+            search_fields = ["subject", "sender", "body"]
             
             for table_name in tables:
-                if not self.db.table_exists(table_name):
+                if not self._validate_table(table_name):
                     continue
-                    
+                
                 columns = self.schema.get_columns_for_table(table_name)
-                search_fields = ["subject", "sender", "body"]
-                placeholders = " OR ".join([f"{field} LIKE ?" for field in search_fields])
+                where_clause = " OR ".join([f"{field} LIKE ?" for field in search_fields])
                 
-                emails = self.db.execute_query(f"""
-                    SELECT {columns}, '{table_name}' AS source_table
-                    FROM {table_name}
-                    WHERE {placeholders}
-                    {self.schema.STANDARD_EMAIL_ORDER}
-                    LIMIT ?
-                """, [search_term] * len(search_fields) + [limit])
-                
-                all_emails.extend(self.db.convert_emails_to_dict_list(emails))
-
-            # Sort by date and time, then limit
-            all_emails.sort(key=lambda email: (email['date'], email['time']), reverse=True)
-            return all_emails[:limit]
+                union_queries.append(
+                    f"SELECT {columns}, '{table_name}' AS source_table FROM {table_name} WHERE {where_clause}"
+                )
+                params.extend([f"%{keyword}%"] * len(search_fields))
+            
+            if not union_queries:
+                return []
+            
+            query = " UNION ALL ".join(union_queries)
+            query += f" {self.schema.STANDARD_EMAIL_ORDER} LIMIT ?"
+            params.append(limit)
+            
+            emails = self.db.execute_query(query, tuple(params))
+            return self.db.convert_emails_to_dict_list(emails) or []
         
         except Exception as e:
-            logger.error(f"Failed to search all emails with keyword '{keyword}': {e}")
-            print("Unable to search emails. Please check your configuration and try again.")
-            return None
-
-    def search_by_flag_status(self, flagged_status: bool, limit: int = 10) -> List[Dict]:
-        """Search emails by flag status (inbox only)"""
-        try:
-            query, _ = self._build_search_query("inbox", ["flagged"], limit)
-            query = query.replace("flagged LIKE ?", "flagged = ?")
-            
-            emails = self.db.execute_query(query, (1 if flagged_status else 0, limit))
-            return self.db.convert_emails_to_dict_list(emails)
-        except Exception as e:
-            status_name = "flagged" if flagged_status else "unflagged"
-            logger.error(f"Failed to retrieve {status_name} emails: {e}")
-            print("Unable to retrieve emails. Please check your configuration and try again.")
-            return None
-
-    def search_with_attachments(self, table_name: str, limit: int = 10) -> List[Dict]:
-        """Search emails that have attachments"""
-        try:
-            columns = self.schema.get_columns_for_table(table_name)
-            emails = self.db.execute_query(f"""
-                SELECT {columns}
-                FROM {table_name}
-                WHERE attachments IS NOT NULL AND attachments != ''
-                {self.schema.STANDARD_EMAIL_ORDER}
-                LIMIT ?
-            """, (limit,))
-            return self.db.convert_emails_to_dict_list(emails)
-        except Exception as e:
-            logger.error(f"Failed to retrieve emails with attachments from {table_name}: {e}")
-            print("Unable to retrieve emails. Please check your configuration and try again.")
-            return None
-
-    def search_by_date_range(self, table_name: str, start_date: str, end_date: str, 
-                           limit: int = 10) -> List[Dict]:
-        """Search emails within a date range"""
-        try:
-            columns = self.schema.get_columns_for_table(table_name)
-            emails = self.db.execute_query(f"""
-                SELECT {columns}
-                FROM {table_name}
-                WHERE date BETWEEN ? AND ?
-                {self.schema.STANDARD_EMAIL_ORDER}
-                LIMIT ?
-            """, (start_date, end_date, limit))
-            return self.db.convert_emails_to_dict_list(emails)
-        except Exception as e:
-            logger.error(f"Failed to search emails by date range in {table_name}: {e}")
-            print("Unable to search emails. Please check your configuration and try again.")
-            return None
-
-    def search_by_sender(self, table_name: str, sender: str, limit: int = 10) -> List[Dict]:
-        """Search emails by sender"""
-        return self.search_by_keyword(table_name, sender, limit, ["sender"])
+            self._log_error(f"Failed to search all tables with keyword '{keyword}'", e)
+            return []
     
-    def search_by_subject(self, table_name: str, subject: str, limit: int = 10) -> List[Dict]:
-        """Search emails by subject"""
-        return self.search_by_keyword(table_name, subject, limit, ["subject"])
+    def search_by_flag_status(self, flagged_status: bool, limit: int = 10, offset: int = 0) -> List[Dict]:
+        """Search emails by flag status (inbox only)
+        
+        Args:
+            flagged_status: True for flagged, False for unflagged
+            limit: Maximum number of results
+            offset: Offset for pagination
+            
+        Returns:
+            List of matching email dictionaries
+        """
+        return self._search(
+            "inbox",
+            "flagged = ?",
+            [1 if flagged_status else 0],
+            limit=limit,
+            offset=offset
+        )
+    
+    def search_with_attachments(self, table_name: str, limit: int = 10, offset: int = 0) -> List[Dict]:
+        """Search emails that have attachments
+        
+        Args:
+            table_name: Table to search in
+            limit: Maximum number of results
+            offset: Offset for pagination
+            
+        Returns:
+            List of email dictionaries with attachments
+        """
+        return self._search(
+            table_name,
+            "attachments IS NOT NULL AND attachments != ''",
+            [],
+            limit=limit,
+            offset=offset
+        )
+    
+    def search_by_date_range(
+        self, 
+        table_name: str, 
+        start_date: str, 
+        end_date: str, 
+        limit: int = 10,
+        offset: int = 0
+    ) -> List[Dict]:
+        """Search emails within a date range
+        
+        Args:
+            table_name: Table to search in
+            start_date: Start date (YYYY-MM-DD format)
+            end_date: End date (YYYY-MM-DD format)
+            limit: Maximum number of results
+            offset: Offset for pagination
+            
+        Returns:
+            List of matching email dictionaries
+        """
+        return self._search(
+            table_name,
+            "date BETWEEN ? AND ?",
+            [start_date, end_date],
+            limit=limit,
+            offset=offset
+        )
+    
+    def search_by_sender(self, table_name: str, sender: str, limit: int = 10, offset: int = 0) -> List[Dict]:
+        """Search emails by sender (convenience wrapper)
+        
+        Args:
+            table_name: Table to search in
+            sender: Sender email or name to search for
+            limit: Maximum number of results
+            offset: Offset for pagination
+            
+        Returns:
+            List of matching email dictionaries
+        """
+        return self.search_by_keyword(table_name, sender, limit, offset, ["sender"])
+    
+    def search_by_subject(self, table_name: str, subject: str, limit: int = 10, offset: int = 0) -> List[Dict]:
+        """Search emails by subject (convenience wrapper)
+        
+        Args:
+            table_name: Table to search in
+            subject: Subject text to search for
+            limit: Maximum number of results
+            offset: Offset for pagination
+            
+        Returns:
+            List of matching email dictionaries
+        """
+        return self.search_by_keyword(table_name, subject, limit, offset, ["subject"])
     
     def get_pending_emails(self) -> List[Dict]:
-        """Get all emails with pending status from sent_emails table"""
+        """Get all emails with pending status from sent_emails table
+        
+        Returns:
+            List of pending email dictionaries ordered by send_at
+        """
+        return self._search(
+            "sent_emails",
+            "sent_status = 'pending'",
+            [],
+            columns="uid, subject, sender, recipient, date, time, body, attachments, sent_status, send_at",
+            order="ORDER BY send_at ASC"
+        )
+    
+    def search_with_metadata(
+        self, 
+        table_name: str, 
+        keyword: str, 
+        page: int = 1, 
+        page_size: int = 10
+    ) -> Dict:
+        """Search with pagination metadata for better UX
+        
+        Args:
+            table_name: Table to search in
+            keyword: Keyword to search for
+            page: Page number (1-indexed)
+            page_size: Number of results per page
+            
+        Returns:
+            Dictionary with results, total count, page info, and has_more flag
+        """
         try:
-            emails = self.db.execute_query("""
-                SELECT uid, subject, sender, recipient, date, time, body, attachments, sent_status, send_at
-                FROM sent_emails
-                WHERE sent_status = 'pending'
-                ORDER BY send_at ASC
-            """)
-            return self.db.convert_emails_to_dict_list(emails)
+            # Get total count
+            fields = ["subject", "sender", "body"]
+            where_clause = " OR ".join([f"{field} LIKE ?" for field in fields])
+            params = [f"%{keyword}%"] * len(fields)
+            
+            count_query = f"SELECT COUNT(*) FROM {table_name} WHERE {where_clause}"
+            result = self.db.execute_query(count_query, tuple(params), fetch_one=True, fetch_all=False)
+            total_count = result[0] if result else 0
+            
+            # Get paginated results
+            offset = (page - 1) * page_size
+            results = self.search_by_keyword(table_name, keyword, limit=page_size, offset=offset)
+            
+            return {
+                "results": results,
+                "total": total_count,
+                "page": page,
+                "page_size": page_size,
+                "has_more": offset + len(results) < total_count
+            }
+        
         except Exception as e:
-            logger.error(f"Failed to retrieve pending emails: {e}")
-            print("Unable to retrieve emails. Please check your configuration and try again.")
-            return None
+            self._log_error(f"Failed to search with metadata in {table_name}", e)
+            return {
+                "results": [],
+                "total": 0,
+                "page": page,
+                "page_size": page_size,
+                "has_more": False
+            }

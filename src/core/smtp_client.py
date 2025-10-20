@@ -9,8 +9,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from contextlib import contextmanager
-from utils.config import load_config
-from utils.logger import get_logger
+from src.utils.config import load_config
+from src.utils.logger import get_logger
 
 logger = get_logger()
 
