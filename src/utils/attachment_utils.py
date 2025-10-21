@@ -2,7 +2,7 @@
 
 import email
 import os
-from . import logger
+from . import log_manager
 
 
 def _extract_attachments(email_message, include_content=True):
@@ -54,13 +54,13 @@ def _fetch_email_by_uid(mail, email_uid):
 
     status, messages = mail.search(None, f"UID {email_uid}")
     if status != "OK" or not messages[0]:
-        logger.error(f"Email with UID {email_uid} not found")
+        log_manager.error(f"Email with UID {email_uid} not found")
         print("Sorry, unable to find this email. Please check your settings or try again.")
         return None
 
     status, email_data = mail.fetch(email_uid, "(RFC822)")
     if status != "OK":
-        logger.error(f"Failed to fetch email {email_uid}")
+        log_manager.error(f"Failed to fetch email {email_uid}")
         print("Sorry, failed to fetch email. Please check your settings or try again.")
         return None
     
@@ -82,14 +82,14 @@ def download_attachments(config, email_uid, attachment_index=None, download_path
         attachments = _extract_attachments(email_message, include_content=True)
 
         if not attachments:
-            logger.error(f"No attachments found for email {email_uid}")
+            log_manager.error(f"No attachments found for email {email_uid}")
             print("No attachments found. Please check and try again.")
             return []
 
         # Filter attachments based on index parameter
         if attachment_index is not None:
             if attachment_index >= len(attachments) or attachment_index < 0:
-                logger.error(f"Invalid attachment index {attachment_index}. Available attachments: 0-{len(attachments)-1}")
+                log_manager.error(f"Invalid attachment index {attachment_index}. Available attachments: 0-{len(attachments)-1}")
                 print("Invalid attachment index. Please check and try again.")
                 return []
             attachments = [attachments[attachment_index]]

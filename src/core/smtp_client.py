@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from contextlib import contextmanager
 from src.utils.config import load_config
-from src.utils.logger import get_logger
+from src.utils.log_manager import get_logger
 
 logger = get_logger()
 

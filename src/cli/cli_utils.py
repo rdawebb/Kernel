@@ -6,19 +6,21 @@ from pathlib import Path
 
 from rich.console import Console
 from ..core import storage_api
-from ..utils.logger import get_logger
+from ..utils.log_manager import get_logger, log_call, async_log_call
 from ..utils.attachment_utils import download_attachments
 
 console = Console()
-logger = get_logger()
+logger = get_logger(__name__)
 
 ATTACHMENTS_DIR = Path("./attachments")
 
 
+@log_call
 def initialize_database():
     """Initialize the database (called at startup)."""
     try:
         storage_api.initialize_db()
+        logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         console.print(f"[red]Failed to initialize database: {e}[/]")
@@ -31,14 +33,15 @@ def _is_valid_filename(filename: str) -> bool:
 def _print_and_log_downloaded_files(downloaded_files, email_id: int) -> None:
     """Log and display downloaded files."""
     for file_path in downloaded_files:
-        logger.info(f"Downloaded: {file_path}")
+        logger.info(f"Downloaded attachment: {file_path}")
         console.print(f"[green]Downloaded: {file_path}[/]")
     count = len(downloaded_files)
     message = f"Successfully downloaded {count} attachment(s) for email ID {email_id}."
     logger.info(message)
     console.print(f"[green]{message}[/]")
 
-def handle_download_action(cfg, email_id: int, args) -> None:
+@async_log_call
+async def handle_download_action(cfg, email_id: int, args) -> None:
     """Download attachments for an email."""
     try:
         # Determine attachment index: None (all), specific index, or 0 (first)
@@ -66,11 +69,12 @@ def handle_download_action(cfg, email_id: int, args) -> None:
         logger.error(f"Failed to download attachments: {e}")
         console.print(f"[red]Failed to download attachments: {e}[/]")
 
+@async_log_call
 async def handle_downloads_list(args, cfg) -> None:
     """List downloaded attachments with file sizes."""
     try:
         if not ATTACHMENTS_DIR.exists():
-            logger.error("Attachments folder does not exist.")
+            logger.warning("Attachments folder does not exist.")
             console.print("[yellow]Attachments folder does not exist.[/]")
             return
             
@@ -102,6 +106,7 @@ async def handle_downloads_list(args, cfg) -> None:
         logger.error(f"Failed to list downloaded attachments: {e}")
         console.print(f"[red]Failed to list downloaded attachments: {e}[/]")
 
+@async_log_call
 async def handle_open_attachment(args, cfg) -> None:
     """Open downloaded attachment with default application."""
     try:

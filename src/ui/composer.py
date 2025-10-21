@@ -16,7 +16,7 @@ from src.core.composer_logic import (
     send_email_now,
     schedule_email
 )
-from src.utils.logger import get_logger
+from src.utils.log_manager import get_logger
 
 logger = get_logger()
 

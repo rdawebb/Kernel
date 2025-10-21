@@ -2,10 +2,10 @@
 
 import subprocess
 import sys
-from src.utils import logger
+from src.utils import log_manager
 from src.utils.config import load_config
 
-logger = logger.get_logger()
+log_manager = log_manager.get_logger()
 
 
 class ModelManager:
@@ -48,119 +48,73 @@ class ModelManager:
 
     @staticmethod
     def install(package):
-        """Install a package using pip
-        
-        Args:
-            package: Package name to install
-        """
+        """Install a package using pip."""
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-            logger.info(f"Successfully installed {package}")
+            log_manager.info(f"Successfully installed {package}")
         except Exception as e:
-            logger.error(f"Error installing {package}: {e}")
+            log_manager.error(f"Error installing {package}: {e}")
 
     @staticmethod
     def uninstall(package):
-        """Uninstall a package using pip
-        
-        Args:
-            package: Package name to uninstall
-        """
+        """Uninstall a package using pip."""
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", package])
-            logger.info(f"Successfully uninstalled {package}")
+            log_manager.info(f"Successfully uninstalled {package}")
         except Exception as e:
-            logger.error(f"Error uninstalling {package}: {e}")
+            log_manager.error(f"Error uninstalling {package}: {e}")
 
     def is_installed(self, model_name):
-        """Check if a model is marked as installed
-        
-        Args:
-            model_name: Name of the model
-            
-        Returns:
-            Boolean indicating if model is installed
-        """
+        """Check if a model is marked as installed."""
         return self.installed_models.get(model_name, False)
 
     def set_installed(self, model_name, installed=True):
-        """Mark a model as installed or not
-        
-        Args:
-            model_name: Name of the model
-            installed: Boolean indicating installation status
-        """
+        """Mark a model as installed or not."""
         if model_name in self.installed_models:
             self.installed_models[model_name] = installed
-            logger.debug(f"Model {model_name} marked as {'installed' if installed else 'not installed'}")
+            log_manager.debug(f"Model {model_name} marked as {'installed' if installed else 'not installed'}")
 
     def choose_model(self, choice):
-        """Select and configure a model by choice number
-        
-        Args:
-            choice: Integer representing model choice (1-7)
-            
-        Returns:
-            Selected model name or None if invalid choice
-        """
+        """Select and configure a model by choice number."""
         selected_model = self.MODEL_MAP.get(choice)
 
         if not selected_model:
-            logger.error(f"Invalid model choice: {choice}. Valid choices are 1-7.")
+            log_manager.error(f"Invalid model choice: {choice}. Valid choices are 1-7.")
             return None
 
         if selected_model == self.current_model:
-            logger.info(f"Model {selected_model} is already selected.")
+            log_manager.info(f"Model {selected_model} is already selected.")
             return selected_model
 
-        # Set as current model and save to config
         self.current_model = selected_model
         self.config["default_summariser"] = selected_model
 
-        # Install if not already installed
         if not self.is_installed(selected_model):
-            logger.info(f"Installing model: {selected_model}...")
+            log_manager.info(f"Installing model: {selected_model}...")
             self.install(selected_model)
             self.set_installed(selected_model, True)
 
-        # Clean up unused models
         self._cleanup_unused_models(selected_model)
-        logger.info(f"Selected summarization model: {selected_model}")
+        log_manager.info(f"Selected summarization model: {selected_model}")
 
         return selected_model
 
     def _cleanup_unused_models(self, keep_model):
-        """Uninstall unused models to save space
-        
-        Args:
-            keep_model: Model name to keep installed
-        """
+        """Uninstall unused models to save space."""
         for model_name in self.installed_models:
             if model_name != keep_model and self.is_installed(model_name):
-                logger.info(f"Uninstalling unused model: {model_name}")
+                log_manager.info(f"Uninstalling unused model: {model_name}")
                 self.uninstall(model_name)
                 self.set_installed(model_name, False)
 
     def get_current_model(self):
-        """Get the currently selected model
-        
-        Returns:
-            Name of the current model
-        """
+        """Get the currently selected model."""
         return self.current_model
 
     def get_available_models(self):
-        """Get list of available models
-        
-        Returns:
-            Dictionary of model choices and names
-        """
+        """Get list of available models."""
         return self.MODEL_MAP.copy()
 
     def get_installed_models(self):
-        """Get list of installed models
-        
-        Returns:
-            List of installed model names
-        """
+        """Get list of installed models."""
         return [model for model, installed in self.installed_models.items() if installed]

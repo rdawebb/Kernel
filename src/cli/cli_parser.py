@@ -75,16 +75,7 @@ COMMANDS_CONFIG: List[Tuple[str, str, List[Tuple[str, Dict[str, Any]]]]] = [
 ]
 
 def setup_argument_parser() -> argparse.ArgumentParser:
-    """Configure and return the argument parser with all subcommands.
-    
-    Returns:
-        argparse.ArgumentParser: Configured argument parser with all commands
-        
-    The parser includes the following commands (alphabetically ordered):
-    - attachments, attachments-list, backup, compose, delete, delete-db
-    - download, downloads-list, export, flag, flagged, list
-    - move, open, refresh, search, unflagged, view
-    """
+    """Configure and return the argument parser with all CLI subcommands."""
     parser = argparse.ArgumentParser(
         prog="kernel",
         description="Minimal Email Client — fetch, view, send, and manage emails."

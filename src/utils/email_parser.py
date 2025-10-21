@@ -4,7 +4,7 @@ import email
 import datetime
 from email.header import decode_header
 from email.utils import parsedate_tz
-from . import logger
+from . import log_manager
 
 
 def process_email_message(msg_part):
@@ -100,7 +100,7 @@ def parse_email(email_data, email_uid):
         }
 
     except Exception as e:
-        logger.error(f"Error parsing email: {e}")
+        log_manager.error(f"Error parsing email: {e}")
         print("Sorry, something went wrong while parsing an email.")
         return {
             "uid": email_uid,

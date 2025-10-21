@@ -1,10 +1,10 @@
 """Summariser module for generating email summaries."""
 
-from src.utils import logger
+from src.utils import log_manager
 from src.utils.config import load_config
 from src.utils.model_manager import ModelManager
 
-logger = logger.get_logger()
+log_manager = log_manager.get_logger()
 
 
 class EmailSummariser:
@@ -23,16 +23,7 @@ class EmailSummariser:
         self.model_manager.reload_config()
 
     def _safe_import(self, library_name, import_path, error_message):
-        """Safely import a library and handle ImportError
-        
-        Args:
-            library_name: Name of the library for logging
-            import_path: Import statement (e.g., "from x import y")
-            error_message: Error message to log on import failure
-            
-        Returns:
-            Tuple of (module/class or None, success_bool)
-        """
+        """Safely import a library and handle ImportError."""
         try:
             parts = import_path.split()
             if parts[0] == 'from':
@@ -46,55 +37,29 @@ class EmailSummariser:
                 module = __import__(import_path)
                 return module, True
         except ImportError:
-            logger.error(error_message)
+            log_manager.error(error_message)
             return None, False
 
     def _execute_safely(self, func, error_prefix):
-        """Execute a function safely with error handling
-        
-        Args:
-            func: Function to execute
-            error_prefix: Prefix for error logging
-            
-        Returns:
-            Result of function or None if error occurs
-        """
+        """Execute a function safely with error handling."""
         try:
             return func()
         except Exception as e:
-            logger.error(f"Error during {error_prefix}: {e}")
+            log_manager.error(f"Error during {error_prefix}: {e}")
             return None
 
     def _format_summary(self, summary):
-        """Format and return summary with fallback
-        
-        Args:
-            summary: Summary text or object
-            
-        Returns:
-            Summary text or fallback message
-        """
+        """Return summary text or fallback message if empty."""
         return summary if summary else "No summary available."
 
     def _summarise_with_library(self, text: str, library_name: str, import_statement: str, 
                                summarize_func, error_prefix: str) -> str:
-        """Generic summarization with unified import and execution handling
-        
-        Args:
-            text: Text to summarize
-            library_name: Name of the library (for error messages)
-            import_statement: Import statement string (e.g., "from x import y")
-            summarize_func: Function that performs summarization (should import internally)
-            error_prefix: Prefix for error logging
-            
-        Returns:
-            Summary text or fallback message
-        """
+        """Generic summarization with unified import and execution handling."""
         try:
             # Try to import the library
             __import__(import_statement.split()[1] if 'from' in import_statement else import_statement)
         except ImportError:
-            logger.error(f"{library_name} library is not installed. Please install it to use {error_prefix} summarization.")
+            log_manager.error(f"{library_name} library is not installed. Please install it to use {error_prefix} summarization.")
             return "No summary available."
 
         result = self._execute_safely(summarize_func, error_prefix)
@@ -123,18 +88,7 @@ class EmailSummariser:
 
     def _summarise_with_transformer(self, email: str, model_name: str, config_key: str, 
                                    default_model: str, error_prefix: str) -> str:
-        """Generic transformer-based summarization (MiniBart, T5, BART)
-        
-        Args:
-            email: Text to summarize
-            model_name: Display name of the model
-            config_key: Config key for model name
-            default_model: Default model to use if not configured
-            error_prefix: Prefix for error logging
-            
-        Returns:
-            Summary text or fallback message
-        """
+        """Generic transformer-based summarization (MiniBart, T5, BART)."""
         def summarize():
             from transformers import pipeline
             
@@ -263,7 +217,7 @@ class EmailSummariser:
         current_model = self.model_manager.get_current_model()
         
         if not current_model:
-            logger.warning("No summarization model selected.")
+            log_manager.warning("No summarization model selected.")
             return "No summary available."
         
         # Map model names to their corresponding methods
@@ -281,5 +235,5 @@ class EmailSummariser:
         if method:
             return method(text)
         else:
-            logger.error(f"Unknown model: {current_model}")
+            log_manager.error(f"Unknown model: {current_model}")
             return "No summary available."

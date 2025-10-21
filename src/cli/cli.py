@@ -1,8 +1,8 @@
 """Main CLI entrypoint - routes commands to their handlers"""
 import asyncio
 from rich.console import Console
-from ..utils import config
-from ..utils.logger import get_logger
+from ..core.config_manager import ConfigManager
+from ..utils.log_manager import get_logger, log_call, async_log_call
 from .cli_parser import setup_argument_parser
 from .cli_utils import initialize_database, handle_downloads_list, handle_open_attachment
 from .commands import (
@@ -22,10 +22,11 @@ from .commands import (
 )
 
 console = Console()
-logger = get_logger()
+logger = get_logger(__name__)
 
 
-async def dispatch_command(args, cfg):
+@async_log_call
+async def dispatch_command(args, cfg_manager):
     """Route parsed command to its handler."""
     handlers = {
         "list": cmd_list.handle_list,
@@ -50,11 +51,12 @@ async def dispatch_command(args, cfg):
 
     handler = handlers.get(args.command)
     if handler:
-        await handler(args, cfg)
+        await handler(args, cfg_manager)
     else:
         logger.error(f"Unknown command: {args.command}")
         console.print(f"[red]Unknown command: {args.command}[/]")
 
+@log_call
 def main():
     """Main CLI entry point"""
     initialize_database()
@@ -63,14 +65,14 @@ def main():
     args = parser.parse_args()
 
     try:
-        cfg = config.load_config()
+        cfg_manager = ConfigManager()
 
     except Exception as e:
         logger.error(f"Configuration error: {e}")
         console.print(f"[red]Configuration error: {e}[/]")
         return
 
-    asyncio.run(dispatch_command(args, cfg))
+    asyncio.run(dispatch_command(args, cfg_manager))
 
 if __name__ == "__main__":
     main()

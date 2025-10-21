@@ -1,14 +1,15 @@
 """View command - display a specific email"""
 from rich.console import Console
 from ...ui import email_viewer
-from ...utils.logger import get_logger
-from .command_utils import log_error, print_status, get_email_with_validation
+from ...utils.log_manager import get_logger, async_log_call
+from .command_utils import print_error, print_status, get_email_with_validation
 
 console = Console()
-logger = get_logger()
+logger = get_logger(__name__)
 
 
-async def handle_view(args, cfg):
+@async_log_call
+async def handle_view(args, cfg_manager):
     """View a specific email by ID"""
     print_status(f"Fetching email {args.id} from {args.table}...")
     
@@ -19,4 +20,5 @@ async def handle_view(args, cfg):
     try:
         email_viewer.display_email(email_data)
     except Exception as e:
-        log_error(f"Failed to display email: {e}")
+        logger.error(f"Failed to display email: {e}")
+        print_error(f"Failed to display email: {e}")

@@ -3,9 +3,9 @@
 import datetime
 import uuid
 from email_validator import validate_email, EmailNotValidError
-from src.utils import logger
+from src.utils import log_manager
 
-logger = logger.get_logger()
+log_manager = log_manager.get_logger()
 
 
 def create_email_dict(subject, sender, recipient, body, attachments=None):
@@ -31,7 +31,7 @@ def validate_email_address(email_str):
         return valid.email, None
     except EmailNotValidError as e:
         error_msg = f"Invalid email address: {e}"
-        logger.error(error_msg)
+        log_manager.error(error_msg)
         return None, error_msg
 
 def parse_send_datetime(datetime_str):
@@ -44,5 +44,5 @@ def parse_send_datetime(datetime_str):
         return dt, None
     except ValueError:
         error_msg = f"Invalid date format: {datetime_str}. Please use YYYY-MM-DD HH:MM"
-        logger.error(error_msg)
+        log_manager.error(error_msg)
         return None, error_msg

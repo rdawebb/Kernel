@@ -6,7 +6,7 @@ from src.core import storage_api
 from src.core.imap_client import fetch_new_emails
 from src.core.smtp_client import send_email
 from src.utils.config import load_config
-from src.utils.logger import get_logger
+from src.utils.log_manager import get_logger
 
 DATE_FORMAT = "%Y-%m-%d"
 DATETIME_FORMAT = "%Y-%m-%d %H:%M"
@@ -28,12 +28,10 @@ def handle_job_error(job_name: str):
         return wrapper
     return decorator
 
-
 def log_job_start(message: str):
     """Log and print job start message."""
     logger.info(message)
     print(message)
-
 
 def log_job_completion(message: str):
     """Log and print job completion message."""
@@ -51,7 +49,6 @@ def automatic_backup():
     log_job_start("Starting automatic database backup...")
     storage_api.backup_db()
     log_job_completion("Database backup completed successfully.")
-
 
 @handle_job_error("clear_deleted_emails")
 def clear_deleted_emails():
@@ -77,7 +74,6 @@ def clear_deleted_emails():
         log_job_completion(f"Cleanup completed: {deleted_count} old emails permanently deleted.")
     else:
         log_job_completion("Cleanup completed: no old emails to delete.")
-
 
 @handle_job_error("send_scheduled_emails")
 def send_scheduled_emails():
@@ -122,7 +118,6 @@ def send_scheduled_emails():
     else:
         log_job_completion("No scheduled emails ready to send.")
 
-
 @handle_job_error("check_for_new_emails")
 def check_for_new_emails():
     """Check for new emails from server."""
@@ -143,7 +138,6 @@ def _get_config_value(key: str, default=None):
         return default
     return value
 
-
 def _validate_interval(job_name: str, interval_tuple) -> bool:
     """Validate interval tuple format (value, unit)."""
     if not isinstance(interval_tuple, tuple) or len(interval_tuple) != 2:
@@ -162,7 +156,6 @@ def _validate_interval(job_name: str, interval_tuple) -> bool:
         return False
     
     return True
-
 
 def _add_job_if_enabled(job_func, job_name: str, job_id: str, enabled: bool, interval: tuple) -> bool:
     """Add job to scheduler if enabled and validated."""
@@ -187,7 +180,6 @@ def _add_job_if_enabled(job_func, job_name: str, job_id: str, enabled: bool, int
     except Exception as e:
         logger.error(f"Failed to add job {job_name}: {e}")
         return False
-
 
 def start_scheduler():
     """Start scheduler with all configured jobs."""
@@ -248,7 +240,6 @@ def start_scheduler():
     except Exception as e:
         logger.error(f"Error starting scheduler: {e}")
         print("Sorry, something went wrong while starting the scheduler. Please check your settings or try again.")
-
 
 def stop_scheduler():
     """Stop scheduler gracefully."""

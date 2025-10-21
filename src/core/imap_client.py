@@ -4,7 +4,7 @@ import imaplib
 from contextlib import contextmanager
 from src.utils.config import load_config
 from . import storage_api
-from src.utils import logger
+from src.utils import log_manager
 from src.utils.email_parser import parse_email, process_email_message
 
 config = load_config()
@@ -14,7 +14,7 @@ def imap_connection(config):
     """Context manager for IMAP connections with automatic cleanup"""
     mail = connect_to_imap(config)
     if not mail:
-        logger.error("Failed to connect to IMAP server")
+        log_manager.error("Failed to connect to IMAP server")
         print("Unable to connect to your email server. Please check your settings and try again.")
         yield None
         return
@@ -40,7 +40,7 @@ def connect_to_imap(config):
         mail.select("inbox")
 
     except Exception as e:
-        logger.error(f"Error connecting to IMAP server: {e}")
+        log_manager.error(f"Error connecting to IMAP server: {e}")
         print("Unable to connect to your email server. Please check your settings and try again.")
         return None
     
@@ -64,7 +64,7 @@ def fetch_new_emails(config, fetch_all=False):
                 status, messages = mail.search(None, "ALL")
         
         if status != "OK":
-            logger.error(f"Error searching for emails: {status}")
+            log_manager.error(f"Error searching for emails: {status}")
             print("Unable to fetch emails. Please check your connection and try again.")
             return 0
         
@@ -81,7 +81,7 @@ def fetch_new_emails(config, fetch_all=False):
                 status, email_data = fetch_method('fetch', email_id, "(RFC822)")
                 
                 if status != "OK":
-                    logger.error(f"Error fetching email ID {email_id}: {status}")
+                    log_manager.error(f"Error fetching email ID {email_id}: {status}")
                     print("Unable to fetch emails. Please check your connection and try again.")
                     continue
 
@@ -95,14 +95,14 @@ def fetch_new_emails(config, fetch_all=False):
 
                         emails_saved += 1
             except Exception as e:
-                logger.error(f"Error processing email {email_id}: {e}")
+                log_manager.error(f"Error processing email {email_id}: {e}")
                 print("Sorry, something went wrong. Please check your settings or try again.")
                 continue
 
         return emails_saved
     
     except Exception as e:
-        logger.error(f"Error fetching emails: {e}")
+        log_manager.error(f"Error fetching emails: {e}")
         print("Sorry, something went wrong. Please check your settings or try again.")
         return 0
     finally:

@@ -4,7 +4,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from .db_manager import DatabaseManager
 from .email_schema import EmailSchemaManager
-from src.utils.logger import get_logger
+from src.utils.log_manager import get_logger
 
 logger = get_logger()
 
@@ -17,12 +17,7 @@ class EmailOperationsManager:
         self.schema = EmailSchemaManager()
     
     def _log_error(self, message: str, exception: Exception = None) -> None:
-        """Centralised error logging and user feedback
-        
-        Args:
-            message: Error message to log
-            exception: Optional exception object for detailed logging
-        """
+        """Log error and print user-friendly message."""
         if exception:
             logger.error(f"{message}: {exception}")
         else:
@@ -30,14 +25,7 @@ class EmailOperationsManager:
         print(f"{message}. Please check your configuration and try again.")
     
     def _format_attachments(self, attachments) -> str:
-        """Convert attachments to comma-separated string
-        
-        Args:
-            attachments: List or string of attachments
-            
-        Returns:
-            Comma-separated attachment string
-        """
+        """Convert attachments to comma-separated string."""
         if isinstance(attachments, str):
             return attachments
         if isinstance(attachments, (list, tuple)):
@@ -45,14 +33,8 @@ class EmailOperationsManager:
         return ""
     
     def save_email_to_table(self, table_name: str, email: Dict) -> None:
-        """Save email to any table using schema manager for dynamic columns
-        
-        Args:
-            table_name: Target table name
-            email: Email dictionary with standard and table-specific fields
-        """
+        """Save email to any table using schema manager for dynamic columns."""
         try:
-            # Get table-specific columns and placeholders
             columns_list = self.schema.get_columns_for_table(table_name).split(', ')
             placeholders = ', '.join(['?' for _ in columns_list])
             
@@ -65,7 +47,6 @@ class EmailOperationsManager:
                 else:
                     values.append(email.get(col, ""))
             
-            # Execute insert/replace query
             self.db.execute_query(
                 f"INSERT OR REPLACE INTO {table_name} ({', '.join(columns_list)}) VALUES ({placeholders})",
                 tuple(values),
@@ -75,16 +56,7 @@ class EmailOperationsManager:
             self._log_error(f"Failed to save email to {table_name}", e)
     
     def get_emails(self, table_name: str, limit: Optional[int] = None, include_body: bool = False) -> List[Dict]:
-        """Get emails from a table with optional limit
-        
-        Args:
-            table_name: Source table name
-            limit: Optional limit on number of emails to retrieve (None for all)
-            include_body: Whether to include email body
-            
-        Returns:
-            List of email dictionaries
-        """
+        """Get emails from a table with optional limit."""
         try:
             columns = self.schema.get_columns_for_table(table_name, include_body=include_body)
             query = f"SELECT {columns} FROM {table_name} {self.schema.STANDARD_EMAIL_ORDER}"
@@ -102,15 +74,7 @@ class EmailOperationsManager:
     
 
     def get_email_from_table(self, table_name: str, email_uid: str) -> Optional[Dict]:
-        """Get a specific email by UID
-        
-        Args:
-            table_name: Source table name
-            email_uid: Email UID to retrieve
-            
-        Returns:
-            Email dictionary or None if not found
-        """
+        """Get a specific email by UID."""
         try:
             columns = self.schema.get_columns_for_table(table_name, include_body=True)
             email = self.db.execute_query(
@@ -125,12 +89,7 @@ class EmailOperationsManager:
             return None
 
     def delete_email_from_table(self, table_name: str, email_uid: str) -> None:
-        """Delete an email from a table by UID
-        
-        Args:
-            table_name: Source table name
-            email_uid: Email UID to delete
-        """
+        """Delete an email from a table by UID."""
         try:
             self.db.execute_query(
                 f"DELETE FROM {table_name} WHERE uid = ?",
@@ -141,15 +100,7 @@ class EmailOperationsManager:
             self._log_error(f"Failed to delete email {email_uid} from {table_name}", e)
 
     def email_exists(self, table_name: str, email_uid: str) -> bool:
-        """Check if an email exists in a table
-        
-        Args:
-            table_name: Table to search in
-            email_uid: Email UID to check
-            
-        Returns:
-            True if email exists, False otherwise
-        """
+        """Check if an email exists in a table."""
         try:
             result = self.db.execute_query(
                 f"SELECT uid FROM {table_name} WHERE uid = ?",
@@ -163,13 +114,7 @@ class EmailOperationsManager:
             return False
 
     def move_email_between_tables(self, source_table: str, dest_table: str, email_uid: str) -> None:
-        """Move an email from one table to another with table-specific field handling
-        
-        Args:
-            source_table: Source table name
-            dest_table: Destination table name
-            email_uid: Email UID to move
-        """
+        """Move an email from one table to another with table-specific field handling."""
         try:
             email = self.get_email_from_table(source_table, email_uid)
             if not email:
@@ -187,14 +132,7 @@ class EmailOperationsManager:
             self._log_error(f"Failed to move email {email_uid} from {source_table} to {dest_table}", e)
 
     def update_email_field(self, table_name: str, email_uid: str, field_name: str, value) -> None:
-        """Update a specific field for an email in a table
-        
-        Args:
-            table_name: Table containing the email
-            email_uid: Email UID to update
-            field_name: Field name to update (e.g., 'flagged', 'sent_status')
-            value: New value for the field
-        """
+        """Update a specific field for an email in a table."""
         try:
             self.db.execute_query(
                 f"UPDATE {table_name} SET {field_name} = ? WHERE uid = ?",
@@ -205,29 +143,15 @@ class EmailOperationsManager:
             self._log_error(f"Failed to update {field_name} for email {email_uid} in {table_name}", e)
 
     def update_email_flag(self, email_uid: str, flagged: bool) -> None:
-        """Mark or unmark an email as flagged (inbox only)
-        
-        Args:
-            email_uid: Email UID to flag
-            flagged: True to flag, False to unflag
-        """
+        """Mark or unmark an email as flagged (inbox only)."""
         self.update_email_field("inbox", email_uid, "flagged", 1 if flagged else 0)
 
     def update_email_status(self, email_uid: str, new_status: str) -> None:
-        """Update the status of an email in sent_emails table
-        
-        Args:
-            email_uid: Email UID to update
-            new_status: New status value (e.g., 'sent', 'pending', 'failed')
-        """
+        """Update the status of an email in sent_emails table."""
         self.update_email_field("sent_emails", email_uid, "sent_status", new_status)
 
     def get_highest_uid(self) -> Optional[int]:
-        """Get the highest UID from inbox to determine where to start fetching new emails
-        
-        Returns:
-            Highest UID as integer, or None if no emails exist
-        """
+        """Get the highest UID from inbox to determine where to start fetching new emails."""
         try:
             result = self.db.execute_query(
                 "SELECT MAX(CAST(uid AS INTEGER)) FROM inbox",

@@ -3,7 +3,7 @@
 from typing import List, Dict, Optional
 from .db_manager import DatabaseManager
 from .email_schema import EmailSchemaManager
-from src.utils.logger import get_logger
+from src.utils.log_manager import get_logger
 
 logger = get_logger()
 
@@ -16,12 +16,7 @@ class EmailSearchManager:
         self.schema = EmailSchemaManager()
     
     def _log_error(self, message: str, exception: Exception = None) -> None:
-        """Centralized error logging and user feedback
-        
-        Args:
-            message: Error message to log
-            exception: Optional exception object for detailed logging
-        """
+        """Log error and print user-friendly message."""
         if exception:
             logger.error(f"{message}: {exception}")
         else:
@@ -29,14 +24,7 @@ class EmailSearchManager:
         print(f"{message}. Please check your configuration and try again.")
     
     def _validate_table(self, table_name: str) -> bool:
-        """Validate table exists to prevent SQL injection
-        
-        Args:
-            table_name: Table name to validate
-            
-        Returns:
-            True if table exists, False otherwise
-        """
+        """Validate table exists to prevent SQL injection."""
         return self.db.table_exists(table_name)
     
     def _search(
@@ -49,20 +37,7 @@ class EmailSearchManager:
         limit: Optional[int] = None,
         offset: Optional[int] = None
     ) -> List[Dict]:
-        """Unified search method for all search operations
-        
-        Args:
-            table_name: Table to search in
-            where_clause: SQL WHERE clause (without WHERE keyword)
-            params: Query parameters for placeholders
-            columns: Columns to select (defaults to schema columns)
-            order: ORDER BY clause (defaults to standard email order)
-            limit: Optional limit on results
-            offset: Optional offset for pagination
-            
-        Returns:
-            List of email dictionaries
-        """
+        """Unified search method for all search operations."""
         try:
             if not self._validate_table(table_name):
                 raise ValueError(f"Invalid table name: {table_name}")
@@ -95,18 +70,7 @@ class EmailSearchManager:
         offset: int = 0,
         fields: Optional[List[str]] = None
     ) -> List[Dict]:
-        """Search emails by keyword in specified fields
-        
-        Args:
-            table_name: Table to search in
-            keyword: Keyword to search for
-            limit: Maximum number of results
-            offset: Offset for pagination
-            fields: Fields to search in (defaults to subject, sender, body)
-            
-        Returns:
-            List of matching email dictionaries
-        """
+        """Search emails by keyword in specified fields."""
         fields = fields or ["subject", "sender", "body"]
         where_clause = " OR ".join([f"{field} LIKE ?" for field in fields])
         params = [f"%{keyword}%"] * len(fields)
@@ -119,16 +83,7 @@ class EmailSearchManager:
         limit: int = 50, 
         tables: Optional[List[str]] = None
     ) -> List[Dict]:
-        """Search all email tables by keyword using SQL UNION for better performance
-        
-        Args:
-            keyword: Keyword to search for
-            limit: Maximum number of results across all tables
-            tables: Tables to search in (defaults to all email tables)
-            
-        Returns:
-            List of matching email dictionaries with source_table field
-        """
+        """Search all email tables by keyword using UNION for better performance."""
         try:
             tables = tables or ["inbox", "sent_emails", "drafts", "deleted_emails"]
             union_queries = []
@@ -162,16 +117,7 @@ class EmailSearchManager:
             return []
     
     def search_by_flag_status(self, flagged_status: bool, limit: int = 10, offset: int = 0) -> List[Dict]:
-        """Search emails by flag status (inbox only)
-        
-        Args:
-            flagged_status: True for flagged, False for unflagged
-            limit: Maximum number of results
-            offset: Offset for pagination
-            
-        Returns:
-            List of matching email dictionaries
-        """
+        """Search emails by flag status (inbox only)."""
         return self._search(
             "inbox",
             "flagged = ?",
@@ -181,16 +127,7 @@ class EmailSearchManager:
         )
     
     def search_with_attachments(self, table_name: str, limit: int = 10, offset: int = 0) -> List[Dict]:
-        """Search emails that have attachments
-        
-        Args:
-            table_name: Table to search in
-            limit: Maximum number of results
-            offset: Offset for pagination
-            
-        Returns:
-            List of email dictionaries with attachments
-        """
+        """Search emails that have attachments."""
         return self._search(
             table_name,
             "attachments IS NOT NULL AND attachments != ''",
@@ -207,18 +144,7 @@ class EmailSearchManager:
         limit: int = 10,
         offset: int = 0
     ) -> List[Dict]:
-        """Search emails within a date range
-        
-        Args:
-            table_name: Table to search in
-            start_date: Start date (YYYY-MM-DD format)
-            end_date: End date (YYYY-MM-DD format)
-            limit: Maximum number of results
-            offset: Offset for pagination
-            
-        Returns:
-            List of matching email dictionaries
-        """
+        """Search emails within a date range."""
         return self._search(
             table_name,
             "date BETWEEN ? AND ?",
@@ -228,31 +154,11 @@ class EmailSearchManager:
         )
     
     def search_by_sender(self, table_name: str, sender: str, limit: int = 10, offset: int = 0) -> List[Dict]:
-        """Search emails by sender (convenience wrapper)
-        
-        Args:
-            table_name: Table to search in
-            sender: Sender email or name to search for
-            limit: Maximum number of results
-            offset: Offset for pagination
-            
-        Returns:
-            List of matching email dictionaries
-        """
+        """Search emails by sender (convenience wrapper)."""
         return self.search_by_keyword(table_name, sender, limit, offset, ["sender"])
     
     def search_by_subject(self, table_name: str, subject: str, limit: int = 10, offset: int = 0) -> List[Dict]:
-        """Search emails by subject (convenience wrapper)
-        
-        Args:
-            table_name: Table to search in
-            subject: Subject text to search for
-            limit: Maximum number of results
-            offset: Offset for pagination
-            
-        Returns:
-            List of matching email dictionaries
-        """
+        """Search emails by subject (convenience wrapper)."""
         return self.search_by_keyword(table_name, subject, limit, offset, ["subject"])
     
     def get_pending_emails(self) -> List[Dict]:

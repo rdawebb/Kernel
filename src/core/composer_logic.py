@@ -5,9 +5,9 @@ from src.core.smtp_client import send_email
 from src.core.storage_api import save_sent_email, save_draft_email
 from src.utils.config import load_config
 from src.utils.email_utils import create_email_dict, parse_send_datetime
-from src.utils import logger
+from src.utils import log_manager
 
-logger = logger.get_logger()
+log_manager = log_manager.get_logger()
 
 
 def prepare_email_data(recipient, subject, body, attachments=None):
@@ -25,10 +25,10 @@ def save_as_draft(email_data):
     """Save email as draft."""
     try:
         save_draft_email(email_data)
-        logger.info("Email saved as draft")
+        log_manager.info("Email saved as draft")
         return True
     except Exception as e:
-        logger.error(f"Failed to save email as draft: {e}")
+        log_manager.error(f"Failed to save email as draft: {e}")
         return False
 
 def schedule_email(email_data, send_time_str):
@@ -45,10 +45,10 @@ def schedule_email(email_data, send_time_str):
         email_data["send_at"] = send_time_str
         email_data["sent_status"] = "pending"
         save_sent_email(email_data)
-        logger.info(f"Email scheduled for {send_time_str}")
+        log_manager.info(f"Email scheduled for {send_time_str}")
         return True, None
     except Exception as e:
-        logger.error(f"Failed to schedule email: {e}")
+        log_manager.error(f"Failed to schedule email: {e}")
         return False, str(e)
 
 def send_email_now(email_data):
@@ -64,14 +64,14 @@ def send_email_now(email_data):
             email_data["sent_status"] = "sent"
             email_data["send_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             save_sent_email(email_data)
-            logger.info("Email sent successfully")
+            log_manager.info("Email sent successfully")
             return True, None
         else:
             # Save as pending if send failed
             email_data["sent_status"] = "pending"
             email_data["send_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             save_sent_email(email_data)
-            logger.error("Failed to send email, saved as pending")
+            log_manager.error("Failed to send email, saved as pending")
             return False, "Failed to send email"
             
     except Exception as e:
@@ -79,7 +79,7 @@ def send_email_now(email_data):
         email_data["sent_status"] = "pending"
         email_data["send_at"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         save_sent_email(email_data)
-        logger.error(f"Error sending email: {e}")
+        log_manager.error(f"Error sending email: {e}")
         return False, str(e)
 
 def handle_send_decision(email_data, send_time_str=None):

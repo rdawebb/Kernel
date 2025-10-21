@@ -1,21 +1,24 @@
 """Download command - download email attachments"""
 from rich.console import Console
-from ...utils.logger import get_logger
+from ...utils.log_manager import get_logger, async_log_call
 from ..cli_utils import handle_download_action
-from .command_utils import log_error, log_warning, print_status, get_email_with_validation
+from .command_utils import print_error, print_warning, print_status, get_email_with_validation
 
 console = Console()
-logger = get_logger()
+logger = get_logger(__name__)
 
 
-async def handle_download(args, cfg):
+@async_log_call
+async def handle_download(args, cfg_manager):
     """Download email attachments"""
     if args.id is None:
-        log_error("Email ID is required for downloading attachments.")
+        logger.error("Email ID is required for downloading attachments.")
+        print_error("Email ID is required for downloading attachments.")
         return
     
     if not args.all and args.index is None:
-        log_error("Please specify either --all to download all attachments or --index to download a specific attachment.")
+        logger.error("Please specify either --all to download all attachments or --index to download a specific attachment.")
+        print_error("Please specify either --all to download all attachments or --index to download a specific attachment.")
         return
     
     print_status(f"Downloading attachments for email {args.id} from {args.table}...")
@@ -27,20 +30,24 @@ async def handle_download(args, cfg):
     try:
         attachments_raw = email_data.get('attachments', '')
         if not attachments_raw or not attachments_raw.strip():
-            log_warning("No attachments found in database, checking server...")
-            handle_download_action(cfg, args.id, args)
+            logger.warning("No attachments found in database, checking server...")
+            print_warning("No attachments found in database, checking server...")
+            handle_download_action(cfg_manager, args.id, args)
             return
 
         attachments = [att.strip() for att in attachments_raw.split(',') if att.strip()]
         if not attachments:
-            log_warning(f"No valid attachments to download for email ID {args.id}.")
+            logger.warning(f"No valid attachments to download for email ID {args.id}.")
+            print_warning(f"No valid attachments to download for email ID {args.id}.")
             return
 
         if args.index is not None and (args.index >= len(attachments) or args.index < 0):
-            log_error(f"Invalid attachment index {args.index}. Available attachments: 0-{len(attachments)-1}")
+            logger.error(f"Invalid attachment index {args.index}. Available attachments: 0-{len(attachments)-1}")
+            print_error(f"Invalid attachment index {args.index}. Available attachments: 0-{len(attachments)-1}")
             return
 
-        handle_download_action(cfg, args.id, args)
+        handle_download_action(cfg_manager, args.id, args)
 
     except Exception as e:
-        log_error(f"Failed to download attachments: {e}")
+        logger.error(f"Failed to download attachments: {e}")
+        print_error(f"Failed to download attachments: {e}")
