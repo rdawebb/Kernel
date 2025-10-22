@@ -3,9 +3,12 @@
 ## TODO: move more UI helper functions here to reduce duplication?
 
 from rich.console import Console
+from .log_manager import get_logger, log_call
 
 console = Console()
+logger = get_logger(__name__)
 
+@log_call
 def confirm_action(message):
     """Ask user for confirmation with y/n prompt"""
     response = console.input(f"{message} (y/n): ").strip().lower()

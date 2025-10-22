@@ -1,8 +1,11 @@
 """Search results viewer - displays search results in a formatted table"""
 
-from src.ui.table_viewer import display_email_table
+from .table_viewer import display_email_table
+from ..utils.log_manager import get_logger, log_call
 
+logger = get_logger(__name__)
 
+@log_call
 def display_search_results(table_name, emails, keyword):
     """Display search results in a formatted table with dynamic columns based on source
     

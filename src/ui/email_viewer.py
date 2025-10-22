@@ -1,9 +1,12 @@
 """Email viewer using Rich library for formatted console output"""
 
 from rich.console import Console
+from ..utils.log_manager import get_logger, log_call
 
+logger = get_logger(__name__)
 console = Console()
 
+@log_call
 def display_email(email_data):
     """Display a formatted email in the console using Rich formatting"""
     console.print(f"[bold]From:[/] {email_data.get('from', 'Unknown')}")

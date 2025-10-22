@@ -3,9 +3,9 @@
 from typing import List, Dict, Optional
 from .db_manager import DatabaseManager
 from .email_schema import EmailSchemaManager
-from src.utils.log_manager import get_logger
+from ..utils.log_manager import get_logger, log_call
 
-logger = get_logger()
+logger = get_logger(__name__)
 
 
 class EmailSearchManager:
@@ -15,18 +15,11 @@ class EmailSearchManager:
         self.db = DatabaseManager()
         self.schema = EmailSchemaManager()
     
-    def _log_error(self, message: str, exception: Exception = None) -> None:
-        """Log error and print user-friendly message."""
-        if exception:
-            logger.error(f"{message}: {exception}")
-        else:
-            logger.error(message)
-        print(f"{message}. Please check your configuration and try again.")
-    
     def _validate_table(self, table_name: str) -> bool:
         """Validate table exists to prevent SQL injection."""
         return self.db.table_exists(table_name)
     
+    @log_call
     def _search(
         self, 
         table_name: str, 
@@ -59,9 +52,11 @@ class EmailSearchManager:
             return self.db.convert_emails_to_dict_list(emails) or []
         
         except Exception as e:
-            self._log_error(f"Failed to search emails in {table_name}", e)
+            logger.error(f"Failed to search emails in {table_name}: {e}")
+            print("Failed to search emails. Please check your configuration and try again.")
             return []
     
+    @log_call
     def search_by_keyword(
         self, 
         table_name: str, 
@@ -77,6 +72,7 @@ class EmailSearchManager:
         
         return self._search(table_name, where_clause, params, limit=limit, offset=offset)
     
+    @log_call
     def search_all_tables(
         self, 
         keyword: str, 
@@ -113,9 +109,11 @@ class EmailSearchManager:
             return self.db.convert_emails_to_dict_list(emails) or []
         
         except Exception as e:
-            self._log_error(f"Failed to search all tables with keyword '{keyword}'", e)
+            logger.error(f"Failed to search all tables with keyword '{keyword}': {e}")
+            print("Failed to search all tables. Please check your configuration and try again.")
             return []
     
+    @log_call
     def search_by_flag_status(self, flagged_status: bool, limit: int = 10, offset: int = 0) -> List[Dict]:
         """Search emails by flag status (inbox only)."""
         return self._search(
@@ -126,6 +124,7 @@ class EmailSearchManager:
             offset=offset
         )
     
+    @log_call
     def search_with_attachments(self, table_name: str, limit: int = 10, offset: int = 0) -> List[Dict]:
         """Search emails that have attachments."""
         return self._search(
@@ -136,6 +135,7 @@ class EmailSearchManager:
             offset=offset
         )
     
+    @log_call
     def search_by_date_range(
         self, 
         table_name: str, 
@@ -153,14 +153,17 @@ class EmailSearchManager:
             offset=offset
         )
     
+    @log_call
     def search_by_sender(self, table_name: str, sender: str, limit: int = 10, offset: int = 0) -> List[Dict]:
         """Search emails by sender (convenience wrapper)."""
         return self.search_by_keyword(table_name, sender, limit, offset, ["sender"])
     
+    @log_call
     def search_by_subject(self, table_name: str, subject: str, limit: int = 10, offset: int = 0) -> List[Dict]:
         """Search emails by subject (convenience wrapper)."""
         return self.search_by_keyword(table_name, subject, limit, offset, ["subject"])
     
+    @log_call
     def get_pending_emails(self) -> List[Dict]:
         """Get all emails with pending status from sent_emails table
         
@@ -175,6 +178,7 @@ class EmailSearchManager:
             order="ORDER BY send_at ASC"
         )
     
+    @log_call
     def search_with_metadata(
         self, 
         table_name: str, 
@@ -216,7 +220,8 @@ class EmailSearchManager:
             }
         
         except Exception as e:
-            self._log_error(f"Failed to search with metadata in {table_name}", e)
+            logger.error(f"Failed to search with metadata in {table_name}: {e}")
+            print("Failed to retrieve search results. Please check your configuration and try again.")
             return {
                 "results": [],
                 "total": 0,

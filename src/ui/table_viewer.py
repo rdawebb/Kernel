@@ -2,7 +2,9 @@
 
 from rich.table import Table
 from rich.console import Console
+from ..utils.log_manager import get_logger, log_call
 
+logger = get_logger(__name__)
 console = Console()
 
 
@@ -25,6 +27,7 @@ def _format_flagged_indicator(email):
     """Return 🚩 if email is flagged."""
     return "🚩" if email.get("flagged") else ""
 
+@log_call
 def display_email_table(
     emails,
     title="Emails",

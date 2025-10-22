@@ -2,10 +2,10 @@
 
 import subprocess
 import sys
-from src.utils import log_manager
-from src.utils.config import load_config
+from .log_manager import get_logger, log_call
+from .config_manager import ConfigManager
 
-log_manager = log_manager.get_logger()
+logger = get_logger(__name__)
 
 
 class ModelManager:
@@ -34,35 +34,38 @@ class ModelManager:
             "ollama": False
         }
         self.current_model = None
-        self.config = load_config()
+        self.config_manager = ConfigManager()
         self.load_config()
 
+    @log_call
     def load_config(self):
         """Load configuration from config file"""
-        self.config = load_config()
-        self.current_model = self.config.get("default_summariser", "sumy")
+        self.current_model = self.config_manager.get_config("default_summariser", "sumy")
 
+    @log_call
     def reload_config(self):
         """Reload configuration and model status"""
         self.load_config()
 
     @staticmethod
+    @log_call
     def install(package):
         """Install a package using pip."""
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-            log_manager.info(f"Successfully installed {package}")
+            logger.info(f"Successfully installed {package}")
         except Exception as e:
-            log_manager.error(f"Error installing {package}: {e}")
+            logger.error(f"Error installing {package}: {e}")
 
     @staticmethod
+    @log_call
     def uninstall(package):
         """Uninstall a package using pip."""
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", package])
-            log_manager.info(f"Successfully uninstalled {package}")
+            logger.info(f"Successfully uninstalled {package}")
         except Exception as e:
-            log_manager.error(f"Error uninstalling {package}: {e}")
+            logger.error(f"Error uninstalling {package}: {e}")
 
     def is_installed(self, model_name):
         """Check if a model is marked as installed."""
@@ -72,38 +75,40 @@ class ModelManager:
         """Mark a model as installed or not."""
         if model_name in self.installed_models:
             self.installed_models[model_name] = installed
-            log_manager.debug(f"Model {model_name} marked as {'installed' if installed else 'not installed'}")
+            logger.debug(f"Model {model_name} marked as {'installed' if installed else 'not installed'}")
 
+    @log_call
     def choose_model(self, choice):
         """Select and configure a model by choice number."""
         selected_model = self.MODEL_MAP.get(choice)
 
         if not selected_model:
-            log_manager.error(f"Invalid model choice: {choice}. Valid choices are 1-7.")
+            logger.error(f"Invalid model choice: {choice}. Valid choices are 1-7.")
             return None
 
         if selected_model == self.current_model:
-            log_manager.info(f"Model {selected_model} is already selected.")
+            logger.info(f"Model {selected_model} is already selected.")
             return selected_model
 
         self.current_model = selected_model
-        self.config["default_summariser"] = selected_model
+        self.config_manager.set_config("default_summariser", selected_model)
 
         if not self.is_installed(selected_model):
-            log_manager.info(f"Installing model: {selected_model}...")
+            logger.info(f"Installing model: {selected_model}...")
             self.install(selected_model)
             self.set_installed(selected_model, True)
 
         self._cleanup_unused_models(selected_model)
-        log_manager.info(f"Selected summarization model: {selected_model}")
+        logger.info(f"Selected summarization model: {selected_model}")
 
         return selected_model
 
+    @log_call
     def _cleanup_unused_models(self, keep_model):
         """Uninstall unused models to save space."""
         for model_name in self.installed_models:
             if model_name != keep_model and self.is_installed(model_name):
-                log_manager.info(f"Uninstalling unused model: {model_name}")
+                logger.info(f"Uninstalling unused model: {model_name}")
                 self.uninstall(model_name)
                 self.set_installed(model_name, False)
 

@@ -4,27 +4,33 @@ import sqlite3
 import pandas as pd
 from pathlib import Path
 from contextlib import contextmanager
-from src.utils.config import load_config
-from src.utils.log_manager import get_logger
+from ..utils.config_manager import ConfigManager
+from ..utils.log_manager import get_logger, log_call
 
-logger = get_logger()
+logger = get_logger(__name__)
 
 class DatabaseManager:
     """Handles database connections and low-level operations"""
     
     def __init__(self):
-        self.config = load_config()
+        self.config_manager = ConfigManager()
     
     def get_config_path(self, path_key):
         """Get a path from config by key name"""
-        return Path(self.config[path_key])
+        return Path(self.config_manager.get_config(path_key))
 
     def get_db_path(self):
-        return self.get_config_path("db_path")
+        return self.get_config_path("database_path")
 
     def get_backup_path(self):
-        return self.get_config_path("backup_path")
+        backup_path = self.config_manager.get_config("backup_path")
+        if backup_path is None:
+            # Default to exports directory
+            db_path = self.get_db_path()
+            return db_path.parent / "exports" / "backup.db"
+        return Path(backup_path)
 
+    @log_call
     def get_db_connection(self):
         try:
             db_path = self.get_db_path()
@@ -44,7 +50,8 @@ class DatabaseManager:
         try:
             yield conn
         finally:
-            conn.close()
+            if conn:
+                conn.close()
 
     def execute_query(self, query, params=(), fetch_one=False, fetch_all=True, commit=False):
         """Execute a database query with automatic connection management"""
@@ -65,6 +72,7 @@ class DatabaseManager:
         """Convert cursor results to list of dictionaries"""
         return [dict(email) for email in emails]
 
+    @log_call
     def backup_db(self, backup_path=None):
         try:
             db_path = self.get_db_path()
@@ -79,6 +87,7 @@ class DatabaseManager:
                 with sqlite3.connect(backup_path) as dest_conn:
                     source_conn.backup(dest_conn)
             
+            logger.info(f"Database backup created at {backup_path}")
             return str(backup_path)
                     
         except Exception as e:
@@ -86,6 +95,7 @@ class DatabaseManager:
             print("Unable to backup the database. Please check your configuration and try again.")
             return None
 
+    @log_call
     def export_db_to_csv(self, export_dir, tables=None):
         try:
             export_path = Path(export_dir)
@@ -107,10 +117,13 @@ class DatabaseManager:
                         csv_file = export_path / f"{table}.csv"
                         df.to_csv(csv_file, index=False)
                         exported_files.append(str(csv_file))
+                        logger.info(f"Exported {len(df)} rows from {table}")
                         print(f"Exported {len(df)} rows from {table} to {csv_file}")
                     else:
+                        logger.debug(f"Table {table} does not exist in the database. Skipping export.")
                         print(f"Table {table} does not exist in the database. Skipping export.")
             
+            logger.info(f"Database export completed: {len(exported_files)} tables exported")
             return exported_files
         
         except Exception as e:
@@ -118,16 +131,19 @@ class DatabaseManager:
             print("Unable to export the database to CSV. Please check your configuration and try again.")
             return None
 
+    @log_call
     def delete_db(self):
         try:
             db_path = self.get_db_path()
             if db_path.exists():
                 db_path.unlink()
+                logger.info(f"Database deleted: {db_path}")
         except Exception as e:
             logger.error(f"Failed to delete database: {e}")
             print("Unable to delete the database. Please check your configuration and try again.")
             return None
 
+    @log_call
     def table_exists(self, table_name):
         """Check if a table exists in the database"""
         try:

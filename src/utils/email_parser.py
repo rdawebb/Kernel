@@ -4,8 +4,9 @@ import email
 import datetime
 from email.header import decode_header
 from email.utils import parsedate_tz
-from . import log_manager
+from .log_manager import get_logger, log_call
 
+logger = get_logger(__name__)
 
 def process_email_message(msg_part):
     """Convert message tuple to email message object."""
@@ -59,6 +60,7 @@ def parse_email_date(date_str):
     now = datetime.datetime.now()
     return now.strftime("%Y-%m-%d"), now.strftime("%H:%M:%S")
 
+@log_call
 def _extract_body(email_data):
     """Extract plain text body from email message."""
     for part in email_data.walk() if email_data.is_multipart() else [email_data]:
@@ -73,6 +75,7 @@ def _extract_body(email_data):
                 return str(part.get_payload())
     return ""
 
+@log_call
 def parse_email(email_data, email_uid):
     """Parse email data into structured dictionary."""
     from src.utils.attachment_utils import _extract_attachments
@@ -100,7 +103,7 @@ def parse_email(email_data, email_uid):
         }
 
     except Exception as e:
-        log_manager.error(f"Error parsing email: {e}")
+        logger.error(f"Error parsing email: {e}")
         print("Sorry, something went wrong while parsing an email.")
         return {
             "uid": email_uid,

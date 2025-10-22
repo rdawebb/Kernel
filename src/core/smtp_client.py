@@ -9,24 +9,31 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from contextlib import contextmanager
-from src.utils.config import load_config
-from src.utils.log_manager import get_logger
+from ..utils.config_manager import ConfigManager
+from ..utils.log_manager import get_logger, log_call
 
-logger = get_logger()
+logger = get_logger(__name__)
+config_manager = ConfigManager()
 
 @contextmanager
 def smtp_connection():
     """Context manager for SMTP connections with automatic cleanup"""
-    config = load_config()
     server = None
     try:
-        if config['smtp_use_ssl']:
-            server = smtplib.SMTP_SSL(config['smtp_server'], config['smtp_port'])
+        smtp_server = config_manager.get_config('account.smtp_server')
+        smtp_port = config_manager.get_config('account.smtp_port', 587)
+        use_tls = config_manager.get_config('account.use_tls', True)
+        email = config_manager.get_config('account.email')
+        password = config_manager.get_config('account.password')
+        
+        if use_tls:
+            server = smtplib.SMTP_SSL(smtp_server, smtp_port)
         else:
-            server = smtplib.SMTP(config['smtp_server'], config['smtp_port'])
+            server = smtplib.SMTP(smtp_server, smtp_port)
             server.starttls()
 
-        server.login(config['email'], config['password'])
+        server.login(email, password)
+        logger.info(f"Connected to SMTP server {smtp_server}:{smtp_port}")
         yield server
     
     except Exception as e:
@@ -36,8 +43,12 @@ def smtp_connection():
 
     finally:
         if server:
-            server.quit()
+            try:
+                server.quit()
+            except Exception:
+                pass
 
+@log_call
 def send_email(to_email=None, subject="Test Email from tui_mail", body="This is a test email sent from the tui_mail SMTP client.", cc=None, bcc=None):
     """
     Send an email via SMTP
@@ -50,13 +61,13 @@ def send_email(to_email=None, subject="Test Email from tui_mail", body="This is 
         bcc (list): List of BCC recipients
     """
     try:
-        config = load_config()
+        email_from = config_manager.get_config('account.email')
         
         if not to_email:
-            to_email = config['email']
+            to_email = email_from
         
         msg = MIMEMultipart()
-        msg['From'] = config['email']
+        msg['From'] = email_from
         msg['To'] = to_email
         msg['Subject'] = subject
         
@@ -69,7 +80,7 @@ def send_email(to_email=None, subject="Test Email from tui_mail", body="This is 
 
         with smtp_connection() as server:
             if server is None:
-                logger.error("SMTP server connection is None, email not sent.")
+                logger.error("SMTP server connection is None, email not sent")
                 print("Unable to send email due to SMTP connection issues. Please check your configuration and try again.")
                 return False
             recipients = [to_email]
@@ -79,6 +90,7 @@ def send_email(to_email=None, subject="Test Email from tui_mail", body="This is 
                 recipients.extend(bcc if isinstance(bcc, list) else [bcc])
             
             server.send_message(msg, to_addrs=recipients)
+            logger.info(f"Email sent to {to_email}")
             return True
     
     except Exception as e:

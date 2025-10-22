@@ -1,7 +1,7 @@
 """Main CLI entrypoint - routes commands to their handlers"""
 import asyncio
 from rich.console import Console
-from ..core.config_manager import ConfigManager
+from ..utils.config_manager import ConfigManager
 from ..utils.log_manager import get_logger, log_call, async_log_call
 from .cli_parser import setup_argument_parser
 from .cli_utils import initialize_database, handle_downloads_list, handle_open_attachment

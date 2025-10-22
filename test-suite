@@ -1,14 +1,19 @@
 #!/bin/bash
 
-# Test Suite Runner for tui_mail
+# Test Suite Runner for Kernel Email Client
 # Runs the complete test suite with options for different test scenarios
 #
 # Usage Examples:
-#   ./test-suite              # Run all 116 tests
+#   ./test-suite              # Run all ~115 tests
 #   ./test-suite verbose      # Run with detailed output
-#   ./test-suite imap         # Run only IMAP tests (22 tests)
-#   ./test-suite smtp         # Run only SMTP tests (7 tests)
-#   ./test-suite connection   # Run only connection tests (10 tests)
+#   ./test-suite storage      # Run only storage/DB tests (10 tests)
+#   ./test-suite config       # Run only config tests (15 tests)
+#   ./test-suite connection   # Run only connection tests (18 tests)
+#   ./test-suite imap         # Run only IMAP tests (18 tests)
+#   ./test-suite smtp         # Run only SMTP tests (15 tests)
+#   ./test-suite ui           # Run only UI tests (16 tests)
+#   ./test-suite cli          # Run only CLI tests (8 tests)
+#   ./test-suite composer     # Run only composer tests (15 tests)
 #   ./test-suite count        # Show test statistics
 #   ./test-suite help         # Show all options
 
@@ -25,7 +30,7 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
 
-echo -e "${BLUE}🧪 tui_mail Test Suite Runner${NC}"
+echo -e "${BLUE}🧪 Kernel Email Client Test Suite Runner${NC}"
 echo "Project directory: $PROJECT_DIR"
 echo
 
@@ -46,10 +51,10 @@ run_tests() {
     local description="$2"
     
     echo -e "${BLUE}🔍 Running: $description${NC}"
-    echo "Command: python -m pytest $test_args"
+    echo "Command: python3 -m pytest $test_args"
     echo
     
-    if python -m pytest $test_args; then
+    if python3 -m pytest $test_args; then
         echo -e "${GREEN}✅ $description - PASSED${NC}"
         return 0
     else
@@ -63,7 +68,7 @@ case "${1:-all}" in
     "all"|"")
         echo -e "${YELLOW}Running complete test suite...${NC}"
         echo
-        run_tests "--tb=short" "Complete Test Suite"
+        run_tests "--no-header --tb=short" "Complete Test Suite"
         ;;
     
     "verbose"|"-v")
@@ -95,6 +100,18 @@ case "${1:-all}" in
         run_tests "tests/test_connection.py -v" "Connection Tests"
         ;;
     
+    "storage"|"--storage")
+        echo -e "${YELLOW}Running storage/database tests only...${NC}"
+        echo
+        run_tests "tests/test_storage.py -v" "Storage Tests"
+        ;;
+    
+    "config"|"--config")
+        echo -e "${YELLOW}Running configuration tests only...${NC}"
+        echo
+        run_tests "tests/test_config.py -v" "Config Tests"
+        ;;
+    
     "imap"|"--imap")
         echo -e "${YELLOW}Running IMAP tests only...${NC}"
         echo
@@ -105,6 +122,12 @@ case "${1:-all}" in
         echo -e "${YELLOW}Running SMTP tests only...${NC}"
         echo
         run_tests "tests/test_smtp_client.py -v" "SMTP Client Tests"
+        ;;
+    
+    "ui"|"--ui")
+        echo -e "${YELLOW}Running UI tests only...${NC}"
+        echo
+        run_tests "tests/test_ui.py -v" "UI Component Tests"
         ;;
     
     "composer"|"--composer")
@@ -128,7 +151,7 @@ case "${1:-all}" in
     "count"|"--count")
         echo -e "${YELLOW}Counting tests...${NC}"
         echo
-        total_tests=$(python -m pytest --collect-only -q tests/ 2>/dev/null | grep "test session starts" -A 1 | tail -1 | grep -o '[0-9]\+' | head -1)
+        total_tests=$(python3 -m pytest --collect-only -q tests/ 2>/dev/null | grep "test session starts" -A 1 | tail -1 | grep -o '[0-9]\+' | head -1)
         echo -e "${GREEN}📊 Total Tests: $total_tests${NC}"
         echo
         echo "Test breakdown by file:"
@@ -145,15 +168,18 @@ case "${1:-all}" in
         echo -e "${BLUE}Usage: ./test-suite [OPTION]${NC}"
         echo
         echo "Options:"
-        echo "  all, (default)     Run complete test suite"
+        echo "  all, (default)     Run complete test suite (~115 tests)"
         echo "  verbose, -v        Run tests with verbose output"
         echo "  coverage           Run tests with coverage report"
         echo "  fast               Run fast tests only (exclude slow integration tests)"
-        echo "  connection         Run connection tests only"
-        echo "  imap               Run IMAP client tests only"
-        echo "  smtp               Run SMTP client tests only"
-        echo "  composer           Run email composer tests only"
-        echo "  cli                Run CLI tests only"
+        echo "  storage            Run storage/database tests only (10 tests)"
+        echo "  config             Run configuration tests only (15 tests)"
+        echo "  connection         Run connection tests only (18 tests)"
+        echo "  imap               Run IMAP client tests only (18 tests)"
+        echo "  smtp               Run SMTP client tests only (15 tests)"
+        echo "  ui                 Run UI component tests only (16 tests)"
+        echo "  composer           Run email composer tests only (15 tests)"
+        echo "  cli                Run CLI tests only (8 tests)"
         echo "  unit               Run unit tests (exclude integration tests)"
         echo "  count              Count and display test statistics"
         echo "  help, -h           Show this help message"
@@ -161,7 +187,7 @@ case "${1:-all}" in
         echo "Examples:"
         echo "  ./test-suite                 # Run all tests"
         echo "  ./test-suite verbose         # Run with verbose output"
-        echo "  ./test-suite imap            # Run only IMAP tests"
+        echo "  ./test-suite storage         # Run only storage tests"
         echo "  ./test-suite coverage        # Run with coverage report"
         ;;
     

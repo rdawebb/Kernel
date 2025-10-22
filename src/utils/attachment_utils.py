@@ -2,8 +2,9 @@
 
 import email
 import os
-from . import log_manager
+from .log_manager import get_logger, log_call
 
+logger = get_logger(__name__)
 
 def _extract_attachments(email_message, include_content=True):
     """Extract attachment info from email message."""
@@ -29,7 +30,6 @@ def _extract_attachments(email_message, include_content=True):
     
     return attachments
 
-
 def _save_attachment_to_disk(filename, content, download_path):
     """Save attachment to disk with duplicate handling."""
     os.makedirs(download_path, exist_ok=True)
@@ -48,25 +48,25 @@ def _save_attachment_to_disk(filename, content, download_path):
     
     return file_path
 
-
+@log_call
 def _fetch_email_by_uid(mail, email_uid):
     """Fetch and parse email message by UID."""
 
     status, messages = mail.search(None, f"UID {email_uid}")
     if status != "OK" or not messages[0]:
-        log_manager.error(f"Email with UID {email_uid} not found")
+        logger.error(f"Email with UID {email_uid} not found")
         print("Sorry, unable to find this email. Please check your settings or try again.")
         return None
 
     status, email_data = mail.fetch(email_uid, "(RFC822)")
     if status != "OK":
-        log_manager.error(f"Failed to fetch email {email_uid}")
+        logger.error(f"Failed to fetch email {email_uid}")
         print("Sorry, failed to fetch email. Please check your settings or try again.")
         return None
     
     return email.message_from_bytes(email_data[0][1])
 
-
+@log_call
 def download_attachments(config, email_uid, attachment_index=None, download_path="./attachments"):
     """Download attachments from email by UID."""
     from src.core.imap_client import imap_connection
@@ -82,14 +82,14 @@ def download_attachments(config, email_uid, attachment_index=None, download_path
         attachments = _extract_attachments(email_message, include_content=True)
 
         if not attachments:
-            log_manager.error(f"No attachments found for email {email_uid}")
+            logger.error(f"No attachments found for email {email_uid}")
             print("No attachments found. Please check and try again.")
             return []
 
         # Filter attachments based on index parameter
         if attachment_index is not None:
             if attachment_index >= len(attachments) or attachment_index < 0:
-                log_manager.error(f"Invalid attachment index {attachment_index}. Available attachments: 0-{len(attachments)-1}")
+                logger.error(f"Invalid attachment index {attachment_index}. Available attachments: 0-{len(attachments)-1}")
                 print("Invalid attachment index. Please check and try again.")
                 return []
             attachments = [attachments[attachment_index]]
@@ -106,7 +106,7 @@ def download_attachments(config, email_uid, attachment_index=None, download_path
         
         return downloaded_files
 
-
+@log_call
 def get_attachment_list(config, email_uid):
     """Get attachment filenames from email without downloading."""
     from src.core.imap_client import imap_connection

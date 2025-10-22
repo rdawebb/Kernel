@@ -2,19 +2,17 @@
 
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from functools import wraps
 from pathlib import Path
 from typing import Optional
 from rich.logging import RichHandler
 from rich.console import Console
-from .config import load_config
 
-config = load_config()
 console = Console()
 
-LOG_DIR = Path(config.get("log_path"))
+LOG_DIR = Path.home() / ".kernel" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -23,7 +21,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_entry = {
-            "timestamp": datetime.now(datetime.timezone.utc).isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
             "level": record.levelname,
             "module": record.module,
             "function": record.funcName,
@@ -153,7 +151,8 @@ def log_call(func):
 
     return wrapper
 
-async def async_log_call(func):
+
+def async_log_call(func):
     """Async decorator to log function calls with arguments and return values."""
 
     @wraps(func)
@@ -164,7 +163,7 @@ async def async_log_call(func):
         start_time = datetime.now()
 
         try:
-            result = func(*args, **kwargs)
+            result = await func(*args, **kwargs)
             duration = (datetime.now() - start_time).total_seconds()
             logger.debug(f"<- Exiting {func_name} (Duration: {duration:.3f}s)")
             return result
@@ -193,3 +192,11 @@ def get_logger(name: Optional[str] = None, **context) -> logging.Logger:
         init_logging()
 
     return _log_manager.get_logger(name, **context)
+
+def log_event(event_type: str, message: str, **extra):
+    """Log an event with specific type and extra context (module-level wrapper)."""
+    
+    if _log_manager is None:
+        init_logging()
+    
+    return _log_manager.log_event(event_type, message, **extra)

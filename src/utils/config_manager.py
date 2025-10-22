@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 from pydantic import BaseModel, Field, ValidationError
-from src.utils.log_manager import get_logger, log_call
+from .log_manager import get_logger, log_call
 
 logger = get_logger(__name__)
 

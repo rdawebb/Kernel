@@ -2,19 +2,20 @@
 
 import imaplib
 from contextlib import contextmanager
-from src.utils.config import load_config
+from ..utils.config_manager import ConfigManager
 from . import storage_api
-from src.utils import log_manager
-from src.utils.email_parser import parse_email, process_email_message
+from ..utils.log_manager import get_logger, log_call
+from ..utils.email_parser import parse_email, process_email_message
 
-config = load_config()
+logger = get_logger(__name__)
+config_manager = ConfigManager()
 
 @contextmanager
-def imap_connection(config):
+def imap_connection(account_config):
     """Context manager for IMAP connections with automatic cleanup"""
-    mail = connect_to_imap(config)
+    mail = connect_to_imap(account_config)
     if not mail:
-        log_manager.error("Failed to connect to IMAP server")
+        logger.error("Failed to establish IMAP connection")
         print("Unable to connect to your email server. Please check your settings and try again.")
         yield None
         return
@@ -27,29 +28,36 @@ def imap_connection(config):
         except Exception:
             pass
 
-def connect_to_imap(config):
+@log_call
+def connect_to_imap(account_config):
     """Connect to IMAP server with SSL/TLS support"""
     try:
-        port = config.get('imap_port', 993)
-        if config.get('imap_use_ssl', True):
-            mail = imaplib.IMAP4_SSL(config['imap_server'], port)
-        else:
-            mail = imaplib.IMAP4(config['imap_server'], port)
+        imap_server = account_config.get('imap_server') or config_manager.get_config('account.imap_server')
+        imap_port = account_config.get('imap_port') or config_manager.get_config('account.imap_port', 993)
+        use_tls = account_config.get('use_tls', config_manager.get_config('account.use_tls', True))
+        email = account_config.get('email') or config_manager.get_config('account.email')
         
-        mail.login(config['email'], config['password'])
+        if use_tls:
+            mail = imaplib.IMAP4_SSL(imap_server, imap_port)
+        else:
+            mail = imaplib.IMAP4(imap_server, imap_port)
+        
+        mail.login(email, account_config['password'])
         mail.select("inbox")
+        logger.info(f"Connected to IMAP server {imap_server}:{imap_port}")
 
     except Exception as e:
-        log_manager.error(f"Error connecting to IMAP server: {e}")
+        logger.error(f"Error connecting to IMAP server: {e}")
         print("Unable to connect to your email server. Please check your settings and try again.")
         return None
     
     return mail
 
-def fetch_new_emails(config, fetch_all=False):
+@log_call
+def fetch_new_emails(account_config, fetch_all=False):
     """Fetch new emails from IMAP server and save to database"""
     
-    mail = connect_to_imap(config)
+    mail = connect_to_imap(account_config)
     if not mail:
         return 0
     
@@ -64,12 +72,13 @@ def fetch_new_emails(config, fetch_all=False):
                 status, messages = mail.search(None, "ALL")
         
         if status != "OK":
-            log_manager.error(f"Error searching for emails: {status}")
+            logger.error(f"Error searching for emails: {status}")
             print("Unable to fetch emails. Please check your connection and try again.")
             return 0
         
         email_ids = messages[0].split()
         if not email_ids or email_ids == [b'']:
+            logger.debug("No new emails found")
             return 0
         
         emails_saved = 0
@@ -81,7 +90,7 @@ def fetch_new_emails(config, fetch_all=False):
                 status, email_data = fetch_method('fetch', email_id, "(RFC822)")
                 
                 if status != "OK":
-                    log_manager.error(f"Error fetching email ID {email_id}: {status}")
+                    logger.error(f"Error fetching email ID {email_id}: {status}")
                     print("Unable to fetch emails. Please check your connection and try again.")
                     continue
 
@@ -95,14 +104,15 @@ def fetch_new_emails(config, fetch_all=False):
 
                         emails_saved += 1
             except Exception as e:
-                log_manager.error(f"Error processing email {email_id}: {e}")
+                logger.error(f"Error processing email {email_id}: {e}")
                 print("Sorry, something went wrong. Please check your settings or try again.")
                 continue
 
+        logger.info(f"Fetched and saved {emails_saved} new emails from IMAP server")
         return emails_saved
     
     except Exception as e:
-        log_manager.error(f"Error fetching emails: {e}")
+        logger.error(f"Error fetching emails: {e}")
         print("Sorry, something went wrong. Please check your settings or try again.")
         return 0
     finally:
@@ -111,9 +121,11 @@ def fetch_new_emails(config, fetch_all=False):
         except Exception:
             pass
 
-def delete_email(config, email_uid):
+@log_call
+def delete_email(account_config, email_uid):
     """Delete an email by UID from the server"""
-    with imap_connection(config) as mail:
+    with imap_connection(account_config) as mail:
         if mail:
             mail.uid('STORE', email_uid, '+FLAGS', r'(\Deleted)')
             mail.expunge()
+            logger.info(f"Deleted email UID {email_uid} from IMAP server")

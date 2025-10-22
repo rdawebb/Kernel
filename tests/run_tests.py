@@ -1,73 +1,68 @@
 #!/usr/bin/env python3
 """
-Test runner for the tui_mail project.
-Runs all unit tests and provides a summary.
+Test runner for the Kernel project using pytest.
+
+Provides a convenient interface to run tests with various options:
+- Run all tests: python run_tests.py
+- Run specific test file: python run_tests.py storage
+- Run with verbose output: python run_tests.py -v
+- Run with coverage: python run_tests.py --cov
 """
 
-import unittest
 import sys
+import subprocess
 from pathlib import Path
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-def run_all_tests():
-    """Run all tests and return the results"""
-    # Discover and run all tests
-    loader = unittest.TestLoader()
-    start_dir = Path(__file__).parent
-    suite = loader.discover(start_dir, pattern='test_*.py')
-    
-    # Run tests with detailed output
-    runner = unittest.TextTestRunner(verbosity=2, stream=sys.stdout)
-    result = runner.run(suite)
-    
-    return result
 
-def run_specific_test(test_module):
-    """Run tests from a specific module"""
-    loader = unittest.TestLoader()
-    suite = loader.loadTestsFromName(f'test_{test_module}')
+def run_pytest(args=None):
+    """Run tests using pytest"""
+    if args is None:
+        args = []
     
-    runner = unittest.TextTestRunner(verbosity=2)
-    result = runner.run(suite)
+    # Base pytest command
+    cmd = ['python3', '-m', 'pytest', 'tests/', '-v', '--tb=short']
     
-    return result
+    # Add additional arguments
+    if args:
+        cmd.extend(args)
+    
+    # Run pytest
+    result = subprocess.run(cmd, cwd=str(project_root))
+    return result.returncode
+
 
 def main():
     """Main test runner function"""
-    if len(sys.argv) > 1:
-        # Run specific test module
-        test_module = sys.argv[1]
-        print(f"Running tests for: {test_module}")
-        result = run_specific_test(test_module)
+    args = sys.argv[1:]
+    
+    if not args:
+        print("Running all tests with pytest...")
+        print("=" * 70)
+        return_code = run_pytest()
+    elif args[0] in ['--help', '-h']:
+        print(__doc__)
+        return 0
     else:
-        # Run all tests
-        print("Running all tests...")
-        result = run_all_tests()
+        # Check if it's a specific test file or pytest argument
+        test_file = args[0]
+        
+        if test_file.startswith('-'):
+            # It's a pytest argument
+            print(f"Running pytest with arguments: {args}")
+            return_code = run_pytest(args)
+        else:
+            # It's a test file
+            print(f"Running tests for: {test_file}")
+            print("=" * 70)
+            test_path = f'tests/test_{test_file}.py'
+            return_code = run_pytest([test_path] + args[1:])
     
-    # Print summary
-    print(f"\nTests run: {result.testsRun}")
-    print(f"Failures: {len(result.failures)}")
-    print(f"Errors: {len(result.errors)}")
-    
-    if result.failures:
-        print("\nFailures:")
-        for test, traceback in result.failures:
-            print(f"  - {test}: {traceback.split('AssertionError:')[-1].strip()}")
-    
-    if result.errors:
-        print("\nErrors:")
-        for test, traceback in result.errors:
-            print(f"  - {test}")
-    
-    # Exit with error code if there were failures or errors
-    if result.failures or result.errors:
-        sys.exit(1)
-    else:
-        print("\nAll tests passed! ✅")
-        sys.exit(0)
+    sys.exit(return_code)
+
 
 if __name__ == '__main__':
     main()

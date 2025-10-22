@@ -1,10 +1,10 @@
 """Summariser module for generating email summaries."""
 
-from src.utils import log_manager
-from src.utils.config import load_config
-from src.utils.model_manager import ModelManager
+from ..utils.log_manager import get_logger, log_call
+from ..utils.config_manager import ConfigManager
+from ..utils.model_manager import ModelManager
 
-log_manager = log_manager.get_logger()
+logger = get_logger(__name__)
 
 
 class EmailSummariser:
@@ -12,14 +12,14 @@ class EmailSummariser:
 
     def __init__(self):
         self.model_manager = ModelManager()
-        self.config = load_config()
+        self.config_manager = ConfigManager()
         self.reload_config()
 
+    @log_call
     def reload_config(self):
         """Reload configuration settings"""
-        self.config = load_config()
-        self.language = self.config.get("language", "english")
-        self.sentence_count = self.config.get("sentence_count", 3)
+        self.language = self.config_manager.get_config("language", "english")
+        self.sentence_count = self.config_manager.get_config("sentence_count", 3)
         self.model_manager.reload_config()
 
     def _safe_import(self, library_name, import_path, error_message):
@@ -37,7 +37,7 @@ class EmailSummariser:
                 module = __import__(import_path)
                 return module, True
         except ImportError:
-            log_manager.error(error_message)
+            logger.error(error_message)
             return None, False
 
     def _execute_safely(self, func, error_prefix):
@@ -45,7 +45,7 @@ class EmailSummariser:
         try:
             return func()
         except Exception as e:
-            log_manager.error(f"Error during {error_prefix}: {e}")
+            logger.error(f"Error during {error_prefix}: {e}")
             return None
 
     def _format_summary(self, summary):
@@ -59,12 +59,13 @@ class EmailSummariser:
             # Try to import the library
             __import__(import_statement.split()[1] if 'from' in import_statement else import_statement)
         except ImportError:
-            log_manager.error(f"{library_name} library is not installed. Please install it to use {error_prefix} summarization.")
+            logger.error(f"{library_name} library is not installed. Please install it to use {error_prefix} summarization.")
             return "No summary available."
 
         result = self._execute_safely(summarize_func, error_prefix)
         return result if result else "No summary available."
 
+    @log_call
     def summarise_with_sumy(self, email: str) -> str:
         """Generate a summary of the provided email text using the Sumy library"""
         def summarize():
@@ -92,7 +93,7 @@ class EmailSummariser:
         def summarize():
             from transformers import pipeline
             
-            model = self.config.get(config_key, default_model)
+            model = self.config_manager.get_config(config_key, default_model)
             summarizer = pipeline("summarization", model=model)
             summary_list = summarizer(email, max_length=130, min_length=30, do_sample=False)
             summary = summary_list[0]['summary_text']
@@ -106,6 +107,7 @@ class EmailSummariser:
             error_prefix
         )
 
+    @log_call
     def summarise_with_minibart(self, email: str) -> str:
         """Generate a summary using the MiniBart model"""
         return self._summarise_with_transformer(
@@ -116,6 +118,7 @@ class EmailSummariser:
             "MiniBart summarization"
         )
 
+    @log_call
     def summarise_with_t5(self, email: str) -> str:
         """Generate a summary using the T5 model"""
         return self._summarise_with_transformer(
@@ -126,6 +129,7 @@ class EmailSummariser:
             "T5 summarization"
         )
 
+    @log_call
     def summarise_with_bart(self, email: str) -> str:
         """Generate a summary using the BART model"""
         return self._summarise_with_transformer(
@@ -136,14 +140,15 @@ class EmailSummariser:
             "BART summarization"
         )
 
+    @log_call
     def summarise_with_openai(self, email: str) -> str:
         """Generate a summary using OpenAI's GPT-4 model"""
         def summarize():
             import openai
             
-            openai.api_key = self.config.get("openai_api_key")
+            openai.api_key = self.config_manager.get_config("openai_api_key")
             response = openai.ChatCompletion.create(
-                model=self.config.get("openai_model", "gpt-4"),
+                model=self.config_manager.get_config("openai_model", "gpt-4"),
                 messages=[
                     {"role": "user", "content": f"Summarize the following text:\n\n{email}\n\nSummary:"}
                 ]
@@ -159,17 +164,18 @@ class EmailSummariser:
             "OpenAI summarization"
         )
         
+    @log_call
     def summarise_with_cohere(self, text: str) -> str:
         """Generate a summary using Cohere's Command R model"""
         def summarize():
             import cohere
             
-            co = cohere.Client(self.config.get("cohere_api_key"))
+            co = cohere.Client(self.config_manager.get_config("cohere_api_key"))
             response = co.summarize(
                 text=text,
                 length='medium',
                 format='paragraph',
-                model=self.config.get("cohere_model", "command-r"),
+                model=self.config_manager.get_config("cohere_model", "command-r"),
                 additional_command='',
                 temperature=0.3,
                 k=0,
@@ -188,6 +194,7 @@ class EmailSummariser:
             "Cohere summarization"
         )
         
+    @log_call
     def summarise_with_ollama(self, text: str) -> str:
         """Generate a summary using Ollama's model"""
         def summarize():
@@ -195,7 +202,7 @@ class EmailSummariser:
             
             client = ollama.Ollama()
             response = client.chat(
-                model=self.config.get("ollama_model", "llama2"),
+                model=self.config_manager.get_config("ollama_model", "llama2"),
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant that summarizes emails."},
                     {"role": "user", "content": f"Summarize the following text:\n\n{text}"}
@@ -212,12 +219,13 @@ class EmailSummariser:
             "Ollama summarization"
         )
 
+    @log_call
     def main(self, text: str) -> str:
         """Main method to generate summary using the selected model"""
         current_model = self.model_manager.get_current_model()
         
         if not current_model:
-            log_manager.warning("No summarization model selected.")
+            logger.warning("No summarization model selected.")
             return "No summary available."
         
         # Map model names to their corresponding methods
@@ -235,5 +243,5 @@ class EmailSummariser:
         if method:
             return method(text)
         else:
-            log_manager.error(f"Unknown model: {current_model}")
+            logger.error(f"Unknown model: {current_model}")
             return "No summary available."

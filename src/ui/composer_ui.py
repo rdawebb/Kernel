@@ -1,12 +1,15 @@
 """UI logic for interactive email composer - handles all user prompts and console output"""
 
 from rich.console import Console
-from src.utils.ui_helpers import confirm_action
-from src.utils.email_utils import validate_email_address
+from ..utils.ui_helpers import confirm_action
+from ..utils.email_utils import validate_email_address
+from ..utils.log_manager import get_logger, log_call
 
+logger = get_logger(__name__)
 console = Console()
 
 
+@log_call
 def prompt_recipient():
     """Prompt for and validate recipient email address."""
 
@@ -23,6 +26,7 @@ def prompt_recipient():
 
         return valid_email, False
 
+@log_call
 def prompt_subject():
     """Prompt for email subject."""
     
@@ -38,6 +42,7 @@ def prompt_subject():
             if not confirm_action("Would you like to re-enter the subject?"):
                 return None, True
 
+@log_call
 def prompt_body():
     """Prompt for multi-line email body (ends with empty line)."""
     console.print("Body (press Enter twice when finished):")
@@ -57,6 +62,7 @@ def prompt_body():
     
     return body, False
 
+@log_call
 def prompt_email_details():
     """Prompt for recipient, subject, and body."""
     console.print("[bold green]Compose a new email[/bold green]")
@@ -90,6 +96,7 @@ def show_email_preview(email_data):
     console.print(f"[bold]Subject:[/bold] {email_data['subject']}")
     console.print(f"[bold]Body:[/bold]\n{email_data['body']}")
 
+@log_call
 def prompt_send_later():
     """Prompt for optional scheduled send time."""
     send_at = console.input(

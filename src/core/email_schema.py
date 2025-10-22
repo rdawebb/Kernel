@@ -52,6 +52,20 @@ class EmailSchemaManager:
         else:  # drafts or other tables
             return self.STANDARD_EMAIL_COLUMNS_NO_FLAG_WITH_BODY if include_body else self.STANDARD_EMAIL_COLUMNS_NO_FLAG
     
+    def get_insert_columns_for_table(self, table_name: str) -> str:
+        """Get actual column names (without aliases) for INSERT statements"""
+        # Return raw column names without aliases
+        base_columns = "uid, subject, sender, recipient, date, time, attachments"
+        
+        if table_name == "inbox":
+            return f"{base_columns}, flagged"
+        elif table_name == "sent_emails":
+            return f"{base_columns}, sent_status, send_at"
+        elif table_name == "deleted_emails":
+            return f"{base_columns}, deleted_at"
+        else:  # drafts
+            return base_columns
+    
     def create_email_table_sql(self, table_name: str, include_flagged: bool = False, 
                               include_deleted: bool = False, include_sent_status: bool = False, 
                               include_send_at: bool = False) -> str:
