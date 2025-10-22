@@ -8,7 +8,7 @@ Tests cover:
 - Draft saving
 - Schedule sending
 """
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from src.ui.composer import compose_email
 

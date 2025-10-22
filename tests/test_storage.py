@@ -9,8 +9,8 @@ Tests cover:
 - Attachment handling
 - Backup and export operations
 """
-import pytest
-from unittest.mock import patch, MagicMock
+
+from unittest.mock import patch
 
 from src.core import storage_api
 from .test_helpers import DatabaseTestHelper
