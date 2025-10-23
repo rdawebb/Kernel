@@ -9,7 +9,7 @@ from .log_manager import get_logger, log_call
 
 logger = get_logger(__name__)
 
-CONFIG_DIR = Path.home() / ".kernel"
+CONFIG_DIR = Path("src/utils")
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
@@ -55,6 +55,12 @@ class LoggingConfig(BaseModel):
     max_file_size: int = 5_242_880 # 5 MB
     backup_count: int = 5
 
+class DatabaseConfig(BaseModel):
+    """Pydantic model for database settings."""
+    database_path: str = "data/kernel.db"
+    backup_path: str = "exports/backup.db"
+    export_path: str = "exports/"
+
 class AppConfig(BaseModel):
     """Pydantic model for overall application configuration."""
 
@@ -63,14 +69,25 @@ class AppConfig(BaseModel):
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
 
 class ConfigManager:
     """Manages persistent application configuration."""
 
+    _instance = None
+    _initialized = False
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(ConfigManager, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self, config_path: Optional[Path] = None):
-        self.path = config_path or CONFIG_PATH
-        self.config = self._load_or_create_config()
-        logger.info(f"Configuration loaded from {self.path}")
+        if not ConfigManager._initialized:
+            self.path = config_path or CONFIG_PATH
+            self.config = self._load_or_create_config()
+            logger.info(f"Configuration loaded from {self.path}")
+            ConfigManager._initialized = True
 
     def _load_or_create_config(self) -> AppConfig:
         """Load configuration from file or create default if not present."""
@@ -102,22 +119,22 @@ class ConfigManager:
         
     def _save_config(self, config: Optional[AppConfig] = None):
         """Save the current configuration to file."""
-        
+
         config = config or self.config
-        
+            
         with open(self.path, "w", encoding="utf-8") as f:
             json.dump(
                 config.model_dump(),
                 f,
                 indent=2,
                 ensure_ascii=False
-            )
+                )
         logger.debug("Configuration successfully saved.")
 
     @log_call
     def get_config(self, key_path: str, default: Any = None) -> Any:
         """Get a configuration value using dot-separated key path."""
-        
+
         keys = key_path.split(".")
         value = self.config.model_dump()
 
@@ -127,10 +144,8 @@ class ConfigManager:
             else:
                 logger.debug(f"Config key '{key_path}' not found, returning default: {default}")
                 return default
-            
-            if value is None:
-                return default
 
+        logger.info(f"Config key '{key_path}' retrieved with value: {value}")
         return value
 
     @log_call

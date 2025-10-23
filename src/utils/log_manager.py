@@ -12,7 +12,7 @@ from rich.console import Console
 
 console = Console()
 
-LOG_DIR = Path.home() / ".kernel" / "logs"
+LOG_DIR = Path("logs")
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -69,7 +69,7 @@ class LogManager:
             rich_tracebacks=True,
         )
 
-        console_handler.setLevel(self.log_level)
+        console_handler.setLevel(logging.WARNING)
         console_formatter = logging.Formatter(
             "%(message)s",
             datefmt="[%X]"

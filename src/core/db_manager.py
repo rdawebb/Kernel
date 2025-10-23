@@ -20,10 +20,10 @@ class DatabaseManager:
         return Path(self.config_manager.get_config(path_key))
 
     def get_db_path(self):
-        return self.get_config_path("database_path")
+        return self.get_config_path("database.database_path")
 
     def get_backup_path(self):
-        backup_path = self.config_manager.get_config("backup_path")
+        backup_path = self.config_manager.get_config("database.backup_path")
         if backup_path is None:
             # Default to exports directory
             db_path = self.get_db_path()
