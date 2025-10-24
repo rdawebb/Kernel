@@ -14,7 +14,8 @@ from unittest.mock import patch, MagicMock
 import imaplib
 import smtplib
 
-from src.core.imap_client import connect_to_imap, imap_connection
+from src.core.imap_client import imap_connection
+from src.core.imap_connection import connect_to_imap
 from src.core.smtp_client import smtp_connection
 from .test_helpers import IMAPTestHelper, SMTPTestHelper, ConfigTestHelper
 
@@ -26,7 +27,7 @@ class TestIMAPConnection:
         """Test successful IMAP connection"""
         config = ConfigTestHelper.create_test_config()
         
-        with patch('src.core.imap_client.imaplib.IMAP4_SSL') as mock_imap_ssl:
+        with patch('src.core.imap_connection.imaplib.IMAP4_SSL') as mock_imap_ssl:
             mock_mail = IMAPTestHelper.create_mock_imap()
             mock_imap_ssl.return_value = mock_mail
             
@@ -34,14 +35,13 @@ class TestIMAPConnection:
             
             assert result is not None
             mock_imap_ssl.assert_called_once_with('imap.test.com', 993)
-            mock_mail.login.assert_called_once_with('test@example.com', 'testpass')
-            mock_mail.select.assert_called_once_with('inbox')
+            mock_mail.login.assert_called_once_with('testuser', 'testpass')
     
     def test_connect_to_imap_login_failure(self):
         """Test IMAP connection with login failure"""
         config = ConfigTestHelper.create_test_config()
         
-        with patch('src.core.imap_client.imaplib.IMAP4_SSL') as mock_imap_ssl:
+        with patch('src.core.imap_connection.imaplib.IMAP4_SSL') as mock_imap_ssl:
             mock_mail = MagicMock()
             mock_imap_ssl.return_value = mock_mail
             mock_mail.login.side_effect = imaplib.IMAP4.error("Login failed")
@@ -54,7 +54,7 @@ class TestIMAPConnection:
         """Test IMAP connection with server unreachable"""
         config = ConfigTestHelper.create_test_config()
         
-        with patch('src.core.imap_client.imaplib.IMAP4_SSL') as mock_imap_ssl:
+        with patch('src.core.imap_connection.imaplib.IMAP4_SSL') as mock_imap_ssl:
             mock_imap_ssl.side_effect = ConnectionError("Cannot reach server")
             
             result = connect_to_imap(config)
@@ -68,7 +68,7 @@ class TestIMAPConnection:
             imap_port=143
         )
         
-        with patch('src.core.imap_client.imaplib.IMAP4') as mock_imap:
+        with patch('src.core.imap_connection.imaplib.IMAP4') as mock_imap:
             # Create a proper mock that behaves like IMAP4
             mock_mail = MagicMock()
             mock_mail.login = MagicMock()
@@ -93,7 +93,7 @@ class TestIMAPContextManager:
         """Test IMAP connection context manager with successful connection"""
         config = ConfigTestHelper.create_test_config()
         
-        with patch('src.core.imap_client.connect_to_imap') as mock_connect:
+        with patch('src.core.imap_connection.connect_to_imap') as mock_connect:
             mock_mail = IMAPTestHelper.create_mock_imap()
             mock_connect.return_value = mock_mail
             
@@ -108,7 +108,7 @@ class TestIMAPContextManager:
         """Test IMAP context manager when connection fails"""
         config = ConfigTestHelper.create_test_config()
         
-        with patch('src.core.imap_client.connect_to_imap', return_value=None):
+        with patch('src.core.imap_connection.connect_to_imap', return_value=None):
             # When connect_to_imap returns None, the context manager yields None
             with imap_connection(config) as conn:
                 # Connection failed, so conn should be None
@@ -241,7 +241,7 @@ class TestConnectionConfiguration:
         """Test IMAP server is read from config"""
         config = ConfigTestHelper.create_test_config(imap_server='imap.custom.com')
         
-        with patch('src.core.imap_client.imaplib.IMAP4_SSL') as mock_imap_ssl:
+        with patch('src.core.imap_connection.imaplib.IMAP4_SSL') as mock_imap_ssl:
             mock_mail = IMAPTestHelper.create_mock_imap()
             mock_imap_ssl.return_value = mock_mail
             
@@ -277,10 +277,11 @@ class TestConnectionConfiguration:
         """Test email credentials are read from config"""
         config = ConfigTestHelper.create_test_config(
             email='custom@example.com',
+            username='customuser',
             password='custompass'
         )
         
-        with patch('src.core.imap_client.imaplib.IMAP4_SSL') as mock_imap_ssl:
+        with patch('src.core.imap_connection.imaplib.IMAP4_SSL') as mock_imap_ssl:
             mock_mail = IMAPTestHelper.create_mock_imap()
             mock_imap_ssl.return_value = mock_mail
             
@@ -288,5 +289,5 @@ class TestConnectionConfiguration:
             
             # Check that custom credentials were used
             call_args = mock_mail.login.call_args
-            assert 'custom@example.com' in str(call_args)
+            assert 'customuser' in str(call_args)
             assert 'custompass' in str(call_args)

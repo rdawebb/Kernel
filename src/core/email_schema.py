@@ -54,9 +54,9 @@ class EmailSchemaManager:
     
     def get_insert_columns_for_table(self, table_name: str) -> str:
         """Get actual column names (without aliases) for INSERT statements"""
-        # Return raw column names without aliases
-        base_columns = "uid, subject, sender, recipient, date, time, attachments"
-        
+
+        base_columns = "uid, subject, sender, recipient, date, time, body, attachments"
+
         if table_name == "inbox":
             return f"{base_columns}, flagged"
         elif table_name == "sent_emails":

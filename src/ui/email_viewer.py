@@ -1,6 +1,7 @@
 """Email viewer using Rich library for formatted console output"""
 
 from rich.console import Console
+from rich.text import Text
 from ..utils.log_manager import get_logger, log_call
 
 logger = get_logger(__name__)
@@ -9,15 +10,29 @@ console = Console()
 @log_call
 def display_email(email_data):
     """Display a formatted email in the console using Rich formatting"""
-    console.print(f"[bold]From:[/] {email_data.get('from', 'Unknown')}")
-    console.print(f"[bold]Subject:[/] {email_data.get('subject', 'No Subject')}")
-    console.print(f"[bold]Date:[/] {email_data.get('date', 'Unknown Date')}")
-    console.print(f"[bold]Time:[/] {email_data.get('time', 'Unknown Time')}\n")
     
+    details = [
+        f"[bold]From:[/] {email_data.get('from', 'Unknown')}",
+        f"[bold]Date:[/] {email_data.get('date', 'Unknown Date')}",
+        f"[bold]Time:[/] {email_data.get('time', 'Unknown Time')}",
+        f"[bold]Subject:[/] {email_data.get('subject', 'No Subject')}\n"
+    ]
+
+    max_len = max(len(Text.from_markup(line)) for line in details)
+    separator = "-" * max_len
+    
+    console.print(separator)
+    console.print("\n".join(details))
+
     attachments_raw = email_data.get('attachments', '')
     if attachments_raw and attachments_raw.strip():
         attachments_list = [att.strip() for att in attachments_raw.split(',') if att.strip()]
         if attachments_list:
             console.print(f"[bold]Attachments:[/] {', '.join(attachments_list)}\n")
     
-    console.print(email_data.get("body", "[dim]No body available[/]"))
+    body = email_data.get("body")
+    if not body:
+        console.print("[dim]No body available[/]")
+    else:
+        console.print(body)
+    console.print(separator)

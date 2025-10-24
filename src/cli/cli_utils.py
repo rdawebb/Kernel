@@ -1,9 +1,9 @@
 """Shared CLI utilities and helper functions"""
 import os
 import platform
+import stat
 import subprocess
 from pathlib import Path
-
 from rich.console import Console
 from ..core import storage_api
 from ..utils.log_manager import get_logger, log_call, async_log_call
@@ -12,7 +12,11 @@ from ..utils.attachment_utils import download_attachments
 console = Console()
 logger = get_logger(__name__)
 
-ATTACHMENTS_DIR = Path("./attachments")
+# Default attachments directory (can be overridden by config)
+DEFAULT_ATTACHMENTS_DIR = Path.home() / ".kernel" / "attachments"
+
+# Secure directory permissions: owner-only access
+SECURE_DIR_PERMS = stat.S_IRWXU  # 0o700
 
 
 @log_call
@@ -44,6 +48,20 @@ def _print_and_log_downloaded_files(downloaded_files, email_id: int) -> None:
 async def handle_download_action(cfg, email_id: int, args) -> None:
     """Download attachments for an email."""
     try:
+        # Get attachments path from config or use default
+        attachments_path = Path(cfg.database.attachments_path)
+        
+        # Ensure attachments directory exists with secure permissions
+        try:
+            attachments_path.mkdir(parents=True, exist_ok=True)
+            # Set secure permissions: owner-only access
+            os.chmod(str(attachments_path), SECURE_DIR_PERMS)
+            logger.info(f"Attachments directory ensured at: {attachments_path}")
+        except OSError as e:
+            logger.error(f"Failed to create attachments directory: {e}")
+            console.print(f"[red]Failed to create attachments directory: {e}[/]")
+            return
+        
         # Determine attachment index: None (all), specific index, or 0 (first)
         if hasattr(args, 'all') and args.all:
             attachment_index = None
@@ -56,7 +74,7 @@ async def handle_download_action(cfg, email_id: int, args) -> None:
             cfg, 
             email_id, 
             attachment_index=attachment_index, 
-            download_path=str(ATTACHMENTS_DIR)
+            download_path=str(attachments_path)
         )
         
         if downloaded_files:
@@ -73,12 +91,15 @@ async def handle_download_action(cfg, email_id: int, args) -> None:
 async def handle_downloads_list(args, cfg) -> None:
     """List downloaded attachments with file sizes."""
     try:
-        if not ATTACHMENTS_DIR.exists():
+        # Get attachments path from config or use default
+        attachments_path = Path(cfg.database.attachments_path)
+        
+        if not attachments_path.exists():
             logger.warning("Attachments folder does not exist.")
             console.print("[yellow]Attachments folder does not exist.[/]")
             return
             
-        downloaded_files = list(ATTACHMENTS_DIR.iterdir())
+        downloaded_files = list(attachments_path.iterdir())
         if not downloaded_files:
             logger.info("No downloaded attachments found in attachments folder.")
             console.print("[yellow]No downloaded attachments found in attachments folder.[/]")
@@ -110,7 +131,10 @@ async def handle_downloads_list(args, cfg) -> None:
 async def handle_open_attachment(args, cfg) -> None:
     """Open downloaded attachment with default application."""
     try:
-        if not ATTACHMENTS_DIR.exists():
+        # Get attachments path from config or use default
+        attachments_path = Path(cfg.database.attachments_path)
+        
+        if not attachments_path.exists():
             logger.error("Attachments folder does not exist.")
             console.print("[red]Attachments folder does not exist.[/]")
             return
@@ -121,7 +145,7 @@ async def handle_open_attachment(args, cfg) -> None:
             console.print("[red]Invalid filename. Please use only the filename from downloads list.[/]")
             return
 
-        file_path = ATTACHMENTS_DIR / args.filename
+        file_path = attachments_path / args.filename
         if not file_path.exists():
             logger.error(f"File '{args.filename}' not found in attachments folder.")
             console.print(f"[red]File '{args.filename}' not found in attachments folder.[/]")

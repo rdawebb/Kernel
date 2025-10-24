@@ -21,7 +21,7 @@ async def handle_attachments(args, cfg_manager):
             logger.warning("No emails with attachments found.")
             console.print("[yellow]No emails with attachments found.[/]")
             return
-        inbox_viewer.display_inbox("inbox", emails)
+        inbox_viewer.display_inbox("Emails with Attachments", emails)
         message = f"Found {len(emails)} email(s) with attachments."
         logger.info(message)
         print_success(message)

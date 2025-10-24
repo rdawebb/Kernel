@@ -1,4 +1,5 @@
 """Main CLI entrypoint - routes commands to their handlers"""
+
 import asyncio
 from rich.console import Console
 from ..utils.config_manager import ConfigManager
@@ -20,6 +21,7 @@ from .commands import (
     export as cmd_export,
     delete as cmd_delete,
 )
+import time
 
 console = Console()
 logger = get_logger(__name__)
@@ -59,20 +61,36 @@ async def dispatch_command(args, cfg_manager):
 @log_call
 def main():
     """Main CLI entry point"""
+    total_start = time.time()
+    db_start = time.time()
     initialize_database()
-    
+    db_end = time.time()
+    print(f"Database initialization time: {db_end - db_start:.4f} seconds")
+
+    parse_start = time.time()
     parser = setup_argument_parser()
     args = parser.parse_args()
+    parse_end = time.time()
+    print(f"Argument parsing time: {parse_end - parse_start:.4f} seconds")
 
     try:
+        config_start = time.time()
         cfg_manager = ConfigManager()
+        config_end = time.time()
+        print(f"Configuration loading time: {config_end - config_start:.4f} seconds")
 
     except Exception as e:
         logger.error(f"Configuration error: {e}")
         console.print(f"[red]Configuration error: {e}[/]")
         return
 
+    dispatch_start = time.time()
     asyncio.run(dispatch_command(args, cfg_manager))
+    dispatch_end = time.time()
+    print(f"Command dispatch time: {dispatch_end - dispatch_start:.4f} seconds")
+
+    total_end = time.time()
+    print(f"Total execution time: {total_end - total_start:.4f} seconds")
 
 if __name__ == "__main__":
     main()

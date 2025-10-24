@@ -7,13 +7,7 @@ logger = get_logger(__name__)
 
 @log_call
 def display_search_results(table_name, emails, keyword):
-    """Display search results in a formatted table with dynamic columns based on source
-    
-    Args:
-        table_name: Name of the table being searched (e.g., "inbox", "all emails")
-        emails: List of email dictionaries matching the search
-        keyword: Search keyword for display and empty state message
-    """
+    """Display search results in a formatted table with dynamic columns based on source"""
     show_source = (table_name == "all emails")
     
     # Determine if flagged column should be shown
@@ -27,7 +21,7 @@ def display_search_results(table_name, emails, keyword):
     
     display_email_table(
         emails,
-        title=f"Search Results for '{keyword}' in {table_name}",
+        title=f"Search Results for '{keyword}' in {table_name.capitalize()}",
         show_source=show_source,
         show_flagged=show_flagged,
         keyword=keyword

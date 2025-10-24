@@ -9,7 +9,7 @@ from .log_manager import get_logger, log_call
 
 logger = get_logger(__name__)
 
-CONFIG_DIR = Path("src/utils")
+CONFIG_DIR = Path.home() / ".kernel"
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
@@ -57,9 +57,10 @@ class LoggingConfig(BaseModel):
 
 class DatabaseConfig(BaseModel):
     """Pydantic model for database settings."""
-    database_path: str = "data/kernel.db"
-    backup_path: str = "exports/backup.db"
-    export_path: str = "exports/"
+    database_path: str = str(Path.home() / ".kernel" / "data" / "kernel.db")
+    backup_path: str = str(Path.home() / ".kernel" / "data" / "backups" / "backup.db")
+    export_path: str = str(Path.home() / ".kernel" / "exports")
+    attachments_path: str = str(Path.home() / ".kernel" / "attachments")
 
 class AppConfig(BaseModel):
     """Pydantic model for overall application configuration."""
@@ -147,6 +148,11 @@ class ConfigManager:
 
         logger.info(f"Config key '{key_path}' retrieved with value: {value}")
         return value
+    
+    @log_call
+    def get_account_config(self) -> dict:
+        """Retrieve account configuration as a dictionary."""
+        return self.config.account.model_dump()
 
     @log_call
     def set_config(self, key_path: str, value: Any, persist: bool = True):
@@ -155,7 +161,7 @@ class ConfigManager:
         keys = key_path.split(".")
         obj = self.config
 
-        for key in keys:
+        for key in keys[:-1]:
             obj = getattr(obj, key)
 
         setattr(obj, keys[-1], value)

@@ -102,6 +102,7 @@ class ConfigTestHelper:
             'smtp_port': 465,
             'smtp_use_ssl': True,
             'email': 'test@example.com',
+            'username': 'testuser',
             'password': 'testpass'
         }
         defaults.update(kwargs)

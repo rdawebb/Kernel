@@ -1,6 +1,7 @@
 """Refresh command - fetch new emails from server"""
 from rich.console import Console
-from ...core import imap_client, storage_api
+from ...core.imap_client import IMAPClient, SyncMode
+from ...core import storage_api
 from ...ui import inbox_viewer
 from ...utils.log_manager import get_logger, async_log_call, log_event
 from ...utils.ui_helpers import confirm_action
@@ -14,6 +15,10 @@ logger = get_logger(__name__)
 async def handle_refresh(args, cfg_manager):
     """Fetch new emails from the server"""
     try:
+        # Load account config inside the function so prompts can happen
+        account_config = cfg_manager.get_account_config()
+        client = IMAPClient(account_config)
+        
         if args.all:
             console.print("[yellow]Warning: Fetching all emails can be slow and may hit server limits.[/]")
             if not confirm_action("Are you sure you want to fetch all emails?"):
@@ -21,13 +26,13 @@ async def handle_refresh(args, cfg_manager):
                 console.print("[yellow]Fetch cancelled.[/]")
                 return
             print_status("Fetching all emails from server...")
-            fetched_count = imap_client.fetch_new_emails(cfg_manager, fetch_all=True)
-            
+            fetched_count = client.fetch_new_emails(SyncMode.FULL)
+
         else:
             print_status("Fetching new emails from server...")
-            fetched_count = imap_client.fetch_new_emails(cfg_manager, fetch_all=False)
+            fetched_count = client.fetch_new_emails(SyncMode.INCREMENTAL)
 
-        message = f"Fetched {fetched_count} new email(s) from server."
+        message = f"Fetched {fetched_count} new email(s) from the server."
         logger.info(message)
         print_success(message)
         log_event("emails_fetched", message, count=fetched_count)

@@ -12,7 +12,7 @@ from rich.console import Console
 
 console = Console()
 
-LOG_DIR = Path("logs")
+LOG_DIR = Path.home() / ".kernel" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -11,7 +11,7 @@ from src.utils.log_manager import get_logger, log_call
 
 logger = get_logger(__name__)
 
-SECRETS_DIR = Path.home() / ".kernel" / "secrets"
+SECRETS_DIR = Path("security")
 SECRETS_DIR.mkdir(parents=True, exist_ok=True)
 SECRETS_FILE = SECRETS_DIR / "secrets.enc.json"
 KEY_ENV = "KERNEL_SECRETS_KEY"
@@ -69,7 +69,7 @@ class KeyStore:
             raise
 
     @log_call
-    def get_password(self, service: str, username: str, prompt_if_missing: bool) -> Optional[str]:
+    def get_password(self, service: str, username: str, prompt_if_missing: bool = False) -> Optional[str]:
         """Retrieve stored password."""
         
         try:
@@ -84,9 +84,13 @@ class KeyStore:
             
             if prompt_if_missing:
                 logger.info(f"Password for {username}@{service} not found, prompting user.")
-                password = getpass.getpass(f"Enter password for {username}@{service}: ")
-                self.set_password(service, username, password)
-                return password
+                password = getpass.getpass(f"Enter password for {username}: ")
+                if password:
+                    self.set_password(service, username, password)
+                    return password
+                else:
+                    logger.warning(f"No password provided for {username}@{service}")
+                    return None
             
             return None
 

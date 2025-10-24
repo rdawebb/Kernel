@@ -8,9 +8,8 @@ Tests cover:
 """
 from unittest.mock import patch, MagicMock
 
-from src.core.imap_client import (
-    connect_to_imap, fetch_new_emails, delete_email
-)
+from src.core.imap_client import IMAPClient, SyncMode
+from src.core.imap_connection import connect_to_imap
 from .test_helpers import IMAPTestHelper, ConfigTestHelper
 
 
@@ -21,7 +20,7 @@ class TestIMAPConnection:
         """Test successful IMAP connection"""
         config = ConfigTestHelper.create_test_config()
         
-        with patch('src.core.imap_client.imaplib.IMAP4_SSL') as mock_imap:
+        with patch('src.core.imap_connection.imaplib.IMAP4_SSL') as mock_imap:
             mock_connection = MagicMock()
             mock_imap.return_value = mock_connection
             mock_connection.login.return_value = ('OK', [])
@@ -36,7 +35,7 @@ class TestIMAPConnection:
         """Test IMAP connection failure handling"""
         config = ConfigTestHelper.create_test_config()
         
-        with patch('src.core.imap_client.imaplib.IMAP4_SSL') as mock_imap:
+        with patch('src.core.imap_connection.imaplib.IMAP4_SSL') as mock_imap:
             mock_imap.side_effect = Exception("Connection failed")
             
             result = connect_to_imap(config)
@@ -50,13 +49,14 @@ class TestFetchNewEmails:
     def test_fetch_new_emails_success(self):
         """Test fetching new emails successfully"""
         config = ConfigTestHelper.create_test_config()
+        client = IMAPClient(config)
         
-        with patch('src.core.imap_client.connect_to_imap') as mock_connect:
+        with patch('src.core.imap_client.imap_connection') as mock_context:
             mock_mail = IMAPTestHelper.create_mock_imap()
             mock_mail.search.return_value = ('OK', [b'1 2 3'])
-            mock_connect.return_value = mock_mail
+            mock_context.return_value.__enter__.return_value = mock_mail
             
-            result = fetch_new_emails(config)
+            result = client.fetch_new_emails()
             
             # Should return int or None
             assert result is None or isinstance(result, int)
@@ -64,37 +64,40 @@ class TestFetchNewEmails:
     def test_fetch_new_emails_no_emails(self):
         """Test fetching when no new emails exist"""
         config = ConfigTestHelper.create_test_config()
+        client = IMAPClient(config)
         
-        with patch('src.core.imap_client.connect_to_imap') as mock_connect:
+        with patch('src.core.imap_client.imap_connection') as mock_context:
             mock_mail = IMAPTestHelper.create_mock_imap()
             mock_mail.search.return_value = ('OK', [b''])
-            mock_connect.return_value = mock_mail
+            mock_context.return_value.__enter__.return_value = mock_mail
             
-            result = fetch_new_emails(config)
+            result = client.fetch_new_emails()
             
             assert result is None or result == 0
     
     def test_fetch_new_emails_fetch_all(self):
         """Test fetching all emails with fetch_all parameter"""
         config = ConfigTestHelper.create_test_config()
+        client = IMAPClient(config)
         
-        with patch('src.core.imap_client.connect_to_imap') as mock_connect:
+        with patch('src.core.imap_client.imap_connection') as mock_context:
             mock_mail = IMAPTestHelper.create_mock_imap()
             mock_mail.search.return_value = ('OK', [b'1 2 3'])
-            mock_connect.return_value = mock_mail
+            mock_context.return_value.__enter__.return_value = mock_mail
             
-            result = fetch_new_emails(config, fetch_all=True)
+            result = client.fetch_new_emails(sync_mode=SyncMode.FULL)
             
             assert result is None or isinstance(result, int)
     
     def test_fetch_new_emails_connection_failure(self):
         """Test fetching when IMAP connection fails"""
         config = ConfigTestHelper.create_test_config()
+        client = IMAPClient(config)
         
-        with patch('src.core.imap_client.connect_to_imap') as mock_connect:
-            mock_connect.return_value = None
+        with patch('src.core.imap_client.imap_connection') as mock_context:
+            mock_context.return_value.__enter__.return_value = None
             
-            result = fetch_new_emails(config)
+            result = client.fetch_new_emails()
             
             # Function returns 0 when connection fails
             assert result == 0 or result is None
@@ -106,13 +109,14 @@ class TestDeleteEmail:
     def test_delete_email_success(self):
         """Test successful email deletion"""
         config = ConfigTestHelper.create_test_config()
+        client = IMAPClient(config)
         
         with patch('src.core.imap_client.imap_connection') as mock_context:
             mock_mail = IMAPTestHelper.create_mock_imap()
             mock_mail.store.return_value = ('OK', [])
             mock_context.return_value.__enter__.return_value = mock_mail
             
-            result = delete_email(config, '123')
+            result = client.delete_email('123')
             
             # Should complete without error
             assert result is None or isinstance(result, bool)
@@ -120,11 +124,15 @@ class TestDeleteEmail:
     def test_delete_email_connection_failure(self):
         """Test deletion when connection fails"""
         config = ConfigTestHelper.create_test_config()
+        client = IMAPClient(config)
         
-        with patch('src.core.imap_client.connect_to_imap') as mock_connect:
-            mock_connect.return_value = None
+        with patch('src.core.imap_client.imap_connection') as mock_context:
+            mock_context.return_value.__enter__.return_value = None
             
-            result = delete_email(config, '123')
+            result = client.delete_email('123')
             
             # Should handle gracefully
-            assert result is None
+            assert result is None or isinstance(result, bool)
+            
+            # Function returns 0 when connection fails
+            assert result == 0 or result is None

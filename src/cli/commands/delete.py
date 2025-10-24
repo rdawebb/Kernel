@@ -1,7 +1,8 @@
 """Delete command - delete emails"""
 from datetime import datetime
 from rich.console import Console
-from ...core import imap_client, storage_api
+from ...core.imap_client import IMAPClient
+from ...core import storage_api
 from ...utils.log_manager import get_logger, log_call, async_log_call, log_event
 from ...utils.ui_helpers import confirm_action
 from .command_utils import print_error, print_success
@@ -32,13 +33,14 @@ def _delete_from_local_database(email_id: int, email_data: dict) -> bool:
         return False
 
 @log_call
-def _delete_from_local_and_server(cfg_manager, email_id: int, email_data: dict) -> bool:
+def _delete_from_local_and_server(account_config, email_id: int, email_data: dict) -> bool:
     """Delete email from both local database and server."""
     try:
+        client = IMAPClient(account_config)
         email_data["deleted_at"] = datetime.now().isoformat()
         storage_api.save_deleted_email(email_data)
         storage_api.delete_email(email_id)
-        imap_client.delete_email(cfg_manager, email_id)
+        client.delete_email(email_id)
         message = f"Deleted email ID {email_id} from local database and server."
         logger.info(message)
         print_success(message)
@@ -78,16 +80,19 @@ async def handle_delete(args, cfg_manager) -> None:
         print_error("Email ID is required for deletion.")
         return
 
+    # Get account config
+    account_config = cfg_manager.get_account_config()
+
     # Check if email is in deleted_emails table (hard delete scenario)
     if storage_api.email_exists("deleted_emails", args.id):
         _handle_permanent_deletion(args.id)
         return
 
     # Soft delete scenario - email in inbox
-    _handle_soft_deletion(cfg_manager, args)
+    _handle_soft_deletion(account_config, args)
 
 @log_call
-def _handle_soft_deletion(cfg_manager, args) -> None:
+def _handle_soft_deletion(account_config, args) -> None:
     """Handle soft deletion of email (move to deleted_emails table)."""
     if not confirm_action(f"Are you sure you want to delete email ID {args.id}?"):
         logger.info("Email deletion cancelled by user.")
@@ -102,7 +107,7 @@ def _handle_soft_deletion(cfg_manager, args) -> None:
 
     # Determine deletion scope based on --all flag
     if args.all:
-        _delete_from_local_and_server(cfg_manager, args.id, email_data)
+        _delete_from_local_and_server(account_config, args.id, email_data)
     else:
         _delete_from_local_database(args.id, email_data)
 

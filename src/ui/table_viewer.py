@@ -3,6 +3,7 @@
 from rich.table import Table
 from rich.console import Console
 from ..utils.log_manager import get_logger, log_call
+import time
 
 logger = get_logger(__name__)
 console = Console()
@@ -35,6 +36,7 @@ def display_email_table(
     show_flagged=False,
     keyword=None
 ):
+    start = time.time()
     """Display emails in formatted table with optional columns."""
     if not emails:
         if keyword:
@@ -80,3 +82,5 @@ def display_email_table(
         table.add_row(*row_data)
 
     console.print(table)
+    end = time.time()
+    print(f"Table render time: {end - start:.4f} seconds")
