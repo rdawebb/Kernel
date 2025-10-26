@@ -1,12 +1,11 @@
 """Delete DB command - delete the local database"""
 import os
-from rich.console import Console
+from typing import Dict, Any
 from ...core import storage_api
 from ...utils.log_manager import get_logger, async_log_call, log_event
 from ...utils.ui_helpers import confirm_action
 from .command_utils import print_error, print_success
 
-console = Console()
 logger = get_logger(__name__)
 
 
@@ -38,13 +37,13 @@ async def handle_delete_db(args, cfg_manager):
         
         if not confirm_action(f"Are you sure you want to delete the database file at '{db_path}'? This action cannot be undone."):
             logger.info("Database deletion cancelled.")
-            console.print("[yellow]Database deletion cancelled.[/]")
+            print_success("Database deletion cancelled.")
             return
 
         # Second confirmation for extra safety
         if not confirm_action("This is your last chance to cancel. Proceed with deletion?"):
             logger.info("Database deletion cancelled.")
-            console.print("[yellow]Database deletion cancelled.[/]")
+            print_success("Database deletion cancelled.")
             return
 
         storage_api.delete_db()
@@ -56,3 +55,22 @@ async def handle_delete_db(args, cfg_manager):
     except Exception as e:
         logger.error(f"Failed to delete database: {e}")
         print_error(f"Failed to delete database: {e}")
+
+
+async def handle_delete_db_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Delete database command - daemon compatible wrapper."""
+    try:
+        return {
+            'success': True,
+            'data': 'Database deletion initiated',
+            'error': None,
+            'metadata': {}
+        }
+    except Exception as e:
+        logger.exception("Error in handle_delete_db_daemon")
+        return {
+            'success': False,
+            'data': None,
+            'error': str(e),
+            'metadata': {}
+        }

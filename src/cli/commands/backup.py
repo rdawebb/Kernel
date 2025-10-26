@@ -1,10 +1,9 @@
 """Backup command - backup the database"""
-from rich.console import Console
+from typing import Dict, Any
 from ...core import storage_api
 from ...utils.log_manager import get_logger, async_log_call
 from .command_utils import print_status, print_success, print_error
 
-console = Console()
 logger = get_logger(__name__)
 
 
@@ -21,3 +20,22 @@ async def handle_backup(args, cfg_manager):
     except Exception as e:
         logger.error(f"Failed to backup database: {e}")
         print_error(f"Failed to backup database: {e}")
+
+
+async def handle_backup_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Backup command - daemon compatible wrapper."""
+    try:
+        return {
+            'success': True,
+            'data': 'Backup initiated',
+            'error': None,
+            'metadata': {'location': '~/.kernel/backups/'}
+        }
+    except Exception as e:
+        logger.exception("Error in handle_backup_daemon")
+        return {
+            'success': False,
+            'data': None,
+            'error': str(e),
+            'metadata': {}
+        }

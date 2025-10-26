@@ -1,12 +1,13 @@
 """Attachments commands - list and manage email attachments"""
+from typing import Dict, Any
+from io import StringIO
 from rich.console import Console
 from ...core import storage_api
 from ...ui import inbox_viewer
 from ...utils.log_manager import get_logger, async_log_call
 from ...utils.attachment_utils import get_attachment_list
-from .command_utils import print_error, print_success, print_status
+from .command_utils import print_error, print_success, print_status, clean_ansi_output, _get_console
 
-console = Console()
 logger = get_logger(__name__)
 
 
@@ -19,7 +20,7 @@ async def handle_attachments(args, cfg_manager):
         emails = storage_api.search_emails_with_attachments("inbox", limit=args.limit)
         if not emails:
             logger.warning("No emails with attachments found.")
-            console.print("[yellow]No emails with attachments found.[/]")
+            print_status("No emails with attachments found.", color="yellow")
             return
         inbox_viewer.display_inbox("Emails with Attachments", emails)
         message = f"Found {len(emails)} email(s) with attachments."
@@ -44,15 +45,57 @@ async def handle_attachments_list(args, cfg_manager):
         
         if not attachment_list:
             logger.warning(f"No attachments found for email ID {args.id}.")
-            console.print(f"[yellow]No attachments found for email ID {args.id}.[/]")
+            print_status(f"No attachments found for email ID {args.id}.", color="yellow")
             return
         
         message = f"Found {len(attachment_list)} attachment(s):"
         logger.info(message)
         print_success(message)
         for i, filename in enumerate(attachment_list):
-            console.print(f"  [cyan]{i}[/]: {filename}")
+            _get_console().print(f"  [cyan]{i}[/]: {filename}")
             
     except Exception as e:
         logger.error(f"Failed to get attachment list: {e}")
         print_error(f"Failed to get attachment list: {e}")
+
+
+async def handle_attachments_list_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Attachments list command - daemon compatible wrapper."""
+    try:
+        table = args.get('table', 'inbox')
+        email_id = args.get('id')
+        
+        attachments = storage_api.get_email_attachments(table, email_id)
+        
+        buffer = StringIO()
+        buffer_console = Console(
+            file=buffer,
+            force_terminal=True,  # Enable terminal mode for proper Rich rendering
+            width=120,
+            legacy_windows=False
+        )
+        
+        if attachments:
+            for i, filename in enumerate(attachments):
+                buffer_console.print(f"  [cyan]{i}[/]: {filename}")
+        else:
+            buffer_console.print(f"[yellow]No attachments found for email ID {email_id}.[/]")
+        
+        # Get the rendered output with ANSI codes
+        output = buffer.getvalue()
+        output = clean_ansi_output(output)
+        
+        return {
+            'success': True,
+            'data': output,
+            'error': None,
+            'metadata': {'count': len(attachments)}
+        }
+    except Exception as e:
+        logger.exception("Error in handle_attachments_list_daemon")
+        return {
+            'success': False,
+            'data': None,
+            'error': str(e),
+            'metadata': {}
+        }

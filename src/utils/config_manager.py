@@ -58,7 +58,7 @@ class LoggingConfig(BaseModel):
 class DatabaseConfig(BaseModel):
     """Pydantic model for database settings."""
     database_path: str = str(Path.home() / ".kernel" / "data" / "kernel.db")
-    backup_path: str = str(Path.home() / ".kernel" / "data" / "backups" / "backup.db")
+    backup_path: str = str(Path.home() / ".kernel" / "data" / "backups" / "kernel_backup.db")
     export_path: str = str(Path.home() / ".kernel" / "exports")
     attachments_path: str = str(Path.home() / ".kernel" / "attachments")
 

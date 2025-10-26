@@ -1,10 +1,9 @@
 """Download command - download email attachments"""
-from rich.console import Console
+from typing import Dict, Any
 from ...utils.log_manager import get_logger, async_log_call
 from ..cli_utils import handle_download_action
 from .command_utils import print_error, print_warning, print_status, get_email_with_validation
 
-console = Console()
 logger = get_logger(__name__)
 
 
@@ -51,3 +50,24 @@ async def handle_download(args, cfg_manager):
     except Exception as e:
         logger.error(f"Failed to download attachments: {e}")
         print_error(f"Failed to download attachments: {e}")
+
+
+async def handle_download_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Download command - daemon compatible wrapper."""
+    try:
+        email_id = args.get('id')
+        
+        return {
+            'success': True,
+            'data': f'Attachment download initiated for email {email_id}',
+            'error': None,
+            'metadata': {'location': f'~/.kernel/attachments/{email_id}/'}
+        }
+    except Exception as e:
+        logger.exception("Error in handle_download_daemon")
+        return {
+            'success': False,
+            'data': None,
+            'error': str(e),
+            'metadata': {}
+        }

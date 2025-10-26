@@ -54,6 +54,8 @@ class IMAPClient:
             if not mail:
                 return 0
             
+            mail.select("inbox")
+            
             try:
                 # Search for emails
                 if sync_mode == SyncMode.FULL:

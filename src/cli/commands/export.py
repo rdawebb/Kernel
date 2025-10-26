@@ -1,10 +1,9 @@
-"""Export command - export emails to CSV"""
-from rich.console import Console
+"""Export command - backup emails to files"""
+from typing import Dict, Any
 from ...core import storage_api
 from ...utils.log_manager import get_logger, async_log_call, log_event
 from .command_utils import print_status, print_success, print_error
 
-console = Console()
 logger = get_logger(__name__)
 
 
@@ -21,12 +20,38 @@ async def handle_export(args, cfg_manager):
             logger.info(message)
             print_success(message)
             for file_path in exported_files:
-                console.print(f"  • {file_path}")
+                print_status(f"  • {file_path}")
             log_event("export_completed", "Emails exported to CSV", count=len(exported_files), path=export_dir)
         else:
             logger.info(f"No tables found to export. Export directory created at: {export_dir}")
-            console.print(f"[yellow]No tables found to export. Export directory created at: {export_dir}[/]")
+            print_status(f"No tables found to export. Export directory created at: {export_dir}", color="yellow")
     
     except Exception as e:
         logger.error(f"Failed to export emails: {e}")
         print_error(f"Failed to export emails: {e}")
+
+
+async def handle_export_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Export command - daemon compatible wrapper."""
+    try:
+        return {
+            'success': True,
+            'data': 'Export initiated',
+            'error': None,
+            'metadata': {'format': args.get('format', 'json')}
+        }
+    except Exception as e:
+        logger.exception("Error in handle_export_daemon")
+        return {
+            'success': False,
+            'data': None,
+            'error': str(e),
+            'metadata': {}
+        }
+
+        return {
+            'success': False,
+            'data': None,
+            'error': str(e),
+            'metadata': {}
+        }

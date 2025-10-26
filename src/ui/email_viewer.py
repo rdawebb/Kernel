@@ -1,15 +1,19 @@
 """Email viewer using Rich library for formatted console output"""
 
-from rich.console import Console
 from rich.text import Text
 from ..utils.log_manager import get_logger, log_call
 
 logger = get_logger(__name__)
-console = Console()
 
 @log_call
-def display_email(email_data):
+def display_email(email_data, console_obj=None):
     """Display a formatted email in the console using Rich formatting"""
+    
+    # Console must be provided by caller
+    if console_obj is None:
+        raise ValueError("console_obj must be provided to display_email")
+    
+    output_console = console_obj
     
     details = [
         f"[bold]From:[/] {email_data.get('from', 'Unknown')}",
@@ -21,18 +25,18 @@ def display_email(email_data):
     max_len = max(len(Text.from_markup(line)) for line in details)
     separator = "-" * max_len
     
-    console.print(separator)
-    console.print("\n".join(details))
+    output_console.print(separator)
+    output_console.print("\n".join(details))
 
     attachments_raw = email_data.get('attachments', '')
     if attachments_raw and attachments_raw.strip():
         attachments_list = [att.strip() for att in attachments_raw.split(',') if att.strip()]
         if attachments_list:
-            console.print(f"[bold]Attachments:[/] {', '.join(attachments_list)}\n")
+            output_console.print(f"[bold]Attachments:[/] {', '.join(attachments_list)}\n")
     
     body = email_data.get("body")
     if not body:
-        console.print("[dim]No body available[/]")
+        output_console.print("[dim]No body available[/]")
     else:
-        console.print(body)
-    console.print(separator)
+        output_console.print(body)
+    output_console.print(separator)

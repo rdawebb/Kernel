@@ -6,7 +6,7 @@ from ..utils.log_manager import get_logger, log_call
 logger = get_logger(__name__)
 
 @log_call
-def display_search_results(table_name, emails, keyword):
+def display_search_results(table_name, emails, keyword, console_obj=None):
     """Display search results in a formatted table with dynamic columns based on source"""
     show_source = (table_name == "all emails")
     
@@ -24,5 +24,6 @@ def display_search_results(table_name, emails, keyword):
         title=f"Search Results for '{keyword}' in {table_name.capitalize()}",
         show_source=show_source,
         show_flagged=show_flagged,
-        keyword=keyword
+        keyword=keyword,
+        console_obj=console_obj
     )

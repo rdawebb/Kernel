@@ -1,18 +1,13 @@
 """Delete command - delete emails"""
+from typing import Dict, Any
 from datetime import datetime
-from rich.console import Console
 from ...core.imap_client import IMAPClient
 from ...core import storage_api
 from ...utils.log_manager import get_logger, log_call, async_log_call, log_event
 from ...utils.ui_helpers import confirm_action
-from .command_utils import print_error, print_success
+from .command_utils import print_error, print_success, print_status
 
-console = Console()
 logger = get_logger(__name__)
-
-# Constants
-DELETE_CANCELLED_MSG = "[yellow]Deletion cancelled.[/]"
-PERM_DELETE_CANCELLED_MSG = "[yellow]Permanent deletion cancelled.[/]"
 
 
 @log_call
@@ -96,7 +91,7 @@ def _handle_soft_deletion(account_config, args) -> None:
     """Handle soft deletion of email (move to deleted_emails table)."""
     if not confirm_action(f"Are you sure you want to delete email ID {args.id}?"):
         logger.info("Email deletion cancelled by user.")
-        console.print(DELETE_CANCELLED_MSG)
+        print_status("Deletion cancelled.", color="yellow")
         return
 
     email_data = storage_api.get_email_from_table("inbox", args.id)
@@ -116,7 +111,31 @@ def _handle_permanent_deletion(email_id: int) -> None:
     """Handle permanent deletion of email from deleted_emails table."""
     if not confirm_action("Are you sure you want to permanently delete this email? This action cannot be undone."):
         logger.info("Permanent deletion cancelled by user.")
-        console.print(PERM_DELETE_CANCELLED_MSG)
+        print_status("Permanent deletion cancelled.", color="yellow")
         return
 
     _permanently_delete_email(email_id)
+
+
+async def handle_delete_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Delete command - daemon compatible wrapper."""
+    try:
+        table = args.get('table', 'inbox')
+        email_id = args.get('id')
+        
+        storage_api.delete_email(table, email_id)
+        
+        return {
+            'success': True,
+            'data': f'Email {email_id} deleted',
+            'error': None,
+            'metadata': {}
+        }
+    except Exception as e:
+        logger.exception("Error in handle_delete_daemon")
+        return {
+            'success': False,
+            'data': None,
+            'error': str(e),
+            'metadata': {}
+        }

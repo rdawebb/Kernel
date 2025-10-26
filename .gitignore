@@ -26,6 +26,9 @@ MANIFEST
 *.manifest
 *.spec
 
+# Development files
+*.md
+
 # Unit test / coverage reports
 htmlcov/
 .tox/
@@ -87,3 +90,8 @@ logs/
 # Temporary files
 *.tmp
 *.temp
+
+# cProfile files
+*.prof
+*.prof.gz
+profile_list_command.py

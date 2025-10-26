@@ -1,7 +1,5 @@
 """Database management layer - handles connections, transactions, and low-level operations"""
 
-import sqlite3
-import pandas as pd
 from pathlib import Path
 from contextlib import contextmanager
 from ..utils.config_manager import ConfigManager
@@ -16,8 +14,11 @@ class DatabaseManager:
         self.config_manager = ConfigManager()
     
     def get_config_path(self, path_key):
-        """Get a path from config by key name"""
-        return Path(self.config_manager.get_config(path_key))
+        """Get a path from config by key name, expanding '~' to home directory"""
+        import os
+        raw_path = self.config_manager.get_config(path_key)
+        expanded_path = os.path.expanduser(raw_path)
+        return Path(expanded_path)
 
     def get_db_path(self):
         return self.get_config_path("database.database_path")
@@ -32,6 +33,10 @@ class DatabaseManager:
 
     @log_call
     def get_db_connection(self):
+        """Get a new database connection"""
+
+        import sqlite3
+
         try:
             db_path = self.get_db_path()
             db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,6 +79,10 @@ class DatabaseManager:
 
     @log_call
     def backup_db(self, backup_path=None):
+        """Backup the database to a specified path"""
+
+        import sqlite3
+
         try:
             db_path = self.get_db_path()
             if backup_path is None:
@@ -97,6 +106,10 @@ class DatabaseManager:
 
     @log_call
     def export_db_to_csv(self, export_dir, tables=None):
+        """Export specified tables to CSV files in the given directory"""
+
+        import pandas as pd
+        
         try:
             export_path = Path(export_dir)
             export_path.mkdir(parents=True, exist_ok=True)

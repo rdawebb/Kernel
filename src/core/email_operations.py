@@ -5,7 +5,6 @@ from datetime import datetime
 from .db_manager import DatabaseManager
 from .email_schema import EmailSchemaManager
 from ..utils.log_manager import get_logger, log_call
-import time
 
 logger = get_logger(__name__)
 
@@ -78,15 +77,10 @@ class EmailOperationsManager:
             
             if limit:
                 query += " LIMIT ?"
-                start = time.time()
                 emails = self.db.execute_query(query, (limit,))
-                end = time.time()
             else:
-                start = time.time()
                 emails = self.db.execute_query(query)
-                end = time.time()
 
-            print(f"Query time: {end - start:.4f} seconds")
             return self.db.convert_emails_to_dict_list(emails) or []
         except Exception as e:
             logger.error(f"Failed to retrieve emails from {table_name}: {e}")

@@ -1,10 +1,9 @@
 """Move command - move emails between folders"""
-from rich.console import Console
+from typing import Dict, Any
 from ...core import storage_api
 from ...utils.log_manager import get_logger, async_log_call
 from .command_utils import print_error, print_success, validate_required_args, get_email_with_validation
 
-console = Console()
 logger = get_logger(__name__)
 
 # Valid table names for email storage
@@ -40,3 +39,28 @@ async def handle_move(args, cfg_manager):
     except Exception as e:
         logger.error(f"Failed to move email: {e}")
         print_error(f"Failed to move email: {e}")
+
+
+async def handle_move_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Move command - daemon compatible wrapper."""
+    try:
+        table = args.get('table', 'inbox')
+        email_id = args.get('id')
+        destination = args.get('destination', 'trash')
+        
+        storage_api.move_email(table, email_id, destination)
+        
+        return {
+            'success': True,
+            'data': f'Email {email_id} moved to {destination}',
+            'error': None,
+            'metadata': {}
+        }
+    except Exception as e:
+        logger.exception("Error in handle_move_daemon")
+        return {
+            'success': False,
+            'data': None,
+            'error': str(e),
+            'metadata': {}
+        }

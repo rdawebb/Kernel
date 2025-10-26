@@ -8,9 +8,6 @@ from functools import wraps
 from pathlib import Path
 from typing import Optional
 from rich.logging import RichHandler
-from rich.console import Console
-
-console = Console()
 
 LOG_DIR = Path.home() / ".kernel" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -62,7 +59,6 @@ class LogManager:
         self.root_logger.handlers.clear()
 
         console_handler = RichHandler(
-            console=console,
             show_time=True,
             show_path=False,
             markup=True,

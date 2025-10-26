@@ -1,32 +1,10 @@
 """Unified email table viewer - displays emails in formatted tables with dynamic columns"""
 
 from rich.table import Table
-from rich.console import Console
 from ..utils.log_manager import get_logger, log_call
-import time
 
 logger = get_logger(__name__)
-console = Console()
 
-
-def _format_attachment_indicator(email):
-    """Return 📎 if email has attachments."""
-    attachments_raw = email.get("attachments", "")
-    has_attachments = bool(attachments_raw and attachments_raw.strip())
-    return "📎" if has_attachments else ""
-
-def _get_source_display(source_table):
-    """Convert source table name to human-readable format."""
-    return {
-        "inbox": "Inbox",
-        "sent_emails": "Sent",
-        "drafts": "Drafts",
-        "deleted_emails": "Deleted"
-    }.get(source_table, source_table)
-
-def _format_flagged_indicator(email):
-    """Return 🚩 if email is flagged."""
-    return "🚩" if email.get("flagged") else ""
 
 @log_call
 def display_email_table(
@@ -34,15 +12,22 @@ def display_email_table(
     title="Emails",
     show_source=False,
     show_flagged=False,
-    keyword=None
+    keyword=None,
+    console_obj=None
 ):
-    start = time.time()
+
     """Display emails in formatted table with optional columns."""
+    # Console must be provided by caller (daemon handler or CLI)
+    if console_obj is None:
+        raise ValueError("console_obj must be provided to display_email_table")
+    
+    output_console = console_obj
+    
     if not emails:
         if keyword:
-            console.print(f"[yellow]No emails found matching '{keyword}'.[/]")
+            output_console.print(f"[yellow]No emails found matching '{keyword}'.[/]")
         else:
-            console.print("[yellow]No emails to display.[/]")
+            output_console.print("[yellow]No emails to display.[/]")
         return
 
     table = Table(title=title)
@@ -61,26 +46,42 @@ def display_email_table(
     if show_flagged:
         table.add_column("", justify="center", style="red", width=3)  # Flagged column
 
-    # Add rows
     for email in emails:
+        uid_value = email.get("uid")
+        uid = str(uid_value) if uid_value is not None else "N/A"
+        sender = email.get("from", "N/A")
+        subject = email.get("subject", "No Subject")
+        date = email.get("date", "Unknown Date")
+        time = email.get("time", "Unknown Time")
+
+        attachments_raw = email.get("attachments", "")
+        attachments_stripped = attachments_raw.strip() if attachments_raw else ""
+        has_attachments = bool(attachments_stripped)
+        attachment_indicator = "📎" if has_attachments else ""
+
         row_data = [
-            str(email.get("uid")) if email.get("uid") is not None else "N/A",
-            email.get("from", "N/A"),
-            email.get("subject", "No Subject"),
-            email.get("date", "Unknown Date"),
-            email.get("time", "Unknown Time"),
-            _format_attachment_indicator(email)
+            uid,
+            sender,
+            subject,
+            date,
+            time,
+            attachment_indicator
         ]
 
         if show_source:
             source_table = email.get("source_table", "unknown")
-            row_data.append(_get_source_display(source_table))
+            source_display = {
+                "inbox": "Inbox",
+                "sent_emails": "Sent",
+                "drafts": "Drafts",
+                "deleted_emails": "Deleted"
+            }.get(source_table, source_table)
+            row_data.append(source_display)
 
         if show_flagged:
-            row_data.append(_format_flagged_indicator(email))
+            flagged_indicator = "🚩" if email.get("flagged") else ""
+            row_data.append(flagged_indicator)
 
         table.add_row(*row_data)
 
-    console.print(table)
-    end = time.time()
-    print(f"Table render time: {end - start:.4f} seconds")
+    output_console.print(table)

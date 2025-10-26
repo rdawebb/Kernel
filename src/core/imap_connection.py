@@ -74,7 +74,7 @@ def get_account_info(email: str = "") -> Optional[dict]:
             print("Password is required. Please configure it and try again.")
             return None
         
-        imap_port = config_manager.get_config('account.imap_port', default_value=993)
+        imap_port = config_manager.get_config('account.imap_port', default=993)
         
         return {
             "imap_server": imap_server,
@@ -91,11 +91,34 @@ def get_account_info(email: str = "") -> Optional[dict]:
 
 def connect_to_imap(account_config: dict) -> Optional[imaplib.IMAP4_SSL]:
     """Establish connection to IMAP server."""
+
+    import getpass
+
     try:
         mail = imaplib.IMAP4_SSL(account_config["imap_server"], account_config["imap_port"])
-        mail.login(account_config["username"], account_config["password"])
-        logger.info(f"Connected to IMAP server: {account_config['imap_server']}")
-        return mail
+        try:
+            mail.login(account_config["username"], account_config["password"])
+            logger.info(f"Connected to IMAP server: {account_config['imap_server']}")
+            return mail
+        
+        except imaplib.IMAP4.error as e:
+            logger.error(f"Error logging in to IMAP server: {e}")
+            print("Login failed - please enter your password again.")
+            password = getpass.getpass(f"Password for {account_config['username']}: ")
+
+            if password:
+                KeyStore().set_password("kernel_imap", account_config["username"], password)
+
+                try:
+                    mail.login(account_config["username"], password)
+                    logger.info(f"Connected to IMAP server after re-prompt: {account_config['imap_server']}")
+                    return mail
+                
+                except Exception as e:
+                    logger.error(f"Error logging in to IMAP server after re-prompt: {e}")
+                    print("Unable to login to your email server. Please check your settings and try again.")
+                    return None
+            
     except Exception as e:
         logger.error(f"Error connecting to IMAP server: {e}")
         print("Unable to connect to your email server. Please check your settings and try again.")
