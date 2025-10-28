@@ -30,28 +30,23 @@ class DaemonClient:
     PID_FILE = Path.home() / '.kernel' / 'daemon.pid'
     DAEMON_SCRIPT = Path(__file__).parent / 'renderer_daemon.py'
     
-    # Timeouts
+    # Timeouts - add to config for customisation
     CONNECT_TIMEOUT = 5
     COMMAND_TIMEOUT = 10
     DAEMON_START_TIMEOUT = 5
     
     def __init__(self, fallback_mode: bool = True, disable_daemon: bool = False):
-        """
-        Initialize daemon client.
-        
-        Args:
-            fallback_mode: If True, fall back to direct execution if daemon unavailable
-            disable_daemon: If True, skip daemon and always use fallback mode (useful for debugging)
-        """
+        """Initialize daemon client."""
+
         self.fallback_mode = fallback_mode
         self.disable_daemon = disable_daemon
     
-    # ========================================================================
-    # DAEMON LIFECYCLE
-    # ========================================================================
+    
+    ## Daemon Lifecycle
     
     def is_daemon_running(self) -> bool:
         """Check if daemon process is running."""
+
         if not self.PID_FILE.exists():
             return False
         
@@ -63,8 +58,10 @@ class DaemonClient:
         except (ValueError, OSError, ProcessLookupError):
             return False
     
+
     async def start_daemon(self) -> bool:
         """Start daemon in background."""
+
         if self.is_daemon_running():
             logger.debug("Daemon already running")
             return True
@@ -73,13 +70,11 @@ class DaemonClient:
         
         try:
             # Determine which Python executable to use
-            # If in a venv, use the venv's Python; otherwise use system Python
             python_exe = sys.executable
             
             # Try to find venv from VIRTUAL_ENV environment variable
             venv_path = os.environ.get('VIRTUAL_ENV')
             
-            # If not set, try to find .venv in project root
             if not venv_path:
                 project_root = Path(__file__).parent.parent.parent
                 venv_candidates = [
@@ -91,23 +86,20 @@ class DaemonClient:
                     if candidate.exists():
                         venv_path = str(candidate)
                         break
-            
-            # Use venv's Python if found
+   
             if venv_path:
                 venv_python = Path(venv_path) / 'bin' / 'python'
                 if venv_python.exists():
                     python_exe = str(venv_python)
                     logger.debug(f"Using venv Python: {python_exe}")
             
-            # Start daemon as background process
             process = subprocess.Popen(
                 [python_exe, str(self.DAEMON_SCRIPT)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                start_new_session=True,  # Detach from parent
+                start_new_session=True,
             )
             
-            # Wait for daemon to be ready
             start_time = time.time()
             while time.time() - start_time < self.DAEMON_START_TIMEOUT:
                 if self.SOCKET_PATH.exists() and self.is_daemon_running():
@@ -122,8 +114,10 @@ class DaemonClient:
             logger.error(f"Failed to start daemon: {e}")
             return False
     
+
     async def stop_daemon(self):
         """Stop running daemon."""
+
         if not self.is_daemon_running():
             logger.debug("Daemon not running")
             return
@@ -131,33 +125,16 @@ class DaemonClient:
         try:
             pid = int(self.PID_FILE.read_text().strip())
             os.kill(pid, 15)  # SIGTERM
-            logger.info("Daemon stopped")
+            logger.info("Daemon stopped")    
         except Exception as e:
             logger.warning(f"Error stopping daemon: {e}")
     
-    # ========================================================================
-    # COMMAND EXECUTION
-    # ========================================================================
+
+    ## Command Execution
     
     async def execute_command(self, command: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute command via daemon, with fallback to direct execution.
+        """Execute command via daemon, with fallback to direct execution."""
         
-        Args:
-            command: Command name (e.g., 'list', 'view', 'send')
-            args: Command arguments dictionary
-        
-        Returns:
-            {
-                'success': bool,
-                'data': any,
-                'error': str|None,
-                'cached': bool,
-                'metadata': dict,
-                'via_daemon': bool  # Whether executed via daemon
-            }
-        """
-        # Skip daemon if disabled
         if self.disable_daemon:
             if self.fallback_mode:
                 logger.debug(f"Daemon disabled, using direct execution: {command}")
@@ -175,7 +152,6 @@ class DaemonClient:
                 }
         
         try:
-            # Try to execute via daemon
             result = await self._execute_via_daemon(command, args)
             if result is not None:
                 result['via_daemon'] = True
@@ -183,7 +159,6 @@ class DaemonClient:
         except Exception as e:
             logger.warning(f"Daemon execution failed: {e}")
         
-        # Fallback to direct execution if enabled
         if self.fallback_mode:
             logger.info(f"Falling back to direct execution: {command}")
             result = await self._execute_direct(command, args)
@@ -199,29 +174,28 @@ class DaemonClient:
             'via_daemon': False
         }
     
+
     async def _execute_via_daemon(self, command: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Execute command via Unix socket to daemon."""
-        # Ensure daemon is running
+
         if not self.is_daemon_running():
             if not await self.start_daemon():
                 return None
         
         try:
-            # Connect to daemon socket
             reader, writer = await asyncio.wait_for(
                 asyncio.open_unix_connection(path=str(self.SOCKET_PATH)),
                 timeout=self.CONNECT_TIMEOUT
             )
             
-            # Send request as JSON line (terminated with newline)
             request = json.dumps({
                 'command': command,
                 'args': args
             })
+
             writer.write(request.encode() + b'\n')
             await writer.drain()
             
-            # Read response line (JSON terminated with newline)
             line = await asyncio.wait_for(
                 reader.readline(),
                 timeout=self.COMMAND_TIMEOUT
@@ -244,15 +218,11 @@ class DaemonClient:
             logger.warning(f"Daemon socket error: {e}")
             return None
     
+
     async def _execute_direct(self, command: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Fallback: Execute command directly without daemon.
-        
-        This imports the command handler directly and executes it.
-        It's slower due to imports, but works if daemon is unavailable.
-        """
+        """Fallback: Execute command directly without daemon."""
+
         try:
-            # Import command registry
             from src.cli.commands import command_registry
             
             if command not in command_registry:
@@ -264,11 +234,8 @@ class DaemonClient:
                     'metadata': {}
                 }
             
-            # Execute handler (in current process, not daemon)
             handler = command_registry[command]
             
-            # Create mock daemon object for handler interface
-            # (This won't have all daemon functionality, but basic commands should work)
             result = await handler(None, args)
             
             return {
@@ -290,12 +257,9 @@ class DaemonClient:
             }
 
 
-# ==============================================================================
-# CONVENIENCE FUNCTIONS
-# ==============================================================================
+## Convienience Functions
 
 _client = None
-
 
 def get_daemon_client() -> DaemonClient:
     """Get or create singleton daemon client."""

@@ -1,171 +1,112 @@
-"""Database management layer - handles connections, transactions, and low-level operations"""
+"""Database connection manager module."""
 
-from pathlib import Path
+import sqlite3
 from contextlib import contextmanager
-from ..utils.config_manager import ConfigManager
-from ..utils.log_manager import get_logger, log_call
+from pathlib import Path
+from typing import Optional
 
-logger = get_logger(__name__)
 
-class DatabaseManager:
-    """Handles database connections and low-level operations"""
+class ConnectionPool:
+    """A simple connection pool for SQLite database connections."""
+
+    def __init__(self, db_path: Path):
+        """Initialize the connection pool with the database path."""
+
+        self.db_path = db_path
+        self._connection: Optional[sqlite3.Connection] = None
+        self._in_use = False
+
+    def get_connection(self) -> sqlite3.Connection:
+        """Get a database connection from the pool."""
+        
+        if self._connection is None:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
+            self._connection.row_factory = sqlite3.Row
+
+        return self._connection
     
-    def __init__(self):
-        self.config_manager = ConfigManager()
-    
-    def get_config_path(self, path_key):
-        """Get a path from config by key name, expanding '~' to home directory"""
-        import os
-        raw_path = self.config_manager.get_config(path_key)
-        expanded_path = os.path.expanduser(raw_path)
-        return Path(expanded_path)
-
-    def get_db_path(self):
-        return self.get_config_path("database.database_path")
-
-    def get_backup_path(self):
-        backup_path = self.config_manager.get_config("database.backup_path")
-        if backup_path is None:
-            # Default to exports directory
-            db_path = self.get_db_path()
-            return db_path.parent / "exports" / "backup.db"
-        return Path(backup_path)
-
-    @log_call
-    def get_db_connection(self):
-        """Get a new database connection"""
-
-        import sqlite3
-
-        try:
-            db_path = self.get_db_path()
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(db_path)
-            conn.row_factory = sqlite3.Row
-            return conn
-        except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
-            print("Unable to connect to the database. Please check your configuration and try again.")
-            return None
-
     @contextmanager
-    def db_connection(self):
-        """Context manager for database connections with automatic cleanup"""
-        conn = self.get_db_connection()
-        try:
-            yield conn
-        finally:
-            if conn:
-                conn.close()
+    def connection(self):
+        """Context manager for safe connection usage."""
 
-    def execute_query(self, query, params=(), fetch_one=False, fetch_all=True, commit=False):
-        """Execute a database query with automatic connection management"""
-        with self.db_connection() as conn:
+        if self._in_use:
+            temp_conn = sqlite3.connect(str(self.db_path))
+            temp_conn.row_factory = sqlite3.Row
+
+            try:
+                yield temp_conn
+            finally:
+                temp_conn.close()
+        
+        else:
+            self._in_use = True
+
+            try:
+                yield self.get_connection()
+            finally:
+                self._in_use = False
+
+    def close(self) -> None:
+        """Close the connection pool"""
+
+        if self._connection:
+            self._connection.close()
+            self._connection = None
+
+    def execute(self, query: str, params: tuple = (), 
+                fetch_one: bool = False, commit: bool = False):
+        """Execute a query using pooled connection."""
+
+        with self.connection() as conn:
             cursor = conn.cursor()
             cursor.execute(query, params)
-            
+
             if commit:
                 conn.commit()
+                return cursor.lastrowid
             
             if fetch_one:
-                return cursor.fetchone()
-            elif fetch_all:
-                return cursor.fetchall()
-            return cursor
-
-    def convert_emails_to_dict_list(self, emails):
-        """Convert cursor results to list of dictionaries"""
-        return [dict(email) for email in emails]
-
-    @log_call
-    def backup_db(self, backup_path=None):
-        """Backup the database to a specified path"""
-
-        import sqlite3
-
-        try:
-            db_path = self.get_db_path()
-            if backup_path is None:
-                backup_path = self.get_backup_path()
-            else:
-                backup_path = Path(backup_path)
+                result = cursor.fetchone()
+                return dict(result) if result else None
             
-            backup_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            with sqlite3.connect(db_path) as source_conn:
-                with sqlite3.connect(backup_path) as dest_conn:
-                    source_conn.backup(dest_conn)
-            
-            logger.info(f"Database backup created at {backup_path}")
-            return str(backup_path)
-                    
-        except Exception as e:
-            logger.error(f"Failed to backup database: {e}")
-            print("Unable to backup the database. Please check your configuration and try again.")
-            return None
-
-    @log_call
-    def export_db_to_csv(self, export_dir, tables=None):
-        """Export specified tables to CSV files in the given directory"""
-
-        import pandas as pd
+            results = cursor.fetchall()
+            return [dict(row) for row in results]
         
-        try:
-            export_path = Path(export_dir)
-            export_path.mkdir(parents=True, exist_ok=True)
-            
-            if tables is None:
-                tables = ["inbox", "sent_emails", "drafts", "deleted_emails"]
-            
-            exported_files = []
-            
-            with self.db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-                existing_tables = {row[0] for row in cursor.fetchall()}
+    
+class DatabaseManager:
+    """Database manager for daemon operations."""
 
-                for table in tables:
-                    if table in existing_tables:
-                        df = pd.read_sql_query(f"SELECT * FROM {table}", conn)
-                        csv_file = export_path / f"{table}.csv"
-                        df.to_csv(csv_file, index=False)
-                        exported_files.append(str(csv_file))
-                        logger.info(f"Exported {len(df)} rows from {table}")
-                        print(f"Exported {len(df)} rows from {table} to {csv_file}")
-                    else:
-                        logger.debug(f"Table {table} does not exist in the database. Skipping export.")
-                        print(f"Table {table} does not exist in the database. Skipping export.")
-            
-            logger.info(f"Database export completed: {len(exported_files)} tables exported")
-            return exported_files
-        
-        except Exception as e:
-            logger.error(f"Failed to export database to CSV: {e}")
-            print("Unable to export the database to CSV. Please check your configuration and try again.")
-            return None
+    def __init__(self, db_path: Path):
+        """Initialize the database manager"""
 
-    @log_call
-    def delete_db(self):
-        try:
-            db_path = self.get_db_path()
-            if db_path.exists():
-                db_path.unlink()
-                logger.info(f"Database deleted: {db_path}")
-        except Exception as e:
-            logger.error(f"Failed to delete database: {e}")
-            print("Unable to delete the database. Please check your configuration and try again.")
-            return None
+        self.db_path = db_path
+        self.pool = ConnectionPool(db_path)
 
-    @log_call
-    def table_exists(self, table_name):
-        """Check if a table exists in the database"""
-        try:
-            result = self.execute_query("""
-                SELECT name FROM sqlite_master 
-                WHERE type='table' AND name=?
-            """, (table_name,), fetch_one=True, fetch_all=False)
-            return result is not None
-        except Exception as e:
-            logger.error(f"Failed to check if table {table_name} exists: {e}")
-            print("Unable to check if table exists. Please check your configuration and try again.")
-            return None
+    def execute(self, query: str, params: tuple = (), 
+                fetch_one: bool = False, commit: bool = False):
+        """Execute a query using the connection pool."""
+
+        return self.pool.execute(query, params, fetch_one, commit)
+    
+    @contextmanager
+    def connection(self):
+        """Get a connection from the pool."""
+
+        with self.pool.connection() as conn:
+            yield conn
+
+    def close(self) -> None:
+        """Close all connections in the pool."""
+
+        self.pool.close()
+
+    def __enter__(self):
+        """Context manager entry."""
+
+        return self
+    
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        """Context manager exit - close connections."""
+
+        self.close()
