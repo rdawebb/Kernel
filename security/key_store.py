@@ -4,14 +4,14 @@ import keyring
 import getpass
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Dict
-from cryptography.fernet import Fernet
 from src.utils.log_manager import get_logger, log_call
 
 logger = get_logger(__name__)
 
-SECRETS_DIR = Path("security")
+SECRETS_DIR = Path.home() / '.kernel' / 'secrets'
 SECRETS_DIR.mkdir(parents=True, exist_ok=True)
 SECRETS_FILE = SECRETS_DIR / "secrets.enc.json"
 KEY_ENV = "KERNEL_SECRETS_KEY"
@@ -22,35 +22,40 @@ class KeyStore:
 
     def __init__(self):
         self.backend = self._detect_backend()
-        self.cipher = self._init_encryption() if self.backend == "file" else None
+        self.cipher = None
         logger.info(f"KeyStore initialised using backend: {self.backend}")
+
 
     def _detect_backend(self) -> str:
         """Detect available key storage backend."""
         
         try:
-            keyring.get_keyring()
-            keyring.get_password("kernel_test", "test_user")
-            return "keyring"
-        
+            backend = keyring.get_keyring()
+            if backend and backend.priority > 0:
+                return "keyring"
+
         except Exception as e:
             logger.warning(f"Keyring unavailable ({e}), using encrypted file")
-            return "file"
         
-    def _init_encryption(self) -> Fernet:
-        """Initialise encryption cipher for file backend"""
-        
-        key = os.getenv(KEY_ENV)
+        return "file"
 
-        if not key:
-            key = Fernet.generate_key().decode()
-            os.environ[KEY_ENV] = key
-            logger.warning(
-                "Generated new encryption key. "
-                "Set KERNEL_SECRETS_KEY env variable to persist across sessions."
-            )
+
+    def _get_cipher(self):
+        """Initialize encryption cipher for file backend."""
         
-        return Fernet(key.encode())
+        if self.cipher is None and self.backend == "file":
+            from cryptography.fernet import Fernet
+
+            key = os.environ.get(KEY_ENV)
+            if not key:
+                key = Fernet.generate_key().decode()
+                os.environ[KEY_ENV] = key
+                logger.warning("Generated new encryption key for file backend.")
+
+            self.cipher = Fernet(key.encode())
+
+        return self.cipher
+    
 
     @log_call
     def set_password(self, service: str, username: str, password: str):
@@ -67,6 +72,7 @@ class KeyStore:
         except Exception as e:
             logger.error(f"Failed to store password: {e}")
             raise
+
 
     @log_call
     def get_password(self, service: str, username: str, prompt_if_missing: bool = False) -> Optional[str]:
@@ -98,6 +104,7 @@ class KeyStore:
             logger.error(f"Failed to retrieve password: {e}")
             raise
 
+
     @log_call
     def delete_password(self, service: str, username: str):
         """Delete stored password."""
@@ -106,13 +113,14 @@ class KeyStore:
             if self.backend == "keyring":
                 keyring.delete_password(service, username)
             else:
-                self._delete_file(service, username)
+                self._delete_from_file(service, username)
 
             logger.info(f"Deleted password for {username}@{service}.")
 
         except Exception as e:
             logger.error(f"Failed to delete password: {e}")
             raise
+
 
     @log_call
     def rotate_key(self):
@@ -121,6 +129,8 @@ class KeyStore:
         if self.backend != "file":
             logger.warning("Key rotation is only applicable for file backend.")
             return
+        
+        from cryptography.fernet import Fernet
 
         logger.info("Rotating encryption key for file backend.")
 
@@ -131,6 +141,7 @@ class KeyStore:
         self._save_all(all_creds)
 
         logger.info("Encryption key rotated successfully.")
+
 
     @log_call
     def validate_keystore(self) -> bool:
@@ -149,29 +160,74 @@ class KeyStore:
         except Exception as e:
             logger.error(f"Keystore validation failed: {e}")
             return False
+
+
+    ## Context Managers
+
+    @contextmanager
+    def file_operation(self):
+        """Context manager for file backend operations."""
         
+        try:
+            yield
+
+        except OSError as e:
+            logger.error(f"File operation error: {e}")
+            raise
+
+        except Exception as e:
+            logger.error(f"Unexpected error during file operation: {e}")
+            raise
+
+    
+    @contextmanager
+    def temp_password(self, service: str, username: str, password: str):
+        """Context manager for temporary password storage."""
+        
+        try:
+            self.set_password(service, username, password)
+            logger.debug(f"Temporary password set for {username}@{service}.")
+            yield
+
+        finally:
+            try:
+                self.delete_password(service, username)
+                logger.debug(f"Temporary password deleted for {username}@{service}.")
+
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary password: {e}")
+
+
+    ## File Backend Methods
+
     def _store_in_file(self, service: str, username: str, password: str):
         """Store password in encrypted file."""
-        
-        data = self._load_all()
-        key = f"{service}:{username}"
-        data[key] = password
-        self._save_all(data)
+
+        with self.file_operation():
+            data = self._load_all()
+            key = f"{service}:{username}"
+            data[key] = password
+            self._save_all(data)
+
 
     def _load_from_file(self, service: str, username: str) -> Optional[str]:
         """Load password from encrypted file."""
-        
-        data = self._load_all()
-        key = f"{service}:{username}"
-        return data.get(key)
-    
-    def _delete_file(self, service: str, username: str):
+
+        with self.file_operation():
+            data = self._load_all()
+            key = f"{service}:{username}"
+            return data.get(key)
+
+
+    def _delete_from_file(self, service: str, username: str):
         """Delete password from encrypted file."""
-        
-        data = self._load_all()
-        key = f"{service}:{username}"
-        data.pop(key, None)
-        self._save_all(data)
+
+        with self.file_operation():
+            data = self._load_all()
+            key = f"{service}:{username}"
+            data.pop(key, None)
+            self._save_all(data)
+
 
     def _load_all(self) -> Dict[str, str]:
         """Load all credentials from encrypted file."""
@@ -185,15 +241,18 @@ class KeyStore:
         if not encrypted_data:
             return {}
         
-        decrypted_data = self.cipher.decrypt(encrypted_data)
+        cipher = self._get_cipher()
+        decrypted_data = cipher.decrypt(encrypted_data)
 
         return json.loads(decrypted_data.decode())
     
+
     def _save_all(self, data: Dict[str, str]):
         """Save all credentials to encrypted file."""
-        
+
+        cipher = self._get_cipher()
         json_data = json.dumps(data).encode()
-        encrypted_data = self.cipher.encrypt(json_data)
+        encrypted_data = cipher.encrypt(json_data)
 
         with open(SECRETS_FILE, "wb") as f:
             f.write(encrypted_data)

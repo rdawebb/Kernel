@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 from src.utils.log_manager import get_logger
 
 
@@ -23,12 +23,11 @@ logger = get_logger(__name__)
 
 
 class DaemonClient:
-    """Client for communicating with RendererDaemon."""
+    """Client for communicating with EmailDaemon."""
     
-    # Paths
     SOCKET_PATH = Path.home() / '.kernel' / 'daemon.sock'
     PID_FILE = Path.home() / '.kernel' / 'daemon.pid'
-    DAEMON_SCRIPT = Path(__file__).parent / 'renderer_daemon.py'
+    DAEMON_SCRIPT = Path(__file__).parent / 'email_daemon.py'
     
     # Timeouts - add to config for customisation
     CONNECT_TIMEOUT = 5
@@ -52,10 +51,11 @@ class DaemonClient:
         
         try:
             pid = int(self.PID_FILE.read_text().strip())
-            # Check if process exists
-            os.kill(pid, 0)  # Signal 0 doesn't kill, just checks
+            os.kill(pid, 0)
             return True
+        
         except (ValueError, OSError, ProcessLookupError):
+            self.PID_FILE.unlink(missing_ok=True)
             return False
     
 
@@ -69,29 +69,7 @@ class DaemonClient:
         logger.info("Starting daemon...")
         
         try:
-            # Determine which Python executable to use
-            python_exe = sys.executable
-            
-            # Try to find venv from VIRTUAL_ENV environment variable
-            venv_path = os.environ.get('VIRTUAL_ENV')
-            
-            if not venv_path:
-                project_root = Path(__file__).parent.parent.parent
-                venv_candidates = [
-                    project_root / '.venv',
-                    project_root / 'venv',
-                    project_root / '.env',
-                ]
-                for candidate in venv_candidates:
-                    if candidate.exists():
-                        venv_path = str(candidate)
-                        break
-   
-            if venv_path:
-                venv_python = Path(venv_path) / 'bin' / 'python'
-                if venv_python.exists():
-                    python_exe = str(venv_python)
-                    logger.debug(f"Using venv Python: {python_exe}")
+            python_exe = self._find_python_executable()
             
             process = subprocess.Popen(
                 [python_exe, str(self.DAEMON_SCRIPT)],
@@ -124,10 +102,33 @@ class DaemonClient:
         
         try:
             pid = int(self.PID_FILE.read_text().strip())
-            os.kill(pid, 15)  # SIGTERM
-            logger.info("Daemon stopped")    
+            os.kill(pid, 15)
+            logger.info("Daemon stopped") 
+
         except Exception as e:
             logger.warning(f"Error stopping daemon: {e}")
+
+    
+    def _find_python_executable(self) -> str:
+        """Find appropriate Python executable."""
+        
+        venv_path = os.environ.get('VIRTUAL_ENV')
+
+        if not venv_path:
+            project_root = Path(__file__).parent.parent.parent
+            for venv_name in ['venv', '.venv', 'env']:
+                candidate = project_root / venv_name
+                if candidate.exists():
+                    venv_path = str(candidate)
+                    break
+
+        if venv_path:
+            venv_python = Path(venv_path) / 'bin' / 'python'
+            if venv_python.exists():
+                logger.debug(f"Using venv Python: {venv_python}")
+                return str(venv_python)
+            
+        return sys.executable
     
 
     ## Command Execution
@@ -136,43 +137,18 @@ class DaemonClient:
         """Execute command via daemon, with fallback to direct execution."""
         
         if self.disable_daemon:
-            if self.fallback_mode:
-                logger.debug(f"Daemon disabled, using direct execution: {command}")
-                result = await self._execute_direct(command, args)
-                result['via_daemon'] = False
-                return result
-            else:
-                return {
-                    'success': False,
-                    'data': None,
-                    'error': 'Daemon disabled and fallback disabled',
-                    'cached': False,
-                    'metadata': {},
-                    'via_daemon': False
-                }
+            return await self.execute_fallback(command, args)
         
         try:
             result = await self._execute_via_daemon(command, args)
             if result is not None:
                 result['via_daemon'] = True
                 return result
+            
         except Exception as e:
             logger.warning(f"Daemon execution failed: {e}")
         
-        if self.fallback_mode:
-            logger.info(f"Falling back to direct execution: {command}")
-            result = await self._execute_direct(command, args)
-            result['via_daemon'] = False
-            return result
-        
-        return {
-            'success': False,
-            'data': None,
-            'error': 'Daemon unavailable and fallback disabled',
-            'cached': False,
-            'metadata': {},
-            'via_daemon': False
-        }
+        return await self.execute_fallback(command, args)
     
 
     async def _execute_via_daemon(self, command: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -206,6 +182,7 @@ class DaemonClient:
                 return None
             
             response = json.loads(line.decode().strip())
+            
             writer.close()
             await writer.wait_closed()
             
@@ -219,8 +196,20 @@ class DaemonClient:
             return None
     
 
-    async def _execute_direct(self, command: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_fallback(self, command: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Fallback: Execute command directly without daemon."""
+
+        if not self.fallback_mode:
+            return {
+                'success': False,
+                'data': None,
+                'error': 'Daemon unavailable and fallback disabled',
+                'cached': False,
+                'metadata': {},
+                'via_daemon': False
+            }
+        
+        logger.info(f"Fallback: executing command '{command}' directly")
 
         try:
             from src.cli.commands import command_registry
@@ -231,11 +220,11 @@ class DaemonClient:
                     'data': None,
                     'error': f'Unknown command: {command}',
                     'cached': False,
-                    'metadata': {}
+                    'metadata': {},
+                    'via_daemon': False
                 }
             
             handler = command_registry[command]
-            
             result = await handler(None, args)
             
             return {
@@ -243,7 +232,8 @@ class DaemonClient:
                 'data': result.get('data'),
                 'error': result.get('error'),
                 'cached': False,
-                'metadata': result.get('metadata', {})
+                'metadata': result.get('metadata', {}),
+                'via_daemon': False
             }
         
         except Exception as e:
@@ -253,7 +243,8 @@ class DaemonClient:
                 'data': None,
                 'error': str(e),
                 'cached': False,
-                'metadata': {}
+                'metadata': {},
+                'via_daemon': False
             }
 
 
@@ -266,12 +257,14 @@ def get_daemon_client() -> DaemonClient:
     global _client
     if _client is None:
         _client = DaemonClient(fallback_mode=True)
+
     return _client
 
 
 async def execute_via_daemon(command: str, args: Dict[str, Any]) -> Dict[str, Any]:
     """Execute command via daemon (convenience function)."""
     client = get_daemon_client()
+
     return await client.execute_command(command, args)
 
 
@@ -279,8 +272,8 @@ async def ensure_daemon_started():
     """Ensure daemon is running."""
     client = get_daemon_client()
     if not client.is_daemon_running():
-        if not await client.start_daemon():
-            logger.warning("Failed to start daemon")
+        await client.start_daemon()
+        logger.warning("Failed to start daemon")
 
 
 async def stop_daemon():
