@@ -10,16 +10,16 @@ from typing import Callable, Dict, Optional
 from .attachments import handle_attachments_daemon, handle_attachments_list_daemon
 from .backup import handle_backup_daemon
 from .compose import handle_compose_daemon
-from .delete import handle_delete_daemon
+from .delete import handle_delete_command_daemon
 from .delete_db import handle_delete_db_daemon
 from .download import handle_download_daemon
 from .export import handle_export_daemon
-from .flag import handle_flag_daemon, handle_unflag_daemon, handle_list_flagged_daemon
-from .list import handle_list_daemon
+from .flag import handle_flag_command_daemon
+from .list import handle_list_command_daemon
 from .move import handle_move_daemon
-from .refresh import handle_refresh_daemon
-from .search import handle_search_daemon
-from .view import handle_view_daemon
+from .refresh import handle_refresh_command_daemon
+from .search import handle_search_command_daemon
+from .view import handle_view_command_daemon
 
 
 COMMAND_HANDLERS: Dict[str, Callable] = {
@@ -27,18 +27,18 @@ COMMAND_HANDLERS: Dict[str, Callable] = {
     "attachments-list": handle_attachments_list_daemon,
     "backup": handle_backup_daemon,
     "compose": handle_compose_daemon,
-    "delete": handle_delete_daemon,
+    "delete": handle_delete_command_daemon,
     "delete-db": handle_delete_db_daemon,
     "download": handle_download_daemon,
     "export": handle_export_daemon,
-    "flag": handle_flag_daemon,
-    "unflag": handle_unflag_daemon,
+    "flag": handle_flag_command_daemon,
+    "unflag": handle_flag_command_daemon,
     "flagged": handle_list_flagged_daemon,
-    "list": handle_list_daemon,
+    "list": handle_list_command_daemon,
     "move": handle_move_daemon,
-    "refresh": handle_refresh_daemon,
-    "search": handle_search_daemon,
-    "view": handle_view_daemon,
+    "refresh": handle_refresh_command_daemon,
+    "search": handle_search_command_daemon,
+    "view": handle_view_command_daemon,
 }
 
 

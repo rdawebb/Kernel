@@ -1,22 +1,32 @@
 """List command - display recent emails"""
-from typing import Dict, Any
+
 from io import StringIO
 from rich.console import Console
-from ...core import storage_api
-from ...ui import inbox_viewer, table_viewer
-from ...utils.log_manager import get_logger, async_log_call
-from .command_utils import print_error, print_status, clean_ansi_output
+from typing import Any, Dict
+from src.core.database import get_database
+from src.utils.log_manager import get_logger, async_log_call
+from .command_utils import (
+    print_error, 
+    print_status,
+    clean_ansi_output
+)
 
 logger = get_logger(__name__)
 
 
-
 @async_log_call
-async def handle_list(args, cfg_manager):
-    """List recent emails from inbox"""
+async def handle_list_command(args, config_manager):
+    """List recent emails in the inbox (CLI version)"""
+    
     print_status("Loading emails...")
+
     try:
-        emails = storage_api.get_inbox(limit=args.limit)
+        db = get_database(config_manager)
+
+        emails = await db.get_emails("inbox", limit=args.limit, include_body=False)
+
+        from src.ui import inbox_viewer
+
         inbox_viewer.display_inbox("inbox", emails)
 
     except Exception as e:
@@ -24,42 +34,45 @@ async def handle_list(args, cfg_manager):
         print_error(f"Failed to load emails: {e}")
 
 
-async def handle_list_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
-    """List command - daemon compatible wrapper."""
+async def handle_list_command_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
+    """List recent emails in the inbox (Daemon version)"""
+    
     try:
-        emails = storage_api.get_inbox(limit=args.get('limit', 50))
-        
-        # Render table using Rich's terminal mode for proper formatting and colors
+        emails = await daemon.db.get_emails("inbox", limit=args.get("limit", 50))
+
         buffer = StringIO()
         buffer_console = Console(
             file=buffer,
-            force_terminal=True,  # Enable terminal mode for proper Rich rendering
+            force_terminal=True,
             width=120,
-            legacy_windows=False
+            legacy_windows=False,
         )
+
+        from src.ui import table_viewer
+        
         table_viewer.display_email_table(
             emails,
             title="Inbox",
-            show_source=args.get('show_source', False),
-            show_flagged=args.get('show_flagged', False),
             console_obj=buffer_console
         )
-        
-        # Get the rendered output with ANSI codes
+
         output = buffer.getvalue()
         output = clean_ansi_output(output)
-        
+
         return {
-            'success': True,
-            'data': output,
-            'error': None,
-            'metadata': {'count': len(emails)}
+            "success": True,
+            "data": output,
+            "error": None,
+            "metadata": {"count": len(emails)}
         }
+    
     except Exception as e:
-        logger.exception("Error in handle_list_daemon")
+        logger.exception(f"Error in handle_list_command_daemon: {e}")
+
         return {
-            'success': False,
-            'data': None,
-            'error': str(e),
-            'metadata': {}
+            "success": False,
+            "data": None,
+            "error": str(e),
+            "metadata": {}
         }
+    

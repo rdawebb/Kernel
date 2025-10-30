@@ -6,7 +6,7 @@ import json
 import os
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Dict, Optional
 from src.utils.error_handling import CorruptedSecretsError, FileSystemError, KernelError, KeyringUnavailableError, KeyStoreError
 from src.utils.log_manager import get_logger, log_call
 
@@ -289,5 +289,9 @@ class KeyStore:
         json_data = json.dumps(data).encode()
         encrypted_data = cipher.encrypt(json_data)
 
-        with open(SECRETS_FILE, "wb") as f:
+        temp_file = SECRETS_FILE.with_suffix('.tmp')
+
+        with open(temp_file, "wb") as f:
             f.write(encrypted_data)
+
+        temp_file.replace(SECRETS_FILE)

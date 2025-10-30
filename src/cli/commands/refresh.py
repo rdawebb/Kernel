@@ -1,76 +1,94 @@
 """Refresh command - fetch new emails from server"""
-from typing import Dict, Any
-from ...core.imap_client import IMAPClient, SyncMode
-from ...core import storage_api
-from ...ui import inbox_viewer
-from ...utils.log_manager import get_logger, async_log_call, log_event
-from ...utils.ui_helpers import confirm_action
-from .command_utils import print_error, print_success, print_status
+
+from typing import Any, Dict
+from src.core.database import get_database
+from src.ui import inbox_viewer
+from src.utils.log_manager import get_logger, async_log_call
+from .command_utils import (
+    print_error, 
+    print_success, 
+    print_status
+)
 
 logger = get_logger(__name__)
 
 
 @async_log_call
-async def handle_refresh(args, cfg_manager):
-    """Fetch new emails from the server"""
+async def handle_refresh_command(args, config_manager):
+    """Fetch new emails from the server (CLI version)"""
+
     try:
-        # Load account config inside the function so prompts can happen
-        from ...core.imap_connection import get_account_info
+        from src.core.imap_client import SyncMode
+        from src.utils.ui_helpers import confirm_action
+
+        db = get_database(config_manager)
+
+        from src.core.imap_connection import get_account_info
+        account_config = get_account_info(config_manager)
+
+        if not account_config:
+            print_error("No account configuration found. Please set up your email account first.")
+            return
         
-        account_config = get_account_info()
-        client = IMAPClient(account_config)
-        
+        from src.core.imap_client import IMAPClient
+        imap_client = IMAPClient(config_manager)
+
         if args.all:
-            print_status("Warning: Fetching all emails can be slow and may hit server limits.", color="yellow")
-            if not confirm_action("Are you sure you want to fetch all emails?"):
-                logger.info("Fetch cancelled by user.")
-                print_status("Fetch cancelled.", color="yellow")
+            print_status("Warning: Fetching all emails can be slow")
+            if not confirm_action("Continue? (y/n): "):
+                print_status("Refresh cancelled", color="yellow")
                 return
-            print_status("Fetching all emails from server...")
-            fetched_count = client.fetch_new_emails(SyncMode.FULL)
-
+            sync_mode = SyncMode.FULL
         else:
-            print_status("Fetching new emails from server...")
-            fetched_count = client.fetch_new_emails(SyncMode.INCREMENTAL)
+            sync_mode = SyncMode.INCREMENTAL
 
-        message = f"Fetched {fetched_count} new email(s) from the server."
-        logger.info(message)
-        print_success(message)
-        log_event("emails_fetched", message, count=fetched_count)
-        
+        print_status("Fetching emails from server...")
+
+        fetched_count = await imap_client.fetch_new_emails(sync_mode)
+        print_success(f"Fetched {fetched_count} new email(s).")
+
         print_status("Loading emails...")
-        emails = storage_api.get_inbox(limit=args.limit)
+        emails = await db.get_emails("inbox", limit=args.limit)
         inbox_viewer.display_inbox("inbox", emails)
 
     except Exception as e:
-        logger.error(f"Failed to fetch or load emails: {e}")
-        print_error(f"Failed to fetch or load emails: {e}")
+        logger.error(f"Failed to refresh emails: {e}")
+        print_error(f"Failed to refresh emails: {e}")
 
 
-async def handle_refresh_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
-    """Refresh command - daemon compatible wrapper."""
+async def handle_refresh_command_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Fetch new emails from the server (Daemon version)"""
+
     try:
-        from ...core.imap_connection import get_account_info
+        from src.core.imap_client import SyncMode
+
+        imap_client = daemon.get_imap_client()
+
+        if not imap_client:
+            return {
+                "success": False,
+                "data": None,
+                "error": "IMAP connection failed",
+                "metadata": {}
+            }
         
-        account_config = get_account_info()
-        client = IMAPClient(account_config)
-        
-        if args.get('all'):
-            count = client.fetch_new_emails(SyncMode.FULL)
-        else:
-            count = client.fetch_new_emails(SyncMode.INCREMENTAL)
-        
+        sync_mode = SyncMode.FULL if args.get("all", False) else SyncMode.INCREMENTAL
+        fetched_count = await imap_client.fetch_new_emails(sync_mode)
+
         return {
-            'success': True,
-            'data': f'Refreshed {count} emails',
-            'error': None,
-            'metadata': {'email_count': count}
+            "success": True,
+            "data": f"Fetched {fetched_count} new email(s).",
+            "error": None,
+            "metadata": {"fetched_count": fetched_count}
         }
+    
     except Exception as e:
-        logger.exception("Error in handle_refresh_daemon")
+        logger.exception(f"Error in handle_refresh_command_daemon: {e}")
+
         return {
-            'success': False,
-            'data': None,
-            'error': str(e),
-            'metadata': {}
+            "success": False,
+            "data": None,
+            "error": str(e),
+            "metadata": {}
         }
+        

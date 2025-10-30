@@ -1,6 +1,6 @@
 """Shared utilities for CLI commands"""
 import re
-from ...utils.log_manager import get_logger
+from src.utils.log_manager import get_logger
 
 logger = get_logger(__name__)
 

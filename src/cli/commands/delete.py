@@ -1,141 +1,97 @@
 """Delete command - delete emails"""
-from typing import Dict, Any
+
 from datetime import datetime
-from ...core.imap_client import IMAPClient
-from ...core import storage_api
-from ...utils.log_manager import get_logger, log_call, async_log_call, log_event
-from ...utils.ui_helpers import confirm_action
-from .command_utils import print_error, print_success, print_status
+from typing import Any, Dict
+from src.core.database import get_database
+from src.utils.log_manager import get_logger, async_log_call, log_event
+from .command_utils import (
+    print_error, 
+    print_success, 
+    print_status
+)
 
 logger = get_logger(__name__)
 
 
-@log_call
-def _delete_from_local_database(email_id: int, email_data: dict) -> bool:
-    """Delete email from local database only."""
-    try:
-        email_data["deleted_at"] = datetime.now().isoformat()
-        storage_api.save_deleted_email(email_data)
-        storage_api.delete_email(email_id)
-        message = f"Deleted email ID {email_id} from local database."
-        logger.info(message)
-        print_success(message)
-        log_event("email_deleted_local", message, email_id=email_id)
-        return True
-    except Exception as e:
-        logger.error(f"Failed to delete email from local database: {e}")
-        print_error(f"Failed to delete email from local database: {e}")
-        return False
-
-@log_call
-def _delete_from_local_and_server(account_config, email_id: int, email_data: dict) -> bool:
-    """Delete email from both local database and server."""
-    try:
-        client = IMAPClient(account_config)
-        email_data["deleted_at"] = datetime.now().isoformat()
-        storage_api.save_deleted_email(email_data)
-        storage_api.delete_email(email_id)
-        client.delete_email(email_id)
-        message = f"Deleted email ID {email_id} from local database and server."
-        logger.info(message)
-        print_success(message)
-        log_event("email_deleted_server", message, email_id=email_id)
-        return True
-    except Exception as e:
-        logger.error(f"Failed to delete email: {e}")
-        print_error(f"Failed to delete email: {e}")
-        return False
-
-@log_call
-def _permanently_delete_email(email_id: int) -> bool:
-    """Permanently delete email from the deleted_emails table."""
-    try:
-        storage_api.delete_email_from_table("deleted_emails", email_id)
-        message = f"Permanently deleted email ID {email_id} from 'deleted' table."
-        logger.info(message)
-        print_success(message)
-        log_event("email_permanently_deleted", message, email_id=email_id)
-        return True
-    except Exception as e:
-        logger.error(f"Failed to permanently delete email: {e}")
-        print_error(f"Failed to permanently delete email: {e}")
-        return False
-
 @async_log_call
-async def handle_delete(args, cfg_manager) -> None:
-    """Delete email from local database or server.
-    
-    Handles two deletion scenarios:
-    1. Soft delete: Move email to deleted_emails table (from inbox)
-    2. Hard delete: Permanently remove from deleted_emails table
-    """
-    # Early return if email ID is not provided
+async def handle_delete_command(args, config_manager):
+    """Delete emails by ID from specified table (CLI version)"""
+
     if args.id is None:
-        logger.error("Email ID is required for deletion.")
-        print_error("Email ID is required for deletion.")
+        print_error("Please specify at least one email ID to delete using --id.")
         return
-
-    # Get account config
-    account_config = cfg_manager.get_account_config()
-
-    # Check if email is in deleted_emails table (hard delete scenario)
-    if storage_api.email_exists("deleted_emails", args.id):
-        _handle_permanent_deletion(args.id)
-        return
-
-    # Soft delete scenario - email in inbox
-    _handle_soft_deletion(account_config, args)
-
-@log_call
-def _handle_soft_deletion(account_config, args) -> None:
-    """Handle soft deletion of email (move to deleted_emails table)."""
-    if not confirm_action(f"Are you sure you want to delete email ID {args.id}?"):
-        logger.info("Email deletion cancelled by user.")
-        print_status("Deletion cancelled.", color="yellow")
-        return
-
-    email_data = storage_api.get_email_from_table("inbox", args.id)
-    if not email_data:
-        logger.error(f"Email with ID {args.id} not found in inbox.")
-        print_error(f"Email with ID {args.id} not found in inbox.")
-        return
-
-    # Determine deletion scope based on --all flag
-    if args.all:
-        _delete_from_local_and_server(account_config, args.id, email_data)
-    else:
-        _delete_from_local_database(args.id, email_data)
-
-@log_call
-def _handle_permanent_deletion(email_id: int) -> None:
-    """Handle permanent deletion of email from deleted_emails table."""
-    if not confirm_action("Are you sure you want to permanently delete this email? This action cannot be undone."):
-        logger.info("Permanent deletion cancelled by user.")
-        print_status("Permanent deletion cancelled.", color="yellow")
-        return
-
-    _permanently_delete_email(email_id)
-
-
-async def handle_delete_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
-    """Delete command - daemon compatible wrapper."""
+    
     try:
-        table = args.get('table', 'inbox')
-        email_id = args.get('id')
+        from src.utils.ui_helpers import confirm_action
+
+        db = get_database(config_manager)
+
+        if db.email_exists("trash", args.id):
+
+            if not confirm_action("Permanently delete the email(s) from 'trash'? This action cannot be undone - (y/n): "):
+                print_status("Deletion cancelled", color="yellow")
+                return
+            
+            db.delete_email("trash", args.id)
+            print_success(f"Permanently deleted email(s) with ID(s) {args.id} from 'trash'.")
+            log_event("email_deleted", {"id": args.id, "table": "trash"})
+
+        if not db.email_exists("inbox", args.id):
+            print_error(f"Email(s) with ID(s) {args.id} not found in 'inbox'.")
+            return
         
-        storage_api.delete_email(table, email_id)
-        
-        return {
-            'success': True,
-            'data': f'Email {email_id} deleted',
-            'error': None,
-            'metadata': {}
-        }
+        from datetime import datetime
+
+        if not confirm_action(f"Delete email(s) {args.id} from 'inbox'? - (y/n): "):
+            print_status("Deletion cancelled", color="yellow")
+            return
+
+        db.move_email("inbox", "trash", args.id, deleted_at=datetime.now())
+        print_success(f"Deleted email {args.id}")
+        log_event("email_deleted", {"id": args.id, "table": "inbox"})
+
     except Exception as e:
-        logger.exception("Error in handle_delete_daemon")
+        logger.error(f"Failed to delete email(s): {e}")
+        print_error(f"Failed to delete email(s): {e}")
+
+
+async def handle_delete_command_daemon(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Delete emails by ID from specified table (Daemon version)"""
+
+    try:
+        email_id = args.get("id")
+        table = args.get("table", "inbox")
+
+        if not daemon.db.email_exists(table, email_id):
+            return {
+                "success": False,
+                "data": None,
+                "error": f"Email with ID {email_id} not found in '{table}'",
+                "metadata": {}
+            }
+        
+        if table == "trash":
+            daemon.db.delete_email("trash", email_id)
+            message = f"Permanently deleted email with ID {email_id} from 'trash'."
+        else:
+            daemon.db.move_email(table, "trash", email_id, deleted_at=datetime.now())
+            message = f"Deleted email with ID {email_id} from '{table}'."
+            log_event("email_deleted", {"id": email_id, "table": table})
+
         return {
-            'success': False,
-            'data': None,
-            'error': str(e),
-            'metadata': {}
+            "success": True,
+            "data": message,
+            "error": None,
+            "metadata": {"email_id": email_id}
         }
+    
+    except Exception as e:
+        logger.exception(f"Error in handle_delete_command_daemon: {e}")
+
+        return {
+            "success": False,
+            "data": None,
+            "error": str(e),
+            "metadata": {}
+        }
+
