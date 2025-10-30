@@ -4,6 +4,11 @@ import subprocess
 import sys
 from .log_manager import get_logger, log_call
 from .config_manager import ConfigManager
+from .error_handling import (
+    KernelError,
+    ValidationError,
+    ConfigurationError,
+)
 
 logger = get_logger(__name__)
 
@@ -54,8 +59,10 @@ class ModelManager:
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", package])
             logger.info(f"Successfully installed {package}")
+        except subprocess.CalledProcessError as e:
+            raise ValidationError(f"Failed to install package {package}: {str(e)}") from e
         except Exception as e:
-            logger.error(f"Error installing {package}: {e}")
+            raise ValidationError(f"Unexpected error installing {package}: {str(e)}") from e
 
     @staticmethod
     @log_call
@@ -64,8 +71,10 @@ class ModelManager:
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", package])
             logger.info(f"Successfully uninstalled {package}")
+        except subprocess.CalledProcessError as e:
+            raise ValidationError(f"Failed to uninstall package {package}: {str(e)}") from e
         except Exception as e:
-            logger.error(f"Error uninstalling {package}: {e}")
+            raise ValidationError(f"Unexpected error uninstalling {package}: {str(e)}") from e
 
     def is_installed(self, model_name):
         """Check if a model is marked as installed."""
@@ -80,37 +89,47 @@ class ModelManager:
     @log_call
     def choose_model(self, choice):
         """Select and configure a model by choice number."""
-        selected_model = self.MODEL_MAP.get(choice)
+        try:
+            selected_model = self.MODEL_MAP.get(choice)
 
-        if not selected_model:
-            logger.error(f"Invalid model choice: {choice}. Valid choices are 1-7.")
-            return None
+            if not selected_model:
+                raise ValidationError(f"Invalid model choice: {choice}. Valid choices are 1-7.")
 
-        if selected_model == self.current_model:
-            logger.info(f"Model {selected_model} is already selected.")
+            if selected_model == self.current_model:
+                logger.info(f"Model {selected_model} is already selected.")
+                return selected_model
+
+            self.current_model = selected_model
+            self.config_manager.set_config("default_summariser", selected_model)
+
+            if not self.is_installed(selected_model):
+                logger.info(f"Installing model: {selected_model}...")
+                self.install(selected_model)
+                self.set_installed(selected_model, True)
+
+            self._cleanup_unused_models(selected_model)
+            logger.info(f"Selected summarization model: {selected_model}")
+
             return selected_model
-
-        self.current_model = selected_model
-        self.config_manager.set_config("default_summariser", selected_model)
-
-        if not self.is_installed(selected_model):
-            logger.info(f"Installing model: {selected_model}...")
-            self.install(selected_model)
-            self.set_installed(selected_model, True)
-
-        self._cleanup_unused_models(selected_model)
-        logger.info(f"Selected summarization model: {selected_model}")
-
-        return selected_model
+        
+        except KernelError:
+            raise
+        except Exception as e:
+            raise ConfigurationError(f"Failed to choose model {choice}: {str(e)}") from e
 
     @log_call
     def _cleanup_unused_models(self, keep_model):
         """Uninstall unused models to save space."""
-        for model_name in self.installed_models:
-            if model_name != keep_model and self.is_installed(model_name):
-                logger.info(f"Uninstalling unused model: {model_name}")
-                self.uninstall(model_name)
-                self.set_installed(model_name, False)
+        try:
+            for model_name in self.installed_models:
+                if model_name != keep_model and self.is_installed(model_name):
+                    logger.info(f"Uninstalling unused model: {model_name}")
+                    self.uninstall(model_name)
+                    self.set_installed(model_name, False)
+        except KernelError:
+            raise
+        except Exception as e:
+            raise ConfigurationError(f"Failed to cleanup unused models: {str(e)}") from e
 
     def get_current_model(self):
         """Get the currently selected model."""

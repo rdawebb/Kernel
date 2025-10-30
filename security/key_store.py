@@ -7,6 +7,7 @@ import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Dict
+from src.utils.error_handling import CorruptedSecretsError, FileSystemError, KernelError, KeyringUnavailableError, KeyStoreError
 from src.utils.log_manager import get_logger, log_call
 
 logger = get_logger(__name__)
@@ -34,7 +35,7 @@ class KeyStore:
             if backend and backend.priority > 0:
                 return "keyring"
 
-        except Exception as e:
+        except keyring.errors.KeyringError as e:
             logger.warning(f"Keyring unavailable ({e}), using encrypted file")
         
         return "file"
@@ -64,14 +65,17 @@ class KeyStore:
         try:
             if self.backend == "keyring":
                 keyring.set_password(service, username, password)
-                logger.info(f"Stored password for {username}@{service} in keyring.")
             else:
                 self._store_in_file(service, username, password)
-                logger.info(f"Stored password for {username}@{service} in encrypted file.")
+
+        except keyring.errors.KeyringError as e:
+            raise KeyringUnavailableError("Keyring is not available") from e
+
+        except KernelError:
+            raise
 
         except Exception as e:
-            logger.error(f"Failed to store password: {e}")
-            raise
+            raise KeyStoreError("Failed to store password") from e
 
 
     @log_call
@@ -100,9 +104,14 @@ class KeyStore:
             
             return None
 
-        except Exception as e:
-            logger.error(f"Failed to retrieve password: {e}")
+        except keyring.errors.KeyringError as e:
+            raise KeyringUnavailableError("Keyring is not available") from e
+
+        except KernelError:
             raise
+
+        except Exception as e:
+            raise KeyStoreError("Failed to retrieve password") from e
 
 
     @log_call
@@ -117,9 +126,14 @@ class KeyStore:
 
             logger.info(f"Deleted password for {username}@{service}.")
 
-        except Exception as e:
-            logger.error(f"Failed to delete password: {e}")
+        except keyring.errors.KeyringError as e:
+            raise KeyringUnavailableError("Keyring is not available") from e
+
+        except KernelError:
             raise
+
+        except Exception as e:
+            raise KeyStoreError("Failed to delete password") from e
 
 
     @log_call
@@ -132,15 +146,22 @@ class KeyStore:
         
         from cryptography.fernet import Fernet
 
-        logger.info("Rotating encryption key for file backend.")
+        try:
+            logger.info("Rotating encryption key for file backend.")
 
-        all_creds = self._load_all()
-        new_key = Fernet.generate_key().decode()
-        os.environ[KEY_ENV] = new_key
-        self.cipher = Fernet(new_key.encode())
-        self._save_all(all_creds)
+            all_creds = self._load_all()
+            new_key = Fernet.generate_key().decode()
+            os.environ[KEY_ENV] = new_key
+            self.cipher = Fernet(new_key.encode())
+            self._save_all(all_creds)
 
-        logger.info("Encryption key rotated successfully.")
+            logger.info("Encryption key rotated successfully.")
+
+        except KernelError:
+            raise
+
+        except Exception as e:
+            raise KeyStoreError("Failed to rotate encryption key") from e
 
 
     @log_call
@@ -157,8 +178,16 @@ class KeyStore:
             self._load_all()
             return True
         
-        except Exception as e:
-            logger.error(f"Keystore validation failed: {e}")
+        except CorruptedSecretsError:
+            logger.error("Keystore validation failed: secrets file is corrupted")
+            return False
+
+        except FileSystemError as e:
+            logger.error(f"Keystore validation failed: {e.message}")
+            return False
+
+        except KeyStoreError as e:
+            logger.error(f"Keystore validation failed: {e.message}")
             return False
 
 
@@ -171,13 +200,16 @@ class KeyStore:
         try:
             yield
 
-        except OSError as e:
-            logger.error(f"File operation error: {e}")
-            raise
+        except (OSError, IOError) as e:
+            raise FileSystemError("File operation failed") from e
+
+        except json.JSONDecodeError as e:
+            raise CorruptedSecretsError("Failed to decode JSON") from e
 
         except Exception as e:
-            logger.error(f"Unexpected error during file operation: {e}")
-            raise
+            if isinstance(e, KernelError):
+                raise
+            raise KeyStoreError("An unexpected error occurred") from e
 
     
     @contextmanager
@@ -194,8 +226,11 @@ class KeyStore:
                 self.delete_password(service, username)
                 logger.debug(f"Temporary password deleted for {username}@{service}.")
 
-            except Exception as e:
-                logger.warning(f"Failed to delete temporary password: {e}")
+            except KeyStoreError as e:
+                logger.warning(f"Failed to delete temporary password: {e.message}")
+
+            except KeyringUnavailableError as e:
+                logger.warning(f"Failed to delete temporary password: {e.message}")
 
 
     ## File Backend Methods

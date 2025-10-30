@@ -24,6 +24,13 @@ from rich.console import Console
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.utils.config_manager import ConfigManager
 from src.utils.log_manager import get_logger
+from src.utils.error_handling import (
+    KernelError,
+    IMAPError,
+    SMTPError,
+    DatabaseError,
+    FileSystemError,
+)
 from src.core.database import Database
 from src.core.imap_client import IMAPClient
 from src.core.smtp_client import SMTPClient
@@ -89,9 +96,15 @@ class ConnectionManager:
                     pool.client = create()
                     pool.last_used = current_time
                     logger.info(f"{client_type} client connected.")
+                except IMAPError:
+                    raise
+                except SMTPError:
+                    raise
                 except Exception as e:
-                    logger.error(f"Failed to create {client_type} client: {e}")
-                    return None
+                    if client_type == "IMAP":
+                        raise IMAPError(f"Failed to create {client_type} client") from e
+                    else:
+                        raise SMTPError(f"Failed to create {client_type} client") from e
             
             pool.last_used = current_time
 
@@ -260,21 +273,29 @@ class EmailDaemon:
         self.logger = get_logger(__name__)
         self.console = Console()
 
-        self.config = ConfigManager()
-        self.keystore = KeyStore()
+        try:
+            self.config = ConfigManager()
+            self.keystore = KeyStore()
 
-        self.db = Database(self.config)
-        self.db.initialize()
-        self.logger.info("Database initialised with persistent connection.")
+            self.db = Database(self.config)
+            self.db.initialize()
+            self.logger.info("Database initialised with persistent connection.")
 
-        self.connections = ConnectionManager(self.config, self.keystore)
+            self.connections = ConnectionManager(self.config, self.keystore)
 
-        self.cache = CacheManager(max_entries=50, ttl_seconds=60)
+            self.cache = CacheManager(max_entries=50, ttl_seconds=60)
 
-        self.last_activity = time.time()
-        self.idle_timeout = 1800 # Add to config for customisation
+            self.last_activity = time.time()
+            self.idle_timeout = 1800 # Add to config for customisation
 
-        self.logger.info("Email Daemon initialized.")
+            self.logger.info("Email Daemon initialized.")
+        
+        except DatabaseError:
+            raise
+        except KernelError:
+            raise
+        except Exception as e:
+            raise DatabaseError("Failed to initialize Email Daemon") from e
 
     
     ## Command Execution
@@ -322,6 +343,9 @@ class EmailDaemon:
                 "metadata": result.get("metadata", {})
             }
         
+        except KernelError as e:
+            self.logger.error(f"Error executing command '{command}': {e.message}")
+            return self._error_response(e.message)
         except Exception as e:
             self.logger.exception(f"Error executing command '{command}': {e}")
             return self._error_response(str(e))
@@ -366,6 +390,11 @@ class EmailDaemon:
             writer.write(json.dumps(error_response).encode() + b"\n")
             await writer.drain()
 
+        except KernelError as e:
+            self.logger.error(f"Error handling request: {e.message}")
+            error_response = self._error_response(e.message)
+            writer.write(json.dumps(error_response).encode() + b"\n")
+            await writer.drain()
         except Exception as e:
             self.logger.exception(f"Error handling request: {e}")
             error_response = self._error_response(str(e))
@@ -383,13 +412,20 @@ class EmailDaemon:
         """Background task to check for idle timeout and shutdown."""
 
         while True:
-            await asyncio.sleep(60)
-            
-            idle_time = time.time() - self.last_activity
-            if idle_time > self.idle_timeout:
-                self.logger.info(f"Daemon idle for {idle_time:.0f}s, shutting down.")
-                self.shutdown()
-                break
+            try:
+                await asyncio.sleep(60)
+                
+                idle_time = time.time() - self.last_activity
+                if idle_time > self.idle_timeout:
+                    self.logger.info(f"Daemon idle for {idle_time:.0f}s, shutting down.")
+                    self.shutdown()
+                    break
+
+            except KernelError:
+                raise
+            except Exception as e:
+                self.logger.exception(f"Error in idle checker: {e}")
+                raise
 
     
     ## Cleanup and Shutdown
@@ -399,15 +435,27 @@ class EmailDaemon:
 
         self.logger.info("Shutting down daemon...")
 
-        self.connections.close_all()
-        self.db = None
-        self.cache.invalidate()
+        try:
+            self.connections.close_all()
+            self.db = None
+            self.cache.invalidate()
 
-        _get_pid_file().unlink(missing_ok=True)
-        _get_socket_path().unlink(missing_ok=True)
+            try:
+                _get_pid_file().unlink(missing_ok=True)
+                _get_socket_path().unlink(missing_ok=True)
+            except FileNotFoundError as e:
+                raise FileSystemError("Failed to remove daemon files") from e
+            except Exception as e:
+                raise FileSystemError("Failed to clean up daemon files") from e
 
-        self.logger.info("Daemon shutdown complete.")
-        sys.exit(0)
+            self.logger.info("Daemon shutdown complete.")
+            sys.exit(0)
+
+        except KernelError:
+            raise
+        except Exception as e:
+            self.logger.exception(f"Error during shutdown: {e}")
+            raise
 
 
 ## Daemon Lifecycle
@@ -425,35 +473,45 @@ def _get_socket_path() -> Path:
 async def run_daemon():
     """Main daemon event loop."""
 
-    daemon = EmailDaemon()
+    try:
+        daemon = EmailDaemon()
 
-    def signal_handler(signum, frame):
-        daemon.shutdown()
+        def signal_handler(signum, frame):
+            daemon.shutdown()
 
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
 
-    socket_path = _get_socket_path()
-    socket_path.parent.mkdir(parents=True, exist_ok=True)
+        socket_path = _get_socket_path()
+        socket_path.parent.mkdir(parents=True, exist_ok=True)
 
-    socket_path.unlink(missing_ok=True)
+        socket_path.unlink(missing_ok=True)
 
-    server = await asyncio.start_unix_server(
-        daemon.handle_client,
-        path=str(socket_path)
-    )
+        server = await asyncio.start_unix_server(
+            daemon.handle_client,
+            path=str(socket_path)
+        )
 
-    os.chmod(socket_path, 0o600)
+        os.chmod(socket_path, 0o600)
 
-    _get_pid_file().write_text(str(os.getpid()))
+        _get_pid_file().write_text(str(os.getpid()))
 
-    asyncio.create_task(daemon.connections.keepalive_loop())
-    asyncio.create_task(daemon.idle_checker())
+        asyncio.create_task(daemon.connections.keepalive_loop())
+        asyncio.create_task(daemon.idle_checker())
 
-    daemon.logger.info(f"Daemon started and listening for commands: {os.getpid()}")
+        daemon.logger.info(f"Daemon started and listening for commands: {os.getpid()}")
 
-    async with server:
-        await server.serve_forever()
+        async with server:
+            await server.serve_forever()
+
+    except KernelError as e:
+        logger.error(f"Daemon KernelError: {e.message}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        logger.info("Daemon interrupted by user, shutting down.")
+    except Exception as e:
+        logger.exception(f"Daemon encountered an error: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

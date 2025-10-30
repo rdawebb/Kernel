@@ -8,10 +8,19 @@ from functools import wraps
 from pathlib import Path
 from typing import Optional
 from rich.logging import RichHandler
+from .error_handling import (
+    KernelError,
+    FileSystemError,
+)
 
 LOG_DIR = Path.home() / ".kernel" / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as e:
+    raise FileSystemError(f"Failed to create log directory: {LOG_DIR}") from e
 
+
+## Custom JSON Formatter
 
 class JSONFormatter(logging.Formatter):
     """Custom JSON formatter for log records."""
@@ -33,7 +42,8 @@ class JSONFormatter(logging.Formatter):
             log_entry["context"] = record.context
 
         return json.dumps(log_entry)
-    
+
+
 class ContextAdapter(logging.LoggerAdapter):
     """Logger adapter to add contextual information."""
 
@@ -43,6 +53,7 @@ class ContextAdapter(logging.LoggerAdapter):
 
         kwargs["extra"].update(self.extra)
         return msg, kwargs
+
 
 class LogManager:
     """Manages logging configuration and provides logger instances."""
@@ -56,66 +67,90 @@ class LogManager:
     def _setup_handlers(self) -> None:
         """Setup console and file handlers."""
 
-        self.root_logger.handlers.clear()
+        try:
+            self.root_logger.handlers.clear()
 
-        console_handler = RichHandler(
-            show_time=True,
-            show_path=False,
-            markup=True,
-            rich_tracebacks=True,
-        )
+            console_handler = RichHandler(
+                show_time=True,
+                show_path=False,
+                markup=True,
+                rich_tracebacks=True,
+            )
 
-        console_handler.setLevel(logging.WARNING)
-        console_formatter = logging.Formatter(
-            "%(message)s",
-            datefmt="[%X]"
-        )
+            console_handler.setLevel(logging.WARNING)
+            console_formatter = logging.Formatter(
+                "%(message)s",
+                datefmt="[%X]"
+            )
 
-        console_handler.setFormatter(console_formatter)
+            console_handler.setFormatter(console_formatter)
 
-        app_handler = RotatingFileHandler(
-            LOG_DIR / "app.log",
-            maxBytes=5_242_880,
-            backupCount=5,
-            encoding="utf-8"
-        )
+            try:
+                app_handler = RotatingFileHandler(
+                    LOG_DIR / "app.log",
+                    maxBytes=5_242_880,
+                    backupCount=5,
+                    encoding="utf-8"
+                )
+            except IOError as e:
+                raise FileSystemError(f"Failed to create app.log handler: {str(e)}") from e
 
-        app_handler.setLevel(logging.DEBUG)
-        app_handler.setFormatter(JSONFormatter())
+            app_handler.setLevel(logging.DEBUG)
+            app_handler.setFormatter(JSONFormatter())
 
-        event_handler = RotatingFileHandler(
-            LOG_DIR / "events.log",
-            maxBytes=2_048_000,
-            backupCount=3,
-            encoding="utf-8"
-        )
+            try:
+                event_handler = RotatingFileHandler(
+                    LOG_DIR / "events.log",
+                    maxBytes=2_048_000,
+                    backupCount=3,
+                    encoding="utf-8"
+                )
+            except IOError as e:
+                raise FileSystemError(f"Failed to create events.log handler: {str(e)}") from e
 
-        event_handler.setLevel(logging.INFO)
-        event_handler.setFormatter(JSONFormatter())
-        event_handler.addFilter(lambda record: hasattr(record, "event_type"))
+            event_handler.setLevel(logging.INFO)
+            event_handler.setFormatter(JSONFormatter())
+            event_handler.addFilter(lambda record: hasattr(record, "event_type"))
 
-        self.root_logger.addHandler(console_handler)
-        self.root_logger.addHandler(app_handler)
-        self.root_logger.addHandler(event_handler)
+            self.root_logger.addHandler(console_handler)
+            self.root_logger.addHandler(app_handler)
+            self.root_logger.addHandler(event_handler)
+        
+        except KernelError:
+            raise
+        except Exception as e:
+            raise FileSystemError(f"Failed to setup logging handlers: {str(e)}") from e
+
 
     def get_logger(self, name: Optional[str] = None, **context) -> logging.Logger:
         """Get a logger with optional context."""
-        
-        logger = self.root_logger if name else self.root_logger
+
+        if _log_manager is None:
+            init_logging()
+
+        logger = logging.getLogger(f"kernel.{name}" if name else "kernel")
 
         if context:
             return ContextAdapter(logger, context)
         
         return logger
 
+
     def set_level(self, level: str):
         """Set logging level at runtime"""
 
-        self.log_level = getattr(logging, level.upper())
+        try:
+            self.log_level = getattr(logging, level.upper())
+            
+            for handler in self.root_logger.handlers:
+                if isinstance(handler, RichHandler):
+                    handler.setLevel(self.log_level)
         
-        for handler in self.root_logger.handlers:
-            if isinstance(handler, RichHandler):
-                handler.setLevel(self.log_level)
+        except AttributeError as e:
+            raise ValueError(f"Invalid logging level: {level}") from e
+        except Exception as e:
+            raise FileSystemError(f"Failed to set logging level: {str(e)}") from e
+
 
     def log_event(self, event_type: str, message: str, **extra):
         """Log an event with specific type and extra context."""
@@ -123,6 +158,9 @@ class LogManager:
         logger = self.root_logger
         extra["event_type"] = event_type
         logger.info(message, extra=extra)
+
+
+## Decorators for Logging
 
 def log_call(func):
     """Decorator to log function calls with arguments and return values."""
@@ -171,7 +209,11 @@ def async_log_call(func):
 
     return wrapper
 
+
+## Module-level LogManager Instance and Helper Functions
+
 _log_manager: Optional[LogManager] = None
+
 
 def init_logging(log_level: str = "INFO") -> LogManager:
     """Initialize logging system and return LogManager instance."""
@@ -181,6 +223,7 @@ def init_logging(log_level: str = "INFO") -> LogManager:
 
     return _log_manager
 
+
 def get_logger(name: Optional[str] = None, **context) -> logging.Logger:
     """Get a logger instance with optional context."""
 
@@ -188,6 +231,7 @@ def get_logger(name: Optional[str] = None, **context) -> logging.Logger:
         init_logging()
 
     return _log_manager.get_logger(name, **context)
+
 
 def log_event(event_type: str, message: str, **extra):
     """Log an event with specific type and extra context (module-level wrapper)."""

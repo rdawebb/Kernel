@@ -4,6 +4,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from .config_manager import ConfigManager
 from .log_manager import get_logger, log_call
 from .jobs import automatic_backup, check_for_new_emails
+from .error_handling import (
+    KernelError,
+    ValidationError,
+    ConfigurationError,
+)
 
 # Constants
 VALID_INTERVAL_UNITS = ["seconds", "minutes", "hours", "days", "weeks"]
@@ -18,18 +23,15 @@ def _validate_interval(job_name: str, interval_tuple: tuple) -> bool:
     """Validate interval tuple format (value, unit)."""
 
     if not isinstance(interval_tuple, tuple) or len(interval_tuple) != 2:
-        logger.error(f"Invalid interval format for {job_name}: {interval_tuple}")
-        return False
+        raise ValidationError(f"Invalid interval format for {job_name}: {interval_tuple} (must be tuple of (value, unit))")
     
     value, unit = interval_tuple
     
     if not isinstance(value, int) or value <= 0:
-        logger.error(f"Invalid interval value for {job_name}: {value} (must be positive integer)")
-        return False
+        raise ValidationError(f"Invalid interval value for {job_name}: {value} (must be positive integer)")
     
     if unit not in VALID_INTERVAL_UNITS:
-        logger.error(f"Invalid interval unit for {job_name}: {unit} (must be one of {VALID_INTERVAL_UNITS})")
-        return False
+        raise ValidationError(f"Invalid interval unit for {job_name}: {unit} (must be one of {VALID_INTERVAL_UNITS})")
     
     return True
 
@@ -39,8 +41,10 @@ def _add_job_if_enabled(job_func: callable, job_name: str, job_id: str, enabled:
     if not enabled:
         return False
     
-    if not _validate_interval(job_name, interval):
-        logger.warning(f"Skipping job {job_name} due to invalid interval configuration")
+    try:
+        _validate_interval(job_name, interval)
+    except ValidationError as e:
+        logger.warning(f"Skipping job {job_name}: {e.message}")
         return False
     
     try:
@@ -54,9 +58,10 @@ def _add_job_if_enabled(job_func: callable, job_name: str, job_id: str, enabled:
         )
         logger.info(f"Added job: {job_name} (interval: {value} {unit})")
         return True
+    except KernelError:
+        raise
     except Exception as e:
-        logger.error(f"Failed to add job {job_name}: {e}")
-        return False
+        raise ConfigurationError(f"Failed to add job {job_name}: {str(e)}") from e
 
 def _build_jobs_registry() -> dict:
     """Build registry of scheduled jobs from config."""
@@ -83,20 +88,26 @@ def start_scheduler() -> None:
     """Start scheduler with all configured jobs."""
     logger.info("Initializing scheduler with configured jobs...")
     
-    jobs_config = _build_jobs_registry()
-    enabled_jobs = []
-    
     try:
+        jobs_config = _build_jobs_registry()
+        enabled_jobs = []
+        
         # Add each job if it's enabled and validated
         for job_name, config_dict in jobs_config.items():
-            if _add_job_if_enabled(
-                config_dict["func"],
-                job_name,
-                config_dict["id"],
-                config_dict["enabled"],
-                config_dict["interval"]
-            ):
-                enabled_jobs.append((job_name, config_dict["interval"]))
+            try:
+                if _add_job_if_enabled(
+                    config_dict["func"],
+                    job_name,
+                    config_dict["id"],
+                    config_dict["enabled"],
+                    config_dict["interval"]
+                ):
+                    enabled_jobs.append((job_name, config_dict["interval"]))
+            except ValidationError as e:
+                logger.warning(f"Skipping job {job_name}: {e.message}")
+            except KernelError as e:
+                logger.error(f"Failed to configure job {job_name}: {e.message}")
+                raise
         
         # Start the scheduler
         if not scheduler.running:
@@ -108,9 +119,11 @@ def start_scheduler() -> None:
         else:
             logger.info("Scheduler is already running")
     
+    except KernelError:
+        raise
     except Exception as e:
-        logger.error(f"Error starting scheduler: {e}")
-        print("Sorry, something went wrong while starting the scheduler. Please check your settings or try again.")
+        logger.exception(f"Error starting scheduler: {e}")
+        raise ConfigurationError(f"Failed to start scheduler: {str(e)}") from e
 
 @log_call
 def stop_scheduler() -> None:
@@ -122,6 +135,8 @@ def stop_scheduler() -> None:
             print("Scheduler stopped")
         else:
             logger.info("Scheduler is not running")
+    except KernelError:
+        raise
     except Exception as e:
-        logger.error(f"Error stopping scheduler: {e}")
-        print("Sorry, something went wrong while stopping the scheduler. Please check your settings or try again.")
+        logger.exception(f"Error stopping scheduler: {e}")
+        raise ConfigurationError(f"Failed to stop scheduler: {str(e)}") from e

@@ -5,6 +5,16 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+from src.utils.error_handling import (
+    DatabaseError,
+    DatabaseConnectionError,
+    QueryExecutionError,
+    EmailNotFoundError,
+    InvalidTableError,
+)
+from src.utils.log_manager import get_logger
+
+logger = get_logger(__name__)
 
 
 ## Schema Definitions
@@ -148,20 +158,28 @@ class Database:
                 fetch_one: bool = False, commit: bool = False) -> Any:
         """Execute a database query and return results"""
 
-        with self.connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
+        try:
+            with self.connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
 
-            if commit:
-                conn.commit()
-                return cursor.lastrowid
-            
-            if fetch_one:
-                result = cursor.fetchone()
-                return dict(result) if result else None
-            
-            results = cursor.fetchall()
-            return [dict(row) for row in results]
+                if commit:
+                    conn.commit()
+                    return cursor.lastrowid
+                
+                if fetch_one:
+                    result = cursor.fetchone()
+                    return dict(result) if result else None
+                
+                results = cursor.fetchall()
+                return [dict(row) for row in results]
+        
+        except sqlite3.DatabaseError as e:
+            raise DatabaseConnectionError("Database connection error") from e
+        except sqlite3.OperationalError as e:
+            raise QueryExecutionError("Query execution failed") from e
+        except Exception as e:
+            raise DatabaseError("Unexpected database error") from e
         
     ## Initialization
 
@@ -183,7 +201,7 @@ class Database:
         """Validate if the table name is valid."""
 
         if table not in SCHEMAS:
-            raise ValueError(f"Invalid table name: {table}")
+            raise InvalidTableError(f"Invalid table name: {table}")
 
 
     def _get_schema(self, table: str) -> TableSchema:
@@ -271,7 +289,7 @@ class Database:
 
         email = self.get_email(source_table, uid, include_body=True)
         if not email:
-            raise ValueError(f"Email with UID {uid} not found in {source_table}")
+            raise EmailNotFoundError(f"Email with UID {uid} not found in {source_table}")
         
         if dest_table == "trash":
             from datetime import datetime
@@ -288,7 +306,7 @@ class Database:
         
         allowed_fields = schema.all_columns
         if field not in allowed_fields:
-            raise ValueError(f"Invalid field for drafts table: {field}")
+            raise InvalidTableError(f"Invalid field for drafts table: {field}")
         
         query = f"UPDATE drafts SET {field} = ? WHERE uid = ?"
 
@@ -429,21 +447,27 @@ class Database:
 
         from datetime import datetime
 
-        if backup_path is None:
-            backup_dir = self.get_backup_path()
-            backup_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = backup_dir / f"kernel_backup_{timestamp}.db"
-        else:
-            backup_path = Path(backup_path)
-            backup_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if backup_path is None:
+                backup_dir = self.get_backup_path()
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_path = backup_dir / f"kernel_backup_{timestamp}.db"
+            else:
+                backup_path = Path(backup_path)
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
 
-        source_path = self.get_db_path()
-        with sqlite3.connect(source_path) as source_conn:
-            with sqlite3.connect(backup_path) as dest_conn:
-                source_conn.backup(dest_conn)
+            source_path = self.get_db_path()
+            with sqlite3.connect(source_path) as source_conn:
+                with sqlite3.connect(backup_path) as dest_conn:
+                    source_conn.backup(dest_conn)
 
-        return backup_path
+            return backup_path
+        
+        except sqlite3.DatabaseError as e:
+            raise DatabaseConnectionError("Failed to backup database") from e
+        except Exception as e:
+            raise DatabaseError("Failed to backup database") from e
     
     
     def export_to_csv(self, export_dir: Path, tables: List[str] = None) -> List[Path]:
@@ -451,42 +475,51 @@ class Database:
 
         import csv
 
-        export_dir = Path(export_dir)
-        export_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            export_dir = Path(export_dir)
+            export_dir.mkdir(parents=True, exist_ok=True)
 
-        if tables is None:
-            tables = list(SCHEMAS.keys())
+            if tables is None:
+                tables = list(SCHEMAS.keys())
 
-        exported_files = []
+            exported_files = []
 
-        for table in tables:
-            if table not in SCHEMAS:
-                continue
-            
-            emails = self.get_emails(table, limit=1000000, include_body=True)
+            for table in tables:
+                if table not in SCHEMAS:
+                    continue
+                
+                emails = self.get_emails(table, limit=1000000, include_body=True)
 
-            if not emails:
-                continue
-            
-            csv_path = export_dir / f"{table}.csv"
+                if not emails:
+                    continue
+                
+                csv_path = export_dir / f"{table}.csv"
 
-            with open(csv_path, mode="w", newline="", encoding="utf-8") as csvfile:
-                if emails:
-                    writer = csv.DictWriter(csvfile, fieldnames=emails[0].keys())
-                    writer.writeheader()
-                    writer.writerows(emails)
-            
-            exported_files.append(csv_path)
+                with open(csv_path, mode="w", newline="", encoding="utf-8") as csvfile:
+                    if emails:
+                        writer = csv.DictWriter(csvfile, fieldnames=emails[0].keys())
+                        writer.writeheader()
+                        writer.writerows(emails)
+                
+                exported_files.append(csv_path)
 
-        return exported_files
+            return exported_files
+        
+        except OSError as e:
+            raise DatabaseError("Failed to export database to CSV") from e
+        except Exception as e:
+            raise DatabaseError("Failed to export database to CSV") from e
     
 
     def delete_database(self) -> None:
         """Delete the entire database file."""
 
-        db_path = self.get_db_path()
-        if db_path.exists():
-            db_path.unlink()
+        try:
+            db_path = self.get_db_path()
+            if db_path.exists():
+                db_path.unlink()
+        except Exception as e:
+            raise DatabaseError("Failed to delete database") from e
 
     
     ## Helper Method

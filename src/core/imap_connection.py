@@ -6,6 +6,12 @@ from typing import Optional
 from security.key_store import KeyStore
 from ..utils.config_manager import ConfigManager
 from ..utils.log_manager import get_logger
+from ..utils.error_handling import (
+    IMAPError,
+    NetworkTimeoutError,
+    MissingCredentialsError,
+    InvalidCredentialsError,
+)
 
 logger = get_logger(__name__)
 
@@ -43,8 +49,7 @@ def get_account_info(email: str = "") -> Optional[dict]:
             "Enter IMAP server address (e.g., imap.gmail.com): "
         )
         if not imap_server:
-            print("IMAP server is required. Please configure it and try again.")
-            return None
+            raise MissingCredentialsError("IMAP server is required")
         
         if not email:
             email = _prompt_for_config(
@@ -52,8 +57,7 @@ def get_account_info(email: str = "") -> Optional[dict]:
                 "Enter your email address: "
             )
             if not email:
-                print("Email address is required. Please configure it and try again.")
-                return None
+                raise MissingCredentialsError("Email address is required")
         
         username = _prompt_for_config(
             'account.username',
@@ -61,18 +65,14 @@ def get_account_info(email: str = "") -> Optional[dict]:
             default_value=email
         )
         if not username:
-            print("Username is required. Please configure it and try again.")
-            return None
+            raise MissingCredentialsError("Username is required")
         
         if not key_store:
-            logger.warning("KeyStore unavailable, cannot securely retrieve password")
-            print("Warning: Password storage not available. Please reconfigure your system.")
-            return None
+            raise MissingCredentialsError("KeyStore unavailable - cannot securely retrieve password")
         
         password = key_store.get_password("kernel_imap", username, prompt_if_missing=True)
         if not password:
-            print("Password is required. Please configure it and try again.")
-            return None
+            raise MissingCredentialsError("Password is required")
         
         imap_port = config_manager.get_config('account.imap_port', default=993)
         
@@ -83,10 +83,10 @@ def get_account_info(email: str = "") -> Optional[dict]:
             "email": email,
             "password": password,
         }
+    except MissingCredentialsError:
+        raise
     except Exception as e:
-        logger.error(f"Error retrieving account information: {e}")
-        print("Error retrieving account information. Please check your settings and try again.")
-        return None
+        raise IMAPError("Error retrieving account information") from e
 
 
 def connect_to_imap(account_config: dict) -> Optional[imaplib.IMAP4_SSL]:
@@ -103,7 +103,6 @@ def connect_to_imap(account_config: dict) -> Optional[imaplib.IMAP4_SSL]:
         
         except imaplib.IMAP4.error as e:
             logger.error(f"Error logging in to IMAP server: {e}")
-            print("Login failed - please enter your password again.")
             password = getpass.getpass(f"Password for {account_config['username']}: ")
 
             if password:
@@ -115,30 +114,34 @@ def connect_to_imap(account_config: dict) -> Optional[imaplib.IMAP4_SSL]:
                     return mail
                 
                 except Exception as e:
-                    logger.error(f"Error logging in to IMAP server after re-prompt: {e}")
-                    print("Unable to login to your email server. Please check your settings and try again.")
-                    return None
+                    raise InvalidCredentialsError("Invalid credentials for IMAP server") from e
+            else:
+                raise MissingCredentialsError("Password required for IMAP authentication")
             
+    except (InvalidCredentialsError, MissingCredentialsError):
+        raise
+    except imaplib.IMAP4.abort:
+        raise NetworkTimeoutError("IMAP connection timeout") 
     except Exception as e:
-        logger.error(f"Error connecting to IMAP server: {e}")
-        print("Unable to connect to your email server. Please check your settings and try again.")
-        return None
+        raise IMAPError("Failed to connect to IMAP server") from e
 
 
 @contextmanager
 def imap_connection(account_config: dict):
     """Context manager for IMAP connection with automatic cleanup."""
-    mail = connect_to_imap(account_config)
-    if not mail:
-        logger.error("Failed to establish IMAP connection")
-        print("Unable to connect to your email server. Please check your settings and try again.")
-        yield None
-        return
     try:
-        yield mail
-    finally:
+        mail = connect_to_imap(account_config)
+        if not mail:
+            raise IMAPError("Failed to establish IMAP connection")
         try:
-            mail.close()
-            mail.logout()
-        except Exception:
-            pass
+            yield mail
+        finally:
+            try:
+                mail.close()
+                mail.logout()
+            except Exception:
+                pass
+    except (IMAPError, InvalidCredentialsError, MissingCredentialsError, NetworkTimeoutError):
+        raise
+    except Exception as e:
+        raise IMAPError("IMAP connection error") from e

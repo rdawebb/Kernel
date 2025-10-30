@@ -4,8 +4,15 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 from .log_manager import get_logger, log_call
+from .error_handling import (
+    KernelError,
+    ConfigurationError,
+    MissingConfigError,
+    InvalidConfigError,
+    FileSystemError,
+)
 
 logger = get_logger(__name__)
 
@@ -92,6 +99,8 @@ class ConfigManager:
 
     def _load_or_create_config(self) -> AppConfig:
         """Load configuration from file or create default if not present."""
+
+        from pydantic import ValidationError
         
         if not self.path.exists():
             logger.info("No config file found, creating default configuration.")
@@ -106,90 +115,136 @@ class ConfigManager:
             logger.debug("Configuration successfully loaded and validated.")
             return config
         
-        except (json.JSONDecodeError, ValidationError) as e:
-            logger.error(f"Failed to load config file: {e}")
-            logger.warning("Creating backup and resetting to default configuration.")
-
-            backup_path = self.path.with_suffix(".backup.json")
-            self.path.rename(backup_path)
-            logger.info(f"Backup created at {backup_path}")
-
-            config = AppConfig()
-            self._save_config(config)
-            return config
+        except FileNotFoundError as e:
+            raise FileSystemError(f"Configuration file not found: {self.path}") from e
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse config file: {e}")
+            raise InvalidConfigError(f"Configuration file is not valid JSON: {str(e)}") from e
+        except ValidationError as e:
+            logger.error(f"Failed to validate config file: {e}")
+            raise InvalidConfigError(f"Configuration data does not match expected schema: {str(e)}") from e
+        except KernelError:
+            raise
+        except Exception as e:
+            logger.exception(f"Unexpected error loading config: {e}")
+            raise ConfigurationError(f"Failed to load configuration: {str(e)}") from e
         
     def _save_config(self, config: Optional[AppConfig] = None):
         """Save the current configuration to file."""
 
         config = config or self.config
             
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(
-                config.model_dump(),
-                f,
-                indent=2,
-                ensure_ascii=False
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump(
+                    config.model_dump(),
+                    f,
+                    indent=2,
+                    ensure_ascii=False
                 )
-        logger.debug("Configuration successfully saved.")
+            logger.debug("Configuration successfully saved.")
+        except FileNotFoundError as e:
+            raise FileSystemError(f"Configuration directory does not exist: {self.path.parent}") from e
+        except IOError as e:
+            raise FileSystemError(f"Failed to write configuration file: {str(e)}") from e
+        except Exception as e:
+            raise ConfigurationError(f"Failed to save configuration: {str(e)}") from e
 
     @log_call
     def get_config(self, key_path: str, default: Any = None) -> Any:
         """Get a configuration value using dot-separated key path."""
 
-        keys = key_path.split(".")
-        value = self.config.model_dump()
+        try:
+            keys = key_path.split(".")
+            value = self.config.model_dump()
 
-        for key in keys:
-            if isinstance(value, dict) and key in value:
-                value = value[key]
-            else:
-                logger.debug(f"Config key '{key_path}' not found, returning default: {default}")
-                return default
+            for key in keys:
+                if isinstance(value, dict) and key in value:
+                    value = value[key]
+                else:
+                    if default is not None:
+                        logger.debug(f"Config key '{key_path}' not found, returning default: {default}")
+                        return default
+                    else:
+                        raise MissingConfigError(f"Required configuration key '{key_path}' not found")
 
-        logger.info(f"Config key '{key_path}' retrieved with value: {value}")
-        return value
+            logger.info(f"Config key '{key_path}' retrieved with value: {value}")
+            return value
+        
+        except KernelError:
+            raise
+        except Exception as e:
+            raise ConfigurationError(f"Failed to retrieve configuration key '{key_path}': {str(e)}") from e
     
     @log_call
     def get_account_config(self) -> dict:
         """Retrieve account configuration as a dictionary."""
-        return self.config.account.model_dump()
+        try:
+            return self.config.account.model_dump()
+        except Exception as e:
+            raise ConfigurationError(f"Failed to retrieve account configuration: {str(e)}") from e
 
     @log_call
     def set_config(self, key_path: str, value: Any, persist: bool = True):
         """Set a configuration value using dot-separated key path."""
         
-        keys = key_path.split(".")
-        obj = self.config
+        try:
+            keys = key_path.split(".")
+            obj = self.config
 
-        for key in keys[:-1]:
-            obj = getattr(obj, key)
+            for key in keys[:-1]:
+                if not hasattr(obj, key):
+                    raise MissingConfigError(f"Configuration path '{key_path}' is invalid: '{key}' not found")
+                obj = getattr(obj, key)
 
-        setattr(obj, keys[-1], value)
+            if not hasattr(obj, keys[-1]):
+                raise MissingConfigError(f"Configuration key '{keys[-1]}' does not exist in path '{key_path}'")
+            
+            setattr(obj, keys[-1], value)
 
-        if persist:
-            self._save_config()
+            if persist:
+                self._save_config()
+            
+            logger.info(f"Config key '{key_path}' updated and saved.")
         
-        logger.info(f"Config key '{key_path}' updated and saved.")
+        except KernelError:
+            raise
+        except Exception as e:
+            raise ConfigurationError(f"Failed to set configuration key '{key_path}': {str(e)}") from e
 
     @log_call
     def reset_to_defaults(self):
         """Reset configuration to default values."""
         
-        logger.warning("Resetting configuration to default values.")
-        self.config = AppConfig()
-        self._save_config()
-        logger.info("Configuration reset to default values.")
+        try:
+            logger.warning("Resetting configuration to default values.")
+            self.config = AppConfig()
+            self._save_config()
+            logger.info("Configuration reset to default values.")
+        except KernelError:
+            raise
+        except Exception as e:
+            raise ConfigurationError(f"Failed to reset configuration to defaults: {str(e)}") from e
 
     @log_call
     def backup_config(self) -> Path:
         """Create a backup of the current configuration file."""
         
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = self.path.with_name(f"config_backup_{timestamp}.json")
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = self.path.with_name(f"config_backup_{timestamp}.json")
 
-        with open(backup_path, "w", encoding="utf-8") as f:
-            json.dump(self.config.model_dump(), f, indent=2)
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(backup_path, "w", encoding="utf-8") as f:
+                json.dump(self.config.model_dump(), f, indent=2)
 
-        logger.info(f"Configuration backup created at {backup_path}")
-
-        return backup_path
+            logger.info(f"Configuration backup created at {backup_path}")
+            return backup_path
+        
+        except FileNotFoundError as e:
+            raise FileSystemError(f"Cannot create backup: directory not found {backup_path.parent}") from e
+        except IOError as e:
+            raise FileSystemError(f"Failed to write backup file: {str(e)}") from e
+        except Exception as e:
+            raise ConfigurationError(f"Failed to backup configuration: {str(e)}") from e

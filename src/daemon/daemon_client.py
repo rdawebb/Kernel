@@ -17,6 +17,12 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 from src.utils.log_manager import get_logger
+from src.utils.error_handling import (
+    KernelError,
+    NetworkError,
+    NetworkTimeoutError,
+    FileSystemError,
+)
 
 
 logger = get_logger(__name__)
@@ -54,8 +60,17 @@ class DaemonClient:
             os.kill(pid, 0)
             return True
         
-        except (ValueError, OSError, ProcessLookupError):
-            self.PID_FILE.unlink(missing_ok=True)
+        except (ValueError, FileNotFoundError):
+            try:
+                self.PID_FILE.unlink(missing_ok=True)
+            except FileNotFoundError:
+                pass
+            return False
+        except (OSError, ProcessLookupError):
+            try:
+                self.PID_FILE.unlink(missing_ok=True)
+            except FileNotFoundError:
+                pass
             return False
     
 
@@ -71,12 +86,17 @@ class DaemonClient:
         try:
             python_exe = self._find_python_executable()
             
-            process = subprocess.Popen(
-                [python_exe, str(self.DAEMON_SCRIPT)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            try:
+                process = subprocess.Popen(
+                    [python_exe, str(self.DAEMON_SCRIPT)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except FileNotFoundError as e:
+                raise FileSystemError(f"Python executable not found: {python_exe}") from e
+            except Exception as e:
+                raise NetworkError(f"Failed to spawn daemon process: {str(e)}") from e
             
             start_time = time.time()
             while time.time() - start_time < self.DAEMON_START_TIMEOUT:
@@ -86,11 +106,12 @@ class DaemonClient:
                 await asyncio.sleep(0.1)
             
             logger.error("Daemon failed to start (timeout)")
-            return False
+            raise NetworkTimeoutError("Daemon startup timeout")
         
+        except KernelError:
+            raise
         except Exception as e:
-            logger.error(f"Failed to start daemon: {e}")
-            return False
+            raise NetworkError(f"Failed to start daemon: {str(e)}") from e
     
 
     async def stop_daemon(self):
@@ -102,11 +123,18 @@ class DaemonClient:
         
         try:
             pid = int(self.PID_FILE.read_text().strip())
-            os.kill(pid, 15)
-            logger.info("Daemon stopped") 
+            try:
+                os.kill(pid, 15)
+                logger.info("Daemon stopped")
+            except ProcessLookupError as e:
+                raise NetworkError(f"Failed to stop daemon process {pid}") from e
+            except Exception as e:
+                raise NetworkError(f"Error stopping daemon: {str(e)}") from e
 
+        except KernelError:
+            raise
         except Exception as e:
-            logger.warning(f"Error stopping daemon: {e}")
+            raise FileSystemError(f"Failed to read PID file: {str(e)}") from e
 
     
     def _find_python_executable(self) -> str:
@@ -137,18 +165,23 @@ class DaemonClient:
         """Execute command via daemon, with fallback to direct execution."""
         
         if self.disable_daemon:
-            return await self.execute_fallback(command, args)
+            return await self._execute_fallback(command, args)
         
         try:
-            result = await self._execute_via_daemon(command, args)
-            if result is not None:
-                result['via_daemon'] = True
-                return result
-            
-        except Exception as e:
-            logger.warning(f"Daemon execution failed: {e}")
+            try:
+                result = await self._execute_via_daemon(command, args)
+                if result is not None:
+                    result['via_daemon'] = True
+                    return result
+            except KernelError as e:
+                logger.warning(f"Daemon execution failed: {e.message}")
+            except Exception as e:
+                logger.warning(f"Daemon execution failed: {e}")
         
-        return await self.execute_fallback(command, args)
+        except Exception:
+            pass
+        
+        return await self._execute_fallback(command, args)
     
 
     async def _execute_via_daemon(self, command: str, args: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -159,38 +192,50 @@ class DaemonClient:
                 return None
         
         try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_unix_connection(path=str(self.SOCKET_PATH)),
-                timeout=self.CONNECT_TIMEOUT
-            )
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_unix_connection(path=str(self.SOCKET_PATH)),
+                    timeout=self.CONNECT_TIMEOUT
+                )
+            except asyncio.TimeoutError as e:
+                raise NetworkTimeoutError("Failed to connect to daemon (timeout)") from e
+            except OSError as e:
+                raise NetworkError(f"Failed to connect to daemon socket: {str(e)}") from e
             
-            request = json.dumps({
-                'command': command,
-                'args': args
-            })
+            try:
+                request = json.dumps({
+                    'command': command,
+                    'args': args
+                })
 
-            writer.write(request.encode() + b'\n')
-            await writer.drain()
+                writer.write(request.encode() + b'\n')
+                await writer.drain()
+                
+                try:
+                    line = await asyncio.wait_for(
+                        reader.readline(),
+                        timeout=self.COMMAND_TIMEOUT
+                    )
+                except asyncio.TimeoutError as e:
+                    raise NetworkTimeoutError("Daemon command timeout") from e
+                
+                if not line:
+                    logger.warning("Daemon sent empty response")
+                    return None
+                
+                response = json.loads(line.decode().strip())
+                
+                return response
             
-            line = await asyncio.wait_for(
-                reader.readline(),
-                timeout=self.COMMAND_TIMEOUT
-            )
-            
-            if not line:
-                logger.warning("Daemon sent empty response")
-                return None
-            
-            response = json.loads(line.decode().strip())
-            
-            writer.close()
-            await writer.wait_closed()
-            
-            return response
+            finally:
+                try:
+                    writer.close()
+                    await writer.wait_closed()
+                except Exception:
+                    pass
         
-        except asyncio.TimeoutError:
-            logger.error("Daemon command timeout")
-            return None
+        except KernelError:
+            raise
         except Exception as e:
             logger.warning(f"Daemon socket error: {e}")
             return None
@@ -236,6 +281,16 @@ class DaemonClient:
                 'via_daemon': False
             }
         
+        except KernelError as e:
+            logger.exception(f"Direct execution error: {e.message}")
+            return {
+                'success': False,
+                'data': None,
+                'error': e.message,
+                'cached': False,
+                'metadata': {},
+                'via_daemon': False
+            }
         except Exception as e:
             logger.exception(f"Direct execution error: {e}")
             return {
@@ -272,11 +327,24 @@ async def ensure_daemon_started():
     """Ensure daemon is running."""
     client = get_daemon_client()
     if not client.is_daemon_running():
-        await client.start_daemon()
-        logger.warning("Failed to start daemon")
+        try:
+            await client.start_daemon()
+        except KernelError as e:
+            logger.error(f"Failed to start daemon: {e.message}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to start daemon: {e}")
+            raise
 
 
 async def stop_daemon():
     """Stop daemon."""
     client = get_daemon_client()
-    await client.stop_daemon()
+    try:
+        await client.stop_daemon()
+    except KernelError as e:
+        logger.error(f"Failed to stop daemon: {e.message}")
+        raise
+    except Exception as e:
+        logger.error(f"Failed to stop daemon: {e}")
+        raise

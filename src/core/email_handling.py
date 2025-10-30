@@ -6,6 +6,13 @@ from datetime import datetime
 from email import message_from_bytes
 from typing import Any, Dict, Optional, Tuple
 from src.utils.log_manager import get_logger
+from src.utils.error_handling import (
+    KernelError,
+    InvalidEmailAddressError,
+    ValidationError,
+    SMTPError,
+    DatabaseError,
+)
 
 logger = get_logger(__name__)
 
@@ -23,9 +30,11 @@ class EmailParser:
             message = message_from_bytes(raw_email)
             return EmailParser.parse_from_message(message, uid)
         
+        except KernelError:
+            raise
+        
         except Exception as e:
-            logger.error(f"Failed to parse email bytes: {e}")
-            return EmailParser._empty_email_dict(uid)
+            raise ValidationError("Failed to parse email bytes") from e
         
     
     @staticmethod
@@ -47,9 +56,11 @@ class EmailParser:
 
             return email_dict
         
+        except KernelError:
+            raise
+        
         except Exception as e:
-            logger.error(f"Failed to parse email message: {e}")
-            return EmailParser._empty_email_dict(uid)
+            raise ValidationError("Failed to parse email message") from e
         
     
     @staticmethod
@@ -239,7 +250,7 @@ class EmailComposer:
                 from src.core.smtp_client import SMTPClient
 
                 if not self.config:
-                    return False, "No configuration provided for SMTP client."
+                    raise ValidationError("No configuration provided for SMTP client")
                 
                 config = self.config.get_account_config()
 
@@ -257,14 +268,14 @@ class EmailComposer:
                 logger.info(f"Email sent to {to_email} with subject '{subject}'")
                 return True, None
             else:
-                error = "Failed to send email via SMTP client."
-                logger.error(error)
-                return False, error
+                raise SMTPError("Failed to send email via SMTP client")
             
+        except (ValidationError, SMTPError):
+            raise
+        except KernelError:
+            raise
         except Exception as e:
-            error = str(e)
-            logger.error(f"Failed to send email: {error}")
-            return False, error
+            raise SMTPError("Failed to send email") from e
         
 
     def schedule_email(self, email_dict: Dict[str, Any],
@@ -273,7 +284,7 @@ class EmailComposer:
 
         parsed_dt, error = DateTimeParser.parse_datetime(send_at)
         if error:
-            return False, error
+            raise ValidationError(error)
         
         email_dict["send_at"] = send_at
         email_dict["send_status"] = "pending"
@@ -287,10 +298,12 @@ class EmailComposer:
             logger.info(f"Email scheduled to be sent at {send_at}")
             return True, None
         
+        except DatabaseError:
+            raise
+        except KernelError:
+            raise
         except Exception as e:
-            error = str(e)
-            logger.error(f"Failed to schedule email: {error}")
-            return False, error
+            raise DatabaseError("Failed to schedule email") from e
         
     
     def _generate_uid(self) -> str:
@@ -412,15 +425,15 @@ class EmailValidator:
 
         for field in required_fields:
             if field not in email_dict:
-                return False, f"Missing required field: {field}"
+                raise ValidationError(f"Missing required field: {field}")
             if not email_dict[field] and field != "body":
-                return False, f"Field '{field}' cannot be empty."
+                raise ValidationError(f"Field '{field}' cannot be empty")
             
         if not EmailValidator.is_valid_email(email_dict["sender"]):
-            return False, f"Invalid sender email address: {email_dict['sender']}"
+            raise InvalidEmailAddressError(f"Invalid sender email address: {email_dict['sender']}")
         
         if not EmailValidator.is_valid_email(email_dict["recipient"]):
-            return False, f"Invalid recipient email address: {email_dict['recipient']}"
+            raise InvalidEmailAddressError(f"Invalid recipient email address: {email_dict['recipient']}")
 
         return True, None
 
