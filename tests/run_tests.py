@@ -9,8 +9,8 @@ Provides a convenient interface to run tests with various options:
 - Run with coverage: python run_tests.py --cov
 """
 
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 # Add the project root to the Python path

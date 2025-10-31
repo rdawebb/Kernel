@@ -1,8 +1,14 @@
 """Move command - move emails between folders"""
-from typing import Dict, Any
+from typing import Any, Dict
+
 from ...core import storage_api
-from ...utils.log_manager import get_logger, async_log_call
-from .command_utils import print_error, print_success, validate_required_args, get_email_with_validation
+from ...utils.log_manager import async_log_call, get_logger
+from .command_utils import (
+    get_email_with_validation,
+    print_error,
+    print_success,
+    validate_required_args,
+)
 
 logger = get_logger(__name__)
 

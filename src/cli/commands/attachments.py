@@ -1,12 +1,14 @@
 """Attachments commands - list and manage email attachments"""
-from typing import Dict, Any
 from io import StringIO
+from typing import Any, Dict
+
 from rich.console import Console
+
 from ...core import storage_api
+from ...core.attachments import AttachmentManager
 from ...ui import inbox_viewer
-from ...utils.log_manager import get_logger, async_log_call
-from ...utils.attachment_utils import get_attachment_list
-from .command_utils import print_error, print_success, print_status, clean_ansi_output, _get_console
+from ...utils.log_manager import async_log_call, get_logger
+from .command_utils import _get_console, clean_ansi_output, print_error, print_status, print_success
 
 logger = get_logger(__name__)
 
@@ -33,7 +35,7 @@ async def handle_attachments(args, cfg_manager):
 
 @async_log_call
 async def handle_attachments_list(args, cfg_manager):
-    """List attachment filenames for a specific email"""
+    """List attachment filenames for a specific email using AttachmentManager."""
     if args.id is None:
         logger.error("Email ID is required to list attachments.")
         print_error("Email ID is required to list attachments.")
@@ -41,7 +43,9 @@ async def handle_attachments_list(args, cfg_manager):
     
     print_status(f"Loading attachment list for email {args.id}...")
     try:
-        attachment_list = get_attachment_list(cfg_manager, args.id)
+        # Initialize attachment manager and get list from email UID
+        attachment_manager = AttachmentManager(cfg_manager)
+        attachment_list = attachment_manager.get_attachment_list_for_email(str(args.id))
         
         if not attachment_list:
             logger.warning(f"No attachments found for email ID {args.id}.")

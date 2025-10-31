@@ -1,8 +1,9 @@
 """Download command - download email attachments"""
-from typing import Dict, Any
-from ...utils.log_manager import get_logger, async_log_call
+from typing import Any, Dict
+
+from ...utils.log_manager import async_log_call, get_logger
 from ..cli_utils import handle_download_action
-from .command_utils import print_error, print_warning, print_status, get_email_with_validation
+from .command_utils import get_email_with_validation, print_error, print_status, print_warning
 
 logger = get_logger(__name__)
 

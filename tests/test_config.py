@@ -23,7 +23,7 @@ class TestConfigManagerInitialization:
         """Test retrieving configuration"""
         config = ConfigManager()
         # Test getting a specific config value works
-        result = config.get_config('account.email')
+        result = config.config.account.email
         assert isinstance(result, str)
 
 
@@ -33,26 +33,26 @@ class TestConfigurationDefaults:
     def test_default_imap_host(self):
         """Test default IMAP host is set"""
         config = ConfigManager()
-        imap_host = config.get_config('account.imap_server')
+        imap_host = config.config.account.imap_server
         assert isinstance(imap_host, str)
     
     def test_default_smtp_host(self):
         """Test default SMTP host is set"""
         config = ConfigManager()
-        smtp_host = config.get_config('account.smtp_server')
+        smtp_host = config.config.account.smtp_server
         assert isinstance(smtp_host, str)
     
     def test_default_imap_port(self):
         """Test default IMAP port is configured"""
         config = ConfigManager()
-        imap_port = config.get_config('account.imap_port')
+        imap_port = config.config.account.imap_port
         assert isinstance(imap_port, int)
         assert imap_port == 993
     
     def test_default_smtp_port(self):
         """Test default SMTP port is configured"""
         config = ConfigManager()
-        smtp_port = config.get_config('account.smtp_port')
+        smtp_port = config.config.account.smtp_port
         assert isinstance(smtp_port, int)
         assert smtp_port == 587
 
@@ -64,14 +64,14 @@ class TestConfigurationValidation:
         """Test that required configuration fields are present"""
         config = ConfigManager()
         # Verify core required fields exist
-        email = config.get_config('account.email')
+        email = config.config.account.email
         assert isinstance(email, str)
     
     def test_validate_port_numbers_are_integers(self):
         """Test that port numbers are valid integers"""
         config = ConfigManager()
-        imap_port = config.get_config('account.imap_port')
-        smtp_port = config.get_config('account.smtp_port')
+        imap_port = config.config.account.imap_port
+        smtp_port = config.config.account.smtp_port
         assert isinstance(imap_port, int)
         assert isinstance(smtp_port, int)
         assert imap_port > 0
@@ -80,7 +80,7 @@ class TestConfigurationValidation:
     def test_validate_ssl_flag_is_boolean(self):
         """Test that SSL flag is a boolean"""
         config = ConfigManager()
-        use_tls = config.get_config('account.use_tls')
+        use_tls = config.config.account.use_tls
         assert isinstance(use_tls, bool)
 
 

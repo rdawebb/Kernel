@@ -122,8 +122,8 @@ class ConsoleTestHelper:
     @staticmethod
     def capture_console_output(func, *args, **kwargs):
         """Capture and return console output from a function"""
-        import io
         import contextlib
+        import io
         
         f = io.StringIO()
         with contextlib.redirect_stdout(f):

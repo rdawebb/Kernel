@@ -1,7 +1,7 @@
 """Summariser module for generating email summaries."""
 
-from ..utils.log_manager import get_logger, log_call
 from ..utils.config_manager import ConfigManager
+from ..utils.log_manager import get_logger, log_call
 from ..utils.model_manager import ModelManager
 
 logger = get_logger(__name__)
@@ -18,8 +18,8 @@ class EmailSummariser:
     @log_call
     def reload_config(self):
         """Reload configuration settings"""
-        self.language = self.config_manager.get_config("language", "english")
-        self.sentence_count = self.config_manager.get_config("sentence_count", 3)
+        self.language = getattr(self.config_manager.config, "language", "english")
+        self.sentence_count = getattr(self.config_manager.config, "sentence_count", 3)
         self.model_manager.reload_config()
 
     def _safe_import(self, library_name, import_path, error_message):
@@ -69,8 +69,8 @@ class EmailSummariser:
     def summarise_with_sumy(self, email: str) -> str:
         """Generate a summary of the provided email text using the Sumy library"""
         def summarize():
-            from sumy.parsers.plaintext import PlaintextParser
             from sumy.nlp.tokenizers import Tokenizer
+            from sumy.parsers.plaintext import PlaintextParser
             from sumy.summarizers.lsa import LsaSummarizer
             
             parser = PlaintextParser.from_string(email, Tokenizer(self.language))
@@ -93,7 +93,7 @@ class EmailSummariser:
         def summarize():
             from transformers import pipeline
             
-            model = self.config_manager.get_config(config_key, default_model)
+            model = getattr(self.config_manager.config, config_key, default_model)
             summarizer = pipeline("summarization", model=model)
             summary_list = summarizer(email, max_length=130, min_length=30, do_sample=False)
             summary = summary_list[0]['summary_text']
@@ -146,9 +146,9 @@ class EmailSummariser:
         def summarize():
             import openai
             
-            openai.api_key = self.config_manager.get_config("openai_api_key")
+            openai.api_key = getattr(self.config_manager.config, "openai_api_key", None)
             response = openai.ChatCompletion.create(
-                model=self.config_manager.get_config("openai_model", "gpt-4"),
+                model=getattr(self.config_manager.config, "openai_model", "gpt-4"),
                 messages=[
                     {"role": "user", "content": f"Summarize the following text:\n\n{email}\n\nSummary:"}
                 ]
@@ -170,12 +170,12 @@ class EmailSummariser:
         def summarize():
             import cohere
             
-            co = cohere.Client(self.config_manager.get_config("cohere_api_key"))
+            co = cohere.Client(getattr(self.config_manager.config, "cohere_api_key", None))
             response = co.summarize(
                 text=text,
                 length='medium',
                 format='paragraph',
-                model=self.config_manager.get_config("cohere_model", "command-r"),
+                model=getattr(self.config_manager.config, "cohere_model", "command-r"),
                 additional_command='',
                 temperature=0.3,
                 k=0,
@@ -202,7 +202,7 @@ class EmailSummariser:
             
             client = ollama.Ollama()
             response = client.chat(
-                model=self.config_manager.get_config("ollama_model", "llama2"),
+                model=getattr(self.config_manager.config, "ollama_model", "llama2"),
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant that summarizes emails."},
                     {"role": "user", "content": f"Summarize the following text:\n\n{text}"}

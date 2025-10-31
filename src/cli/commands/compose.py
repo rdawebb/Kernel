@@ -1,8 +1,9 @@
 """Compose command - create and send new emails"""
-from typing import Dict, Any
+from typing import Any, Dict
+
 from ...ui.composer import Composer
-from ...utils.log_manager import get_logger, async_log_call, log_event
-from .command_utils import print_status, print_error
+from ...utils.log_manager import async_log_call, get_logger, log_event
+from .command_utils import print_error, print_status
 
 logger = get_logger(__name__)
 

@@ -2,11 +2,12 @@
 
 from enum import Enum
 from typing import Optional
-from . import storage_api
-from .imap_connection import imap_connection, get_account_info
-from .uid_cache import UIDCache
+
 from ..utils.email_parser import parse_email, process_email_message
 from ..utils.log_manager import get_logger, log_call
+from . import storage_api
+from .imap_connection import get_account_info, imap_connection
+from .uid_cache import UIDCache
 
 logger = get_logger(__name__)
 

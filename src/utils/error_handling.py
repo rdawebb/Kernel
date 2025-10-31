@@ -4,6 +4,7 @@ import asyncio
 from enum import Enum
 from functools import wraps
 from typing import Any, Callable, Dict, Optional
+
 from src.utils.log_manager import get_logger
 
 logger = get_logger(__name__)
@@ -63,12 +64,6 @@ class DatabaseConnectionError(DatabaseError):
     """Exception for database connection failures."""
 
     user_message = "Failed to connect to the database"
-
-
-class QueryExecutionError(DatabaseError):
-    """Exception for query execution failures."""
-
-    user_message = "Query execution failed"
 
 
 class EmailNotFoundError(DatabaseError):
@@ -165,6 +160,7 @@ class AttachmentNotFoundError(FileSystemError):
     """Exception when an email attachment is not found."""
 
     user_message = "Attachment not found"
+
 
 class AttachmentDownloadError(FileSystemError):
     """Exception for failures during attachment download."""

@@ -6,11 +6,12 @@ Tests cover:
 - Email fetching  
 - Email deletion
 """
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.core.imap_client import IMAPClient, SyncMode
 from src.core.imap_connection import connect_to_imap
-from .test_helpers import IMAPTestHelper, ConfigTestHelper
+
+from .test_helpers import ConfigTestHelper, IMAPTestHelper
 
 
 class TestIMAPConnection:

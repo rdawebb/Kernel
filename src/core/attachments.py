@@ -2,14 +2,13 @@
 
 import os
 import platform
-import re
 import stat
 import subprocess
 from email import message_from_bytes
 from email.message import Message
 from pathlib import Path
 from typing import List, Optional, Tuple
-from src.utils.log_manager import get_logger
+
 from src.utils.error_handling import (
     AttachmentDownloadError,
     AttachmentNotFoundError,
@@ -17,6 +16,9 @@ from src.utils.error_handling import (
     InvalidPathError,
     KernelError,
 )
+from src.utils.log_manager import get_logger
+from src.utils.paths import ATTACHMENTS_DIR
+from src.utils.security import PathSecurity
 
 logger = get_logger(__name__)
 
@@ -38,10 +40,10 @@ class AttachmentManager:
         
         if self._attachments_dir is None:
             if self.config_manager:
-                path_str = self.config_manager.get_config("database.attachments_path")
+                path_str = self.config_manager.config.database.attachments_path
                 self._attachments_dir = Path(os.path.expanduser(path_str))
             else:
-                self._attachments_dir = Path.home() / ".kernel" / "attachments"
+                self._attachments_dir = ATTACHMENTS_DIR
 
         return self._attachments_dir
     
@@ -301,43 +303,14 @@ class AttachmentManager:
 
     def _sanitize_filename(self, filename: str) -> str:
         """Sanitize filename to prevent directory traversal."""
-        
-        filename = os.path.basename(filename)
 
-        unsafe_chars = ['..', '/', '\\', ':', '*', '?', '"', '<', '>', '|', '\x00']
+        return PathSecurity.sanitize_filename(filename)
 
-        for char in unsafe_chars:
-            filename = filename.replace(char, '_')
-
-        filename = filename.lstrip().strip()
-        filename = re.sub(r'[\x00-\x1f]', '_', filename)
-
-        reserved = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
-
-        if filename.upper().split('.')[0] in reserved:
-            filename = f"attachment_{filename}"
-
-        if not filename or filename == "_":
-            filename = "attachment"
-
-        return filename
-    
 
     def _is_safe_filename(self, filename: str) -> bool:
         """Check if the filename is safe (no directory traversal)."""
         
-        if ".." in filename:
-            return False
-        
-        parts = filename.split(os.path.sep)
-
-        for part in parts:
-            if not part or part in {".", ".."}:
-                return False
-            if "\\" in part or "\x00" in part:
-                return False
-
-        return True
+        return PathSecurity.validate_filename(filename)
     
 
     def format_file_size(self, size_bytes: int) -> str:

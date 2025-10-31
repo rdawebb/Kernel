@@ -5,14 +5,15 @@ import re
 from datetime import datetime
 from email import message_from_bytes
 from typing import Any, Dict, Optional, Tuple
-from src.utils.log_manager import get_logger
+
 from src.utils.error_handling import (
-    KernelError,
-    InvalidEmailAddressError,
-    ValidationError,
-    SMTPError,
     DatabaseError,
+    InvalidEmailAddressError,
+    KernelError,
+    SMTPError,
+    ValidationError,
 )
+from src.utils.log_manager import get_logger
 
 logger = get_logger(__name__)
 

@@ -1,12 +1,13 @@
 """Main CLI entrypoint - routes commands via daemon with fallback"""
 
 import asyncio
-from typing import Dict, Any
+from typing import Any, Dict
+
+from ..daemon.daemon_client import execute_via_daemon
 from ..utils.config_manager import ConfigManager
-from ..utils.log_manager import get_logger, log_call, async_log_call
+from ..utils.log_manager import async_log_call, get_logger, log_call
 from .cli_parser import setup_argument_parser
 from .cli_utils import handle_downloads_list, handle_open_attachment
-from ..daemon.daemon_client import execute_via_daemon
 
 logger = get_logger(__name__)
 

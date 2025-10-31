@@ -2,15 +2,14 @@
 
 from io import StringIO
 from typing import Any, Dict
+
 from rich.console import Console
+
 from src.core.database import get_database
 from src.ui import email_viewer
-from src.utils.log_manager import get_logger, async_log_call
-from .command_utils import (
-    print_error, 
-    print_status, 
-    clean_ansi_output
-)
+from src.utils.log_manager import async_log_call, get_logger
+
+from .command_utils import clean_ansi_output, print_error, print_status
 
 logger = get_logger(__name__)
 

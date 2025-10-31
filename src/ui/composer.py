@@ -1,22 +1,17 @@
 """Interactive email composer - orchestrates UI, logic, and utilities"""
 
-from .composer_ui import (
-    prompt_email_details,
-    show_email_preview,
-    confirm_action,
-    prompt_send_later,
-    show_send_success,
-    show_send_scheduled,
-    show_send_failed,
-    show_draft_saved
-)
-from ..core.composer_logic import (
-    prepare_email_data,
-    save_as_draft,
-    send_email_now,
-    schedule_email
-)
+from ..core.composer_logic import prepare_email_data, save_as_draft, schedule_email, send_email_now
 from ..utils.log_manager import get_logger, log_call
+from .composer_ui import (
+    confirm_action,
+    prompt_email_details,
+    prompt_send_later,
+    show_draft_saved,
+    show_email_preview,
+    show_send_failed,
+    show_send_scheduled,
+    show_send_success,
+)
 
 logger = get_logger(__name__)
 

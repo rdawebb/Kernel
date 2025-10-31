@@ -1,8 +1,9 @@
 """Backup command - backup the database"""
-from typing import Dict, Any
+from typing import Any, Dict
+
 from ...core import storage_api
-from ...utils.log_manager import get_logger, async_log_call
-from .command_utils import print_status, print_success, print_error
+from ...utils.log_manager import async_log_call, get_logger
+from .command_utils import print_error, print_status, print_success
 
 logger = get_logger(__name__)
 

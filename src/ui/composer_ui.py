@@ -1,8 +1,8 @@
 """UI logic for interactive email composer - handles all user prompts and console output"""
 
-from ..utils.ui_helpers import confirm_action
 from ..utils.email_utils import validate_email_address
 from ..utils.log_manager import get_logger, log_call
+from ..utils.ui_helpers import confirm_action
 
 logger = get_logger(__name__)
 

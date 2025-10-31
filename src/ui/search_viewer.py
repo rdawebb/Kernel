@@ -1,7 +1,7 @@
 """Search results viewer - displays search results in a formatted table"""
 
-from .table_viewer import display_email_table
 from ..utils.log_manager import get_logger, log_call
+from .table_viewer import display_email_table
 
 logger = get_logger(__name__)
 

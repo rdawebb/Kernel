@@ -1,8 +1,10 @@
 """Flag command - flag or unflag emails"""
 
 from typing import Any, Dict
+
 from src.core.database import get_database
-from src.utils.log_manager import get_logger, async_log_call, log_event
+from src.utils.log_manager import async_log_call, get_logger, log_event
+
 from .command_utils import print_error, print_success
 
 logger = get_logger(__name__)

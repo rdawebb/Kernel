@@ -1,18 +1,19 @@
 """Unified database access layer for email storage and retrieval."""
 
 import sqlite3
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
+
+from src.core.db_manager import DatabaseManager
 from src.utils.error_handling import (
-    DatabaseError,
     DatabaseConnectionError,
-    QueryExecutionError,
+    DatabaseError,
     EmailNotFoundError,
     InvalidTableError,
 )
 from src.utils.log_manager import get_logger
+from src.utils.paths import DATABASE_PATH
 
 logger = get_logger(__name__)
 
@@ -32,7 +33,7 @@ class TableSchema:
     ]
 
     COLUMN_DEFS = {
-        "flagged": "BOOLEAN DEFAULT 0",
+        "flagged": "flagged BOOLEAN DEFAULT 0",
         "deleted_at": "deleted_at TEXT",
         "sent_status": "sent_status TEXT DEFAULT 'pending'",
         "send_at": "send_at TEXT"
@@ -102,84 +103,50 @@ SCHEMAS = {
 class Database:
     """Database access layer for email storage and retrieval."""
 
-    def __init__(self, config_manager=None) -> None:
-        """Initialize databse with config manager."""
+    def __init__(self, config_manager=None, db_manager: Optional[DatabaseManager] = None) -> None:
+        """Initialize database with config manager and db manager."""
 
         self.config_manager = config_manager
-        self.db_path = None
+
+        if db_manager:
+            self.db_manager = db_manager
+        else:
+            db_path = self._resolve_db_path(config_manager)
+            self.db_manager = DatabaseManager(db_path)
+
         self.initialized = False
+        self.__initialize()
 
 
     ## Path Management
 
-    def get_db_path(self) -> Path:
-        """Get the database file path from config manager."""
+    def _resolve_db_path(self, config_manager) -> Path:
+        """Resolve the database file path from config manager."""
 
-        if self.db_path is None:
-            if self.config_manager:
-                import os
-                raw_path = self.config_manager.get_config("database.database_path")
-                self.db_path = Path(os.path.expanduser(raw_path))
-            else:
-                self.db_path = Path.home() / ".kernel" / "kernel.db"
-        return self.db_path
+        if config_manager:
+            import os
+            raw_path = config_manager.database.database_path
+            return Path(os.path.expanduser(raw_path))
+        else:
+            return DATABASE_PATH
+        
+        
+    def get_db_path(self) -> Path:
+        """Get the database file path."""
+
+        return self.db_manager.db_path
     
 
     def get_backup_path(self) -> Path:
         """Get the database backup file path."""
 
         if self.config_manager:
-            backup_path = self.config_manager.get_config("database.backup_path")
+            backup_path = self.config_manager.database.backup_path
             if backup_path:
                 return Path(backup_path)
             
         return self.get_db_path().parent / "kernel_backup.db"
-    
 
-    ## Connection Management
-
-    @contextmanager
-    def connection(self):
-        """Context manager for database connection."""
-
-        db_path = self.get_db_path()
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-
-        try:
-            yield conn
-        finally:
-            conn.close()
-
-
-    def execute(self, query: str, params: tuple = (), 
-                fetch_one: bool = False, commit: bool = False) -> Any:
-        """Execute a database query and return results"""
-
-        try:
-            with self.connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, params)
-
-                if commit:
-                    conn.commit()
-                    return cursor.lastrowid
-                
-                if fetch_one:
-                    result = cursor.fetchone()
-                    return dict(result) if result else None
-                
-                results = cursor.fetchall()
-                return [dict(row) for row in results]
-        
-        except sqlite3.DatabaseError as e:
-            raise DatabaseConnectionError("Database connection error") from e
-        except sqlite3.OperationalError as e:
-            raise QueryExecutionError("Query execution failed") from e
-        except Exception as e:
-            raise DatabaseError("Unexpected database error") from e
         
     ## Initialization
 
@@ -189,10 +156,16 @@ class Database:
         if self.initialized:
             return
 
-        for schema in SCHEMAS.values():
-            self.execute(schema.create_table_sql(), commit=True)
+        try:
+            for schema in SCHEMAS.values():
+                self.db_manager.execute(schema.create_table_sql(), commit=True)
 
-        self.initialized = True
+            self.initialized = True
+            logger.info("Database initialised successfully")
+        
+        except Exception as e:
+            logger.error(f"Failed to initialise database: {e}")
+            raise DatabaseConnectionError("Failed to initialise database") from e
 
 
     ## Validation
@@ -201,7 +174,10 @@ class Database:
         """Validate if the table name is valid."""
 
         if table not in SCHEMAS:
-            raise InvalidTableError(f"Invalid table name: {table}")
+            raise InvalidTableError(
+                f"Invalid table name: {table}",
+                details={"table": table, "valid_tables": list(SCHEMAS.keys())}
+            )
 
 
     def _get_schema(self, table: str) -> TableSchema:
@@ -230,10 +206,10 @@ class Database:
             else:
                 values.append(email.get(col, ""))
 
-            placeholders = ", ".join(["?" for _ in schema.all_columns])
-            query = f"INSERT OR REPLACE INTO {table} ({schema.insert_columns}) VALUES ({placeholders})"
+        placeholders = ", ".join(["?" for _ in schema.all_columns])
+        query = f"INSERT OR REPLACE INTO {table} ({schema.insert_columns}) VALUES ({placeholders})"
 
-            self.execute(query, tuple(values), commit=True)
+        self.db_manager.execute(query, tuple(values), commit=True)
 
 
     def get_email(self, table: str, uid: str, include_body: bool = True) -> Optional[Dict]:
@@ -244,8 +220,8 @@ class Database:
 
         query = f"SELECT {columns} FROM {table} WHERE uid = ?"
 
-        return self.execute(query, (str(uid,)), fetch_one=True)
-    
+        return self.db_manager.execute(query, (str(uid),), fetch_one=True)
+
 
     def get_emails(self, table: str, limit: int = 50,
                    include_body: bool = False, offset: int = 0) -> List[Dict]:
@@ -261,8 +237,8 @@ class Database:
             LIMIT ? OFFSET ?
         """
 
-        return self.execute(query, (limit, offset))
-    
+        return self.db_manager.execute(query, (limit, offset))
+
 
     def delete_email(self, table: str, uid: str) -> None:
         """Delete an email by UID from the specified table."""
@@ -270,8 +246,8 @@ class Database:
         self._validate_table(table)
 
         query = f"DELETE FROM {table} WHERE uid = ?"
-        
-        self.execute(query, (str(uid),), commit=True)
+
+        self.db_manager.execute(query, (str(uid),), commit=True)
 
 
     def email_exists(self, table: str, uid: str) -> bool:
@@ -281,7 +257,7 @@ class Database:
 
         query = f"SELECT 1 FROM {table} WHERE uid = ? LIMIT 1"
 
-        return self.execute(query, (str(uid),), fetch_one=True) is not None
+        return self.db_manager.execute(query, (str(uid),), fetch_one=True) is not None
     
 
     def move_email(self, source_table: str, dest_table: str, uid: str) -> None:
@@ -289,8 +265,11 @@ class Database:
 
         email = self.get_email(source_table, uid, include_body=True)
         if not email:
-            raise EmailNotFoundError(f"Email with UID {uid} not found in {source_table}")
-        
+            raise EmailNotFoundError(
+                f"Email with UID {uid} not found in {source_table}",
+                details={"uid": uid, "table": source_table}
+            )
+
         if dest_table == "trash":
             from datetime import datetime
             email["deleted_at"] = datetime.now().strftime("%Y-%m-%d")
@@ -299,18 +278,21 @@ class Database:
         self.delete_email(source_table, uid)
 
 
-    def update_field(self, uid: str, field: str, value: Any) -> None:
-        """Update a specific field of an email by UID in the drafts table."""
+    def update_field(self, table: str, uid: str, field: str, value: Any) -> None:
+        """Update a specific field of an email by UID in the specified table."""
 
-        schema = self._get_schema("drafts")
+        schema = self._get_schema(table)
         
         allowed_fields = schema.all_columns
         if field not in allowed_fields:
-            raise InvalidTableError(f"Invalid field for drafts table: {field}")
+            raise InvalidTableError(
+                f"Invalid field for {table} table: {field}",
+                details={"field": field, "table": table, "allowed_fields": allowed_fields}
+            )
         
-        query = f"UPDATE drafts SET {field} = ? WHERE uid = ?"
+        query = f"UPDATE {table} SET {field} = ? WHERE uid = ?"
 
-        self.execute(query, (value, str(uid)), commit=True)
+        self.db_manager.execute(query, (value, str(uid)), commit=True)
 
 
     ## Search Operations
@@ -336,8 +318,8 @@ class Database:
             LIMIT ?
         """
 
-        return self.execute(query, tuple(params))
-    
+        return self.db_manager.execute(query, tuple(params))
+
 
     def search_all_tables(self, keyword: str, limit: int = 50) -> List[Dict]:
         """Search emails across all tables by keyword."""
@@ -356,18 +338,18 @@ class Database:
             where_sql = " OR ".join(where_clauses)
 
             union_parts.append(f"""
-                SELECT '{schema.select_columns}', '{table}' AS source_table
+                SELECT {schema.select_columns}, '{table}' AS source_table
                 FROM {table}
                 WHERE {where_sql}
             """)
 
-            params.extend([f"%{keyword}%"] * 3)
+            params.extend([f"%{keyword}%"] * 4)
 
         query = " UNION ALL ".join(union_parts) + " ORDER BY date DESC, time DESC LIMIT ?"
         params.append(limit)
 
-        return self.execute(query, tuple(params))
-    
+        return self.db_manager.execute(query, tuple(params))
+
 
     def search_flagged(self, flagged: bool = True, limit: int = 50) -> List[Dict]:
         """Search flagged emails in the inbox."""
@@ -382,8 +364,8 @@ class Database:
             LIMIT ?
         """
 
-        return self.execute(query, (1 if flagged else 0, limit))
-    
+        return self.db_manager.execute(query, (1 if flagged else 0, limit))
+
 
     def search_with_attachments(self, table: str = "inbox", limit: int = 50) -> List[Dict]:
         """Search emails with attachments in the specified table."""
@@ -398,23 +380,22 @@ class Database:
             LIMIT ?
         """
 
-        return self.execute(query, (limit,))
-    
+        return self.db_manager.execute(query, (limit,))
+
 
     def get_pending_emails(self) -> List[Dict]:
-        """Retrieve emails pending to be sent from the sent_emails table."""
+        """Retrieve emails pending to be sent from the sent table."""
 
         schema = self._get_schema("sent")
 
         query = f"""
             SELECT {schema.select_columns}
-            FROM sent_emails
+            FROM sent
             WHERE sent_status = 'pending'
             ORDER BY send_at ASC
-            LIMIT ?
         """
 
-        return self.execute(query)        
+        return self.db_manager.execute(query)
 
 
     ## Utility Operations
@@ -424,7 +405,7 @@ class Database:
 
         query = "SELECT MAX(CAST(uid AS INTEGER)) AS max_uid FROM inbox"
 
-        result = self.execute(query, fetch_one=True)
+        result = self.db_manager.execute(query, fetch_one=True)
 
         return int(result["max_uid"]) if result and result["max_uid"] else None
 
@@ -435,11 +416,12 @@ class Database:
         self._validate_table(table)
         
         query = f"SELECT COUNT(*) AS count FROM {table}"
-        
-        result = self.execute(query, fetch_one=True)
+
+        result = self.db_manager.execute(query, fetch_one=True)
 
         return result["count"] if result else 0
     
+
     ## Backup & Export Operations
 
     def backup(self, backup_path: Optional[Path] = None) -> Path:
@@ -457,10 +439,11 @@ class Database:
                 backup_path = Path(backup_path)
                 backup_path.parent.mkdir(parents=True, exist_ok=True)
 
-            source_path = self.get_db_path()
-            with sqlite3.connect(source_path) as source_conn:
+            with self.db_manager.connection() as source_conn:
                 with sqlite3.connect(backup_path) as dest_conn:
                     source_conn.backup(dest_conn)
+
+            logger.info(f"Database backed up to {backup_path}")
 
             return backup_path
         
@@ -486,20 +469,21 @@ class Database:
 
             for table in tables:
                 if table not in SCHEMAS:
+                    logger.warning(f"Skipping invalid table for export: {table}")
                     continue
                 
                 emails = self.get_emails(table, limit=1000000, include_body=True)
 
                 if not emails:
+                    logger.info(f"No emails to export in table: {table}")
                     continue
                 
                 csv_path = export_dir / f"{table}.csv"
 
                 with open(csv_path, mode="w", newline="", encoding="utf-8") as csvfile:
-                    if emails:
-                        writer = csv.DictWriter(csvfile, fieldnames=emails[0].keys())
-                        writer.writeheader()
-                        writer.writerows(emails)
+                    writer = csv.DictWriter(csvfile, fieldnames=emails[0].keys())
+                    writer.writeheader()
+                    writer.writerows(emails)
                 
                 exported_files.append(csv_path)
 
@@ -515,14 +499,16 @@ class Database:
         """Delete the entire database file."""
 
         try:
+            self.db_manager.close()
             db_path = self.get_db_path()
             if db_path.exists():
                 db_path.unlink()
+                logger.warning(f"Database deleted: {db_path}")
         except Exception as e:
             raise DatabaseError("Failed to delete database") from e
 
     
-    ## Helper Method
+    ## Helper Methods
 
     def _get_columns(self, schema: TableSchema, include_body: bool) -> str:
         """Get the appropriate columns for SELECT statements."""
@@ -530,23 +516,33 @@ class Database:
         columns = schema.select_columns
         
         if not include_body:
-            columns = columns.replace("body,", "").replace(", body", "").replace("body", "")
+            columns = ", ".join([
+                col for col in columns.split(", ")
+                if "body" not in col.lower()
+            ])
 
         return columns
+
+    
+    def close(self) -> None:
+        """Close database connections."""
+
+        if self.db_manager:
+            self.db_manager.close()
+            logger.info("Database connections closed")
 
 
 ## Singleton Instance
 
 _db_instance = None
 
-def get_database(config_manager=None) -> Database:
+def get_database(config_manager=None, db_manager: Optional[DatabaseManager] = None) -> Database:
     """Get or create singleton database instance."""
 
     global _db_instance
 
     if _db_instance is None:
-        _db_instance = Database(config_manager)
-        _db_instance.__initialize()
+        _db_instance = Database(config_manager, db_manager)
 
     return _db_instance
                 

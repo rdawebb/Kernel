@@ -1,6 +1,7 @@
 """Email viewer using Rich library for formatted console output"""
 
 from rich.text import Text
+
 from ..utils.log_manager import get_logger, log_call
 
 logger = get_logger(__name__)

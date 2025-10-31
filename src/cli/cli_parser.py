@@ -1,6 +1,6 @@
 """Argument parser configuration for Kernel CLI"""
 import argparse
-from typing import List, Tuple, Dict, Any
+from typing import Any, Dict, List, Tuple
 
 EMAIL_TABLES = ["inbox", "sent_emails", "drafts", "deleted_emails"]
 SEARCH_TABLES = ["inbox", "sent", "drafts", "deleted"]

@@ -1,14 +1,12 @@
 """Refresh command - fetch new emails from server"""
 
 from typing import Any, Dict
+
 from src.core.database import get_database
 from src.ui import inbox_viewer
-from src.utils.log_manager import get_logger, async_log_call
-from .command_utils import (
-    print_error, 
-    print_success, 
-    print_status
-)
+from src.utils.log_manager import async_log_call, get_logger
+
+from .command_utils import print_error, print_status, print_success
 
 logger = get_logger(__name__)
 

@@ -1,18 +1,18 @@
 """Scheduled job functions for the background scheduler."""
 
 from datetime import datetime
+
 from src.core.database import get_database
 from src.core.imap_client import IMAPClient, SyncMode
 from src.core.smtp_client import SMTPClient
 from src.utils.config_manager import ConfigManager
 from src.utils.error_handling import (
-    NetworkError,
     DatabaseError,
     KernelError,
+    NetworkError,
     ValidationError,
 )
 from src.utils.log_manager import get_logger, log_call
-
 
 DATE_FORMAT = "%Y-%m-%d"
 DATETIME_FORMAT = "%Y-%m-%d %H:%M"

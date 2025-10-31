@@ -2,13 +2,14 @@
 
 import subprocess
 import sys
-from .log_manager import get_logger, log_call
+
 from .config_manager import ConfigManager
 from .error_handling import (
+    ConfigurationError,
     KernelError,
     ValidationError,
-    ConfigurationError,
 )
+from .log_manager import get_logger, log_call
 
 logger = get_logger(__name__)
 
@@ -45,7 +46,7 @@ class ModelManager:
     @log_call
     def load_config(self):
         """Load configuration from config file"""
-        self.current_model = self.config_manager.get_config("default_summariser", "sumy")
+        self.current_model = getattr(self.config_manager.config, "default_summariser", "sumy")
 
     @log_call
     def reload_config(self):

@@ -1,6 +1,7 @@
 """Unified email table viewer - displays emails in formatted tables with dynamic columns"""
 
 from rich.table import Table
+
 from ..utils.log_manager import get_logger, log_call
 
 logger = get_logger(__name__)

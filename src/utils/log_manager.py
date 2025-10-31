@@ -1,23 +1,36 @@
 """Logging utility for Kernel application"""
 
-import logging
 import json
+import logging
 from datetime import datetime, timezone
-from logging.handlers import RotatingFileHandler
 from functools import wraps
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
-from rich.logging import RichHandler
-from .error_handling import (
-    KernelError,
-    FileSystemError,
-)
 
-LOG_DIR = Path.home() / ".kernel" / "logs"
-try:
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-except Exception as e:
-    raise FileSystemError(f"Failed to create log directory: {LOG_DIR}") from e
+from rich.logging import RichHandler
+
+from .error_handling import (
+    FileSystemError,
+    KernelError,
+)
+from .paths import LOGS_DIR
+
+_LOG_DIR: Optional[Path] = None
+
+
+def _get_log_dir() -> Path:
+    """Get log directory, creating it lazily on first access."""
+    global _LOG_DIR
+    
+    if _LOG_DIR is None:
+        _LOG_DIR = LOGS_DIR
+        try:
+            _LOG_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            raise FileSystemError(f"Failed to create log directory: {_LOG_DIR}") from e
+    
+    return _LOG_DIR
 
 
 ## Custom JSON Formatter
@@ -86,12 +99,14 @@ class LogManager:
             console_handler.setFormatter(console_formatter)
 
             try:
+                log_dir = _get_log_dir()
                 app_handler = RotatingFileHandler(
-                    LOG_DIR / "app.log",
+                    log_dir / "app.log",
                     maxBytes=5_242_880,
                     backupCount=5,
                     encoding="utf-8"
                 )
+
             except IOError as e:
                 raise FileSystemError(f"Failed to create app.log handler: {str(e)}") from e
 
@@ -100,11 +115,12 @@ class LogManager:
 
             try:
                 event_handler = RotatingFileHandler(
-                    LOG_DIR / "events.log",
+                    log_dir / "events.log",
                     maxBytes=2_048_000,
                     backupCount=3,
                     encoding="utf-8"
                 )
+
             except IOError as e:
                 raise FileSystemError(f"Failed to create events.log handler: {str(e)}") from e
 
@@ -118,9 +134,9 @@ class LogManager:
         
         except KernelError:
             raise
+
         except Exception as e:
             raise FileSystemError(f"Failed to setup logging handlers: {str(e)}") from e
-
 
     def get_logger(self, name: Optional[str] = None, **context) -> logging.Logger:
         """Get a logger with optional context."""
@@ -134,7 +150,6 @@ class LogManager:
             return ContextAdapter(logger, context)
         
         return logger
-
 
     def set_level(self, level: str):
         """Set logging level at runtime"""
@@ -150,7 +165,6 @@ class LogManager:
             raise ValueError(f"Invalid logging level: {level}") from e
         except Exception as e:
             raise FileSystemError(f"Failed to set logging level: {str(e)}") from e
-
 
     def log_event(self, event_type: str, message: str, **extra):
         """Log an event with specific type and extra context."""
@@ -185,7 +199,6 @@ def log_call(func):
 
     return wrapper
 
-
 def async_log_call(func):
     """Async decorator to log function calls with arguments and return values."""
 
@@ -214,7 +227,6 @@ def async_log_call(func):
 
 _log_manager: Optional[LogManager] = None
 
-
 def init_logging(log_level: str = "INFO") -> LogManager:
     """Initialize logging system and return LogManager instance."""
     
@@ -223,7 +235,6 @@ def init_logging(log_level: str = "INFO") -> LogManager:
 
     return _log_manager
 
-
 def get_logger(name: Optional[str] = None, **context) -> logging.Logger:
     """Get a logger instance with optional context."""
 
@@ -231,7 +242,6 @@ def get_logger(name: Optional[str] = None, **context) -> logging.Logger:
         init_logging()
 
     return _log_manager.get_logger(name, **context)
-
 
 def log_event(event_type: str, message: str, **extra):
     """Log an event with specific type and extra context (module-level wrapper)."""

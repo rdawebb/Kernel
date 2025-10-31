@@ -9,10 +9,11 @@ Tests cover:
 - Table rendering
 - Error handling in UI
 """
-from src.ui.inbox_viewer import display_inbox
 from src.ui.email_viewer import display_email
+from src.ui.inbox_viewer import display_inbox
 from src.ui.search_viewer import display_search_results
-from .test_helpers import DatabaseTestHelper, ConsoleTestHelper
+
+from .test_helpers import ConsoleTestHelper, DatabaseTestHelper
 
 
 class TestInboxDisplay:

@@ -4,8 +4,10 @@ Launcher script for kernel CLI application.
 This script allows running the application from the root directory.
 """
 import sys
+
 #import os
 from pathlib import Path
+
 from src.cli.cli import main
 
 # Get the directory where this script is located

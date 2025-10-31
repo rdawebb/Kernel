@@ -10,14 +10,15 @@ Tests cover:
 - Connection error handling
 - Context manager usage
 """
-from unittest.mock import patch, MagicMock
 import imaplib
 import smtplib
+from unittest.mock import MagicMock, patch
 
 from src.core.imap_client import imap_connection
 from src.core.imap_connection import connect_to_imap
 from src.core.smtp_client import smtp_connection
-from .test_helpers import IMAPTestHelper, SMTPTestHelper, ConfigTestHelper
+
+from .test_helpers import ConfigTestHelper, IMAPTestHelper, SMTPTestHelper
 
 
 class TestIMAPConnection:

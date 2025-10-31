@@ -2,26 +2,30 @@
 
 This module provides:
 1. Individual command handlers (list, view, search, etc.) - loaded on demand
-2. Command registry for daemon command routing
-3. Utilities for command discovery
+2. Command registry for daemon command routing with metadata support
+3. Utilities for command discovery and categorization
 
 Command handlers are organized by function:
 - Each command has its own module (list.py, view.py, search.py, etc.)
 - Each module exports both CLI and daemon-compatible handlers
-- The command_registry module maps command names to daemon handlers via lazy loading
+- The command_registry module maps command names to daemon handlers with metadata
 """
 
-# Import only the registry and utilities - handlers are lazy-loaded on demand
+# Import registry and metadata
 from .command_registry import (
-    command_registry,
-    get_command_handler,
-    list_commands,
+    CommandMetadata,
+    _registry,
+    get_categories,
+    get_command_metadata,
+    get_commands_grouped_by_category,
 )
 
 __all__ = [
-    # Registry and utilities
-    'command_registry',
-    'get_command_handler',
-    'list_commands',
+    # Registry instance
+    '_registry',
+    # Metadata API
+    'CommandMetadata',
+    'get_command_metadata',
+    'get_categories',
+    'get_commands_grouped_by_category',
 ]
-

@@ -1,8 +1,9 @@
 """Delete DB command - delete the local database"""
 import os
-from typing import Dict, Any
+from typing import Any, Dict
+
 from ...core import storage_api
-from ...utils.log_manager import get_logger, async_log_call, log_event
+from ...utils.log_manager import async_log_call, get_logger, log_event
 from ...utils.ui_helpers import confirm_action
 from .command_utils import print_error, print_success
 

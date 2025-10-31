@@ -4,19 +4,28 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
 from pydantic import BaseModel, Field
-from .log_manager import get_logger, log_call
+
 from .error_handling import (
-    KernelError,
     ConfigurationError,
-    MissingConfigError,
-    InvalidConfigError,
     FileSystemError,
+    InvalidConfigError,
+    KernelError,
+    MissingConfigError,
+)
+from .log_manager import get_logger, log_call
+from .paths import (
+    ATTACHMENTS_DIR,
+    BACKUP_DB_PATH,
+    DATABASE_PATH,
+    EXPORTS_DIR,
+    KERNEL_DIR,
 )
 
 logger = get_logger(__name__)
 
-CONFIG_DIR = Path.home() / ".kernel"
+CONFIG_DIR = KERNEL_DIR
 CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_PATH = CONFIG_DIR / "config.json"
 
@@ -64,10 +73,10 @@ class LoggingConfig(BaseModel):
 
 class DatabaseConfig(BaseModel):
     """Pydantic model for database settings."""
-    database_path: str = str(Path.home() / ".kernel" / "data" / "kernel.db")
-    backup_path: str = str(Path.home() / ".kernel" / "data" / "backups" / "kernel_backup.db")
-    export_path: str = str(Path.home() / ".kernel" / "exports")
-    attachments_path: str = str(Path.home() / ".kernel" / "attachments")
+    database_path: str = str(DATABASE_PATH.parent / "data" / "kernel.db")
+    backup_path: str = str(BACKUP_DB_PATH)
+    export_path: str = str(EXPORTS_DIR)
+    attachments_path: str = str(ATTACHMENTS_DIR)
 
 class AppConfig(BaseModel):
     """Pydantic model for overall application configuration."""
@@ -150,32 +159,6 @@ class ConfigManager:
             raise FileSystemError(f"Failed to write configuration file: {str(e)}") from e
         except Exception as e:
             raise ConfigurationError(f"Failed to save configuration: {str(e)}") from e
-
-    @log_call
-    def get_config(self, key_path: str, default: Any = None) -> Any:
-        """Get a configuration value using dot-separated key path."""
-
-        try:
-            keys = key_path.split(".")
-            value = self.config.model_dump()
-
-            for key in keys:
-                if isinstance(value, dict) and key in value:
-                    value = value[key]
-                else:
-                    if default is not None:
-                        logger.debug(f"Config key '{key_path}' not found, returning default: {default}")
-                        return default
-                    else:
-                        raise MissingConfigError(f"Required configuration key '{key_path}' not found")
-
-            logger.info(f"Config key '{key_path}' retrieved with value: {value}")
-            return value
-        
-        except KernelError:
-            raise
-        except Exception as e:
-            raise ConfigurationError(f"Failed to retrieve configuration key '{key_path}': {str(e)}") from e
     
     @log_call
     def get_account_config(self) -> dict:

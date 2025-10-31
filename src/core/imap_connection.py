@@ -3,15 +3,17 @@
 import imaplib
 from contextlib import contextmanager
 from typing import Optional
+
 from security.key_store import KeyStore
+
 from ..utils.config_manager import ConfigManager
-from ..utils.log_manager import get_logger
 from ..utils.error_handling import (
     IMAPError,
-    NetworkTimeoutError,
-    MissingCredentialsError,
     InvalidCredentialsError,
+    MissingCredentialsError,
+    NetworkTimeoutError,
 )
+from ..utils.log_manager import get_logger
 
 logger = get_logger(__name__)
 
@@ -19,7 +21,14 @@ logger = get_logger(__name__)
 def _prompt_for_config(config_key: str, prompt_text: str, default_value: str = "") -> Optional[str]:
     """Prompt user for missing config value and save it."""
     config_manager = ConfigManager()
-    config_value = config_manager.get_config(config_key)
+    
+    # Parse the config key path to access nested attributes
+    keys = config_key.split(".")
+    config_value = config_manager.config
+    for key in keys:
+        config_value = getattr(config_value, key, None)
+        if config_value is None:
+            break
     
     if not config_value or config_value == "":
         logger.info(f"{config_key} not configured, prompting user")
@@ -74,7 +83,7 @@ def get_account_info(email: str = "") -> Optional[dict]:
         if not password:
             raise MissingCredentialsError("Password is required")
         
-        imap_port = config_manager.get_config('account.imap_port', default=993)
+        imap_port = config_manager.config.account.imap_port
         
         return {
             "imap_server": imap_server,

@@ -7,8 +7,9 @@ import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import List, Optional, Tuple
-from src.utils.log_manager import get_logger
+
 from src.utils.error_handling import AuthenticationError, NetworkError, SMTPError
+from src.utils.log_manager import get_logger
 
 logger = get_logger(__name__)
 
