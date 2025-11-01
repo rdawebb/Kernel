@@ -1,5 +1,5 @@
 """
-Kernel Renderer Daemon - Persistent resource manager and rendering service
+Kernel Email Daemon - Persistent resource manager and rendering service
 
 Handles:
 - Persistent database connections
@@ -12,6 +12,7 @@ Handles:
 import asyncio
 import json
 import os
+import secrets
 import signal
 import sys
 import time
@@ -24,7 +25,6 @@ from rich.console import Console
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from security.key_store import KeyStore
-from src.core.database import Database
 from src.core.imap_client import IMAPClient
 from src.core.smtp_client import SMTPClient
 from src.utils.config_manager import ConfigManager
@@ -35,7 +35,7 @@ from src.utils.error_handling import (
     safe_execute,
 )
 from src.utils.log_manager import get_logger, log_event
-from src.utils.paths import DAEMON_PID_PATH, DAEMON_SOCKET_PATH
+from src.utils.paths import DAEMON_PID_PATH, DAEMON_SOCKET_PATH, DAEMON_TOKEN_PATH
 
 logger = get_logger(__name__)
 
@@ -75,7 +75,7 @@ class ConnectionPool:
                 logger.debug(f"{client_type} connection closed")
 
             except Exception as e:
-                logger.warning(f"Error closing {client_type} client: {e}")
+                logger.debug(f"Error closing {client_type} client: {e}")
 
             finally:
                 self.client = None
@@ -146,25 +146,30 @@ class EmailConnectionPool:
 
 class IMAPConnectionPool(EmailConnectionPool):
     """IMAP connection pool."""
-    
-    def __init__(self, config: ConfigManager, keystore: KeyStore, timeout: int = 300):
-        super().__init__(config, keystore, timeout)
+
+    CLIENT_CLASS = IMAPClient
+    CLIENT_TYPE = "IMAP"
+    CREDENTIAL_PREFIX = "imap"
+    DEFAULT_TIMEOUT = 300  # seconds
+
+    def __init__(self, config: ConfigManager, keystore: KeyStore, timeout: int = None):
+        super().__init__(config, keystore, timeout or self.DEFAULT_TIMEOUT)
     
     def _create_client(self, config: Dict[str, Any]) -> IMAPClient:
         """Create IMAP client."""
 
-        return IMAPClient(config)
+        return self.CLIENT_CLASS(config)
     
     def _get_client_type(self) -> str:
         """Get client type name."""
 
-        return "IMAP"
+        return self.CLIENT_TYPE
     
     def _get_credential_prefix(self) -> str:
         """Get credential key prefix."""
 
-        return "imap"
-    
+        return self.CREDENTIAL_PREFIX
+
     async def keepalive(self) -> None:
         """Send NOOP to keep connection alive."""
 
@@ -172,23 +177,28 @@ class IMAPConnectionPool(EmailConnectionPool):
             try:
                 if hasattr(self.pool.client, 'noop'):
                     self.pool.client.noop()
-                    logger.debug("IMAP keepalive sent")
+                    logger.debug(f"{self.CLIENT_TYPE} keepalive sent")
 
             except Exception as e:
-                logger.warning(f"IMAP keepalive failed: {e}")
-                self.pool.close("IMAP")
+                logger.warning(f"{self.CLIENT_TYPE} keepalive failed: {e}")
+                self.pool.close(self.CLIENT_TYPE)
 
 
 class SMTPConnectionPool(EmailConnectionPool):
     """SMTP connection pool."""
-    
-    def __init__(self, config: ConfigManager, keystore: KeyStore, timeout: int = 60):
-        super().__init__(config, keystore, timeout)
-    
+
+    CLIENT_CLASS = SMTPClient
+    CLIENT_TYPE = "SMTP"
+    CREDENTIAL_PREFIX = "smtp"
+    DEFAULT_TIMEOUT = 60  # seconds
+
+    def __init__(self, config: ConfigManager, keystore: KeyStore, timeout: int = None):
+        super().__init__(config, keystore, timeout or self.DEFAULT_TIMEOUT)
+
     def _create_client(self, config: Dict[str, Any]) -> SMTPClient:
         """Create SMTP client."""
 
-        return SMTPClient(
+        return self.CLIENT_CLASS(
             host=config["smtp_host"],
             port=config["smtp_port"],
             username=config["username"],
@@ -199,12 +209,12 @@ class SMTPConnectionPool(EmailConnectionPool):
     def _get_client_type(self) -> str:
         """Get client type name."""
 
-        return "SMTP"
-    
+        return self.CLIENT_TYPE
+
     def _get_credential_prefix(self) -> str:
         """Get credential key prefix."""
 
-        return "smtp"
+        return self.CREDENTIAL_PREFIX
 
 
 class ConnectionManager:
@@ -239,7 +249,7 @@ class ConnectionManager:
             
             # Keepalive for IMAP
             await safe_execute(
-                self.imap_pool.keepalive,
+                self.imap_pool.keepalive(),
                 default=None,
                 context="imap_keepalive"
             )
@@ -254,8 +264,9 @@ class CacheManager:
         self.max_entries = max_entries
         self.ttl_seconds = ttl_seconds
         self._cache = OrderedDict()
+        self._lock = asyncio.Lock()
     
-    def get_cache_key(self, command: str, args: Dict) -> str:
+    async def get_cache_key(self, command: str, args: Dict) -> str:
         """Generate cache key from command and arguments."""
 
         key_data = {
@@ -269,98 +280,188 @@ class CacheManager:
 
         return json.dumps(key_data, sort_keys=True)
     
-    def get(self, cache_key: str) -> Optional[Tuple[str, float]]:
+    async def get(self, cache_key: str) -> Optional[Tuple[str, float]]:
         """Retrieve cached output if valid."""
 
-        if cache_key not in self._cache:
-            return None
+        async with self._lock:
+            if cache_key not in self._cache:
+                return None
+
+            output, timestamp = self._cache[cache_key]
+            age = time.time() - timestamp
         
-        output, timestamp = self._cache[cache_key]
-        age = time.time() - timestamp
+            if age > self.ttl_seconds:
+                del self._cache[cache_key]
+                logger.debug(f"Cache entry expired: {cache_key[:50]}...")
+                return None
         
-        if age > self.ttl_seconds:
-            del self._cache[cache_key]
-            logger.debug(f"Cache entry expired: {cache_key[:50]}...")
-            return None
-        
-        self._cache.move_to_end(cache_key)
-        logger.debug(f"Cache hit (age: {age:.1f}s)")
-        return output, age
+            self._cache.move_to_end(cache_key)
+            logger.debug(f"Cache hit (age: {age:.1f}s)")
+            return output, age
     
-    def set(self, cache_key: str, output: str) -> None:
+    async def set(self, cache_key: str, output: str) -> None:
         """Add to cache with LRU eviction."""
 
-        if len(self._cache) >= self.max_entries:
-            oldest = next(iter(self._cache))
-            del self._cache[oldest]
-            logger.debug("Evicted oldest cache entry")
-        
-        self._cache[cache_key] = (output, time.time())
-        logger.debug(f"Cache set ({len(self._cache)}/{self.max_entries} entries)")
+        async with self._lock:
+            if len(self._cache) >= self.max_entries:
+                oldest = next(iter(self._cache))
+                del self._cache[oldest]
+                logger.debug("Evicted oldest cache entry")
+
+            self._cache[cache_key] = (output, time.time())
+            logger.debug(f"Cache set ({len(self._cache)}/{self.max_entries} entries)")
     
-    def invalidate_all(self) -> None:
+    async def invalidate_all(self) -> None:
         """Invalidate all cache entries."""
 
-        count = len(self._cache)
-        self._cache.clear()
-        logger.info(f"Cache cleared: {count} entries removed")
-        log_event("cache_cleared", {"entries_removed": count})
-    
-    def invalidate_by_pattern(self, pattern: str) -> int:
+        async with self._lock:
+            count = len(self._cache)
+            self._cache.clear()
+            logger.info(f"Cache cleared: {count} entries removed")
+            log_event("cache_cleared", {"entries_removed": count})
+
+    async def invalidate_by_pattern(self, pattern: str) -> int:
         """Invalidate cache entries matching pattern."""
 
-        to_remove = [key for key in self._cache if pattern in key]
-        for key in to_remove:
-            del self._cache[key]
+        async with self._lock:
+            to_remove = [key for key in self._cache if pattern in key]
+            for key in to_remove:
+                del self._cache[key]
         
-        if to_remove:
-            logger.info(f"Cache invalidated by pattern '{pattern}': {len(to_remove)} entries")
-            log_event("cache_invalidated_pattern", {
-                "pattern": pattern,
-                "entries_removed": len(to_remove)
-            })
+            if to_remove:
+                logger.info(f"Cache invalidated by pattern '{pattern}': {len(to_remove)} entries")
+                log_event("cache_invalidated_pattern", {
+                    "pattern": pattern,
+                    "entries_removed": len(to_remove)
+                })
         
-        return len(to_remove)
-    
-    def invalidate_table(self, table: str) -> int:
+            return len(to_remove)
+
+    async def invalidate_table(self, table: str) -> int:
         """Invalidate all entries for a specific table."""
 
         pattern = f'"table":"{table}"'
-        return self.invalidate_by_pattern(pattern)
-    
-    def invalidate_email(self, email_id: str, table: Optional[str] = None) -> int:
+        return await self.invalidate_by_pattern(pattern)
+
+    async def invalidate_email(self, email_id: str, table: Optional[str] = None) -> int:
         """Invalidate entries related to a specific email."""
 
         pattern = f'"id":"{email_id}"'
-        count = self.invalidate_by_pattern(pattern)
-        
+        count = await self.invalidate_by_pattern(pattern)
+
         # Also invalidate list views for the table
         if table:
-            count += self.invalidate_table(table)
-        
+            count += await self.invalidate_table(table)
+
         return count
-    
-    def invalidate_search(self, keyword: str) -> int:
+
+    async def invalidate_search(self, keyword: str) -> int:
         """Invalidate search results containing keyword."""
 
         pattern = f'"keyword":"{keyword}"'
-        return self.invalidate_by_pattern(pattern)
-    
-    def invalidate_command(self, command: str) -> int:
+        return await self.invalidate_by_pattern(pattern)
+
+    async def invalidate_command(self, command: str) -> int:
         """Invalidate all entries for a specific command."""
 
         pattern = f'"command":"{command}"'
-        return self.invalidate_by_pattern(pattern)
-    
-    def get_stats(self) -> Dict[str, Any]:
+        return await self.invalidate_by_pattern(pattern)
+
+    async def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
 
-        return {
-            "entries": len(self._cache),
-            "max_entries": self.max_entries,
-            "ttl_seconds": self.ttl_seconds,
-            "usage_percent": (len(self._cache) / self.max_entries * 100)
-        }
+        async with self._lock:
+            return {
+                "entries": len(self._cache),
+                "max_entries": self.max_entries,
+                "ttl_seconds": self.ttl_seconds,
+                "usage_percent": (len(self._cache) / self.max_entries * 100)
+            }
+
+
+## Socket Authentication
+
+class DaemonAuth:
+    """Generate and verify authentication tokens for daemon clients."""
+
+    TOKEN_FILE = DAEMON_TOKEN_PATH
+    TOKEN_LENGTH = 32  # bytes
+    _lock = asyncio.Lock()
+
+    @classmethod
+    async def generate_token(cls) -> str:
+        """Generate a new secure token and save to file."""
+
+        async with cls._lock:
+            token = secrets.token_hex(cls.TOKEN_LENGTH)
+
+            cls.TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+            cls.TOKEN_FILE.write_text(token)
+            cls.TOKEN_FILE.chmod(0o600)
+
+            logger.info("Generated new daemon authentication token")
+            log_event("daemon_token_generated", {"token": token})
+
+            return token
+    
+    @classmethod
+    async def get_token(cls) -> Optional[str]:
+        """Retrieve the stored token from file."""
+
+        async with cls._lock:
+            if not cls.TOKEN_FILE.exists():
+                token = secrets.token_hex(cls.TOKEN_LENGTH)
+                cls.TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+                cls.TOKEN_FILE.write_text(token)
+                cls.TOKEN_FILE.chmod(0o600)
+
+                logger.info("Generated new daemon authentication token")
+                log_event("daemon_token_generated", {"token": token})
+
+                return token
+            
+            try:
+                return cls.TOKEN_FILE.read_text().strip()
+
+            except Exception as e:
+                logger.error(f"Failed to read daemon token: {e}")
+                return None
+        
+    @classmethod
+    async def verify_token(cls, provided_token: str) -> bool:
+        """Verify provided token against stored token."""
+
+        if not provided_token:
+            logger.warning("No token provided for verification")
+            return False
+
+        stored_token = await cls.get_token()
+        if not stored_token:
+            logger.error("No stored token available for verification")
+            return False
+
+        return secrets.compare_digest(provided_token, stored_token)
+    
+    @classmethod
+    async def rotate_token(cls) -> str:
+        """Rotate the authentication token (call when daemon restarts)."""
+
+        async with cls._lock:
+            if cls.TOKEN_FILE.exists():
+                cls.TOKEN_FILE.unlink(missing_ok=True)
+
+            token = secrets.token_hex(cls.TOKEN_LENGTH)
+            cls.TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+            cls.TOKEN_FILE.write_text(token)
+            cls.TOKEN_FILE.chmod(0o600)
+
+            logger.info("Rotated daemon authentication token")
+            log_event("daemon_token_rotated", {
+                "timestamp": time.time(),
+                "token_length": len(token)
+            })
+
+            return token
 
 
 ## Socket Security Verification
@@ -464,7 +565,14 @@ class EmailDaemon:
         "refresh": "all",
         "compose": "drafts_table"
     }
-    
+
+    # Resource limits
+    RESOURCE_LIMITS = {
+        "max_concurrent_clients": 10,
+        "max_queue_size": 100,
+        "max_cache_size": 1024 * 1024 * 100,  # 100 MB
+    }
+
     def __init__(self):
         """Initialize daemon with configuration, database, connections, and cache."""
 
@@ -475,7 +583,8 @@ class EmailDaemon:
             self.config = ConfigManager()
             self.keystore = KeyStore()
             
-            self.db = Database(self.config)
+            from src.core.database import get_database
+            self.db = get_database(self.config)
             self.db._initialize()
             self.logger.info("Database initialized with persistent connection")
             
@@ -483,13 +592,21 @@ class EmailDaemon:
             self.cache = CacheManager(max_entries=50, ttl_seconds=60)
             
             self.last_activity = time.time()
+            self._activity_lock = asyncio.Lock()
             self.idle_timeout = 1800  # 30 minutes
-            
+
+            self._max_concurrent_clients = self.RESOURCE_LIMITS["max_concurrent_clients"]
+            self._semaphore = asyncio.Semaphore(self._max_concurrent_clients)
+            self._active_clients = 0
+            self._client_lock = asyncio.Lock()
+            self._shutting_down = False
+
             self.logger.info("Email Daemon initialized")
             log_event("daemon_initialized", {
                 "cache_max_entries": 50,
                 "cache_ttl": 60,
-                "idle_timeout": self.idle_timeout
+                "idle_timeout": self.idle_timeout,
+                "max_concurrent_clients": self.RESOURCE_LIMITS["max_concurrent_clients"]
             })
         
         except (DatabaseError, KernelError):
@@ -498,15 +615,40 @@ class EmailDaemon:
         except Exception as e:
             raise DatabaseError("Failed to initialize Email Daemon") from e
     
+    async def _acquire_client_slot(self) -> None:
+        """Acquire a slot for a new client connection."""
+
+        await self._semaphore.acquire()
+        async with self._client_lock:
+            self._active_clients += 1
+            self.logger.debug(f"Client connected, active clients: {self._active_clients}/{self._max_concurrent_clients}")
+
+    async def _release_client_slot(self) -> None:
+        """Release a slot after client disconnects."""
+
+        async with self._client_lock:
+            self._active_clients -= 1
+            self.logger.debug(f"Client disconnected, active clients: {self._active_clients}/{self._max_concurrent_clients}")
+        self._semaphore.release()
+
+    async def get_active_clients(self) -> int:
+        """Get the number of active client connections."""
+
+        async with self._client_lock:
+            return self._active_clients
+        
 
     ## Command Execution
     
     async def execute_command(self, command: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute command with selective cache management."""
 
-        self.last_activity = time.time()
+        command_start = time.time()
         
         try:
+            async with self._activity_lock:
+                self.last_activity = time.time()
+
             from src.cli.commands import _registry
             
             if not _registry.exists(command):
@@ -515,9 +657,9 @@ class EmailDaemon:
             # Try cache for cacheable commands
             cache_key = None
             if command in self.CACHEABLE_COMMANDS:
-                cache_key = self.cache.get_cache_key(command, args)
-                cached = self.cache.get(cache_key)
-                
+                cache_key = await self.cache.get_cache_key(command, args)
+                cached = await self.cache.get(cache_key)
+
                 if cached:
                     output, age = cached
                     return {
@@ -530,22 +672,28 @@ class EmailDaemon:
             
             # Execute command
             handler = _registry.get_handler(command)
+            if not handler:
+                return self._error_response(f"No handler for command: {command}")
+
             result = await handler(self, args)
             
             # Cache successful results
             if cache_key and result.get("success"):
-                self.cache.set(cache_key, result["data"])
-            
+                await self.cache.set(cache_key, result["data"])
+
             # Selective cache invalidation for write commands
             if command in self.WRITE_COMMANDS:
-                self._invalidate_cache_selective(command, args)
-            
+                await self._invalidate_cache_selective(command, args)
+
+            command_duration = time.time() - command_start
+
             return {
                 "success": result.get("success", True),
                 "data": result.get("data"),
                 "error": result.get("error"),
                 "cached": False,
-                "metadata": result.get("metadata", {})
+                "metadata": {**result.get("metadata", {}), 
+                             "execution_time_seconds": command_duration}
             }
         
         except KernelError as e:
@@ -555,24 +703,24 @@ class EmailDaemon:
         except Exception as e:
             self.logger.exception(f"Error executing command '{command}': {e}")
             return self._error_response(str(e))
-    
-    def _invalidate_cache_selective(self, command: str, args: Dict[str, Any]) -> None:
+
+    async def _invalidate_cache_selective(self, command: str, args: Dict[str, Any]) -> None:
         """Selectively invalidate cache based on command and arguments."""
 
         strategy = self.INVALIDATION_STRATEGY.get(command)
         
         if strategy == "all":
-            self.cache.invalidate_all()
-        
+            await self.cache.invalidate_all()
+
         elif strategy == "source_and_dest_tables":
             # Move command - invalidate both tables
             source_table = args.get("source", args.get("table", "inbox"))
             dest_table = args.get("destination", args.get("dest"))
             
-            count = self.cache.invalidate_table(source_table)
+            count = await self.cache.invalidate_table(source_table)
             if dest_table:
-                count += self.cache.invalidate_table(dest_table)
-            
+                count += await self.cache.invalidate_table(dest_table)
+
             logger.debug(f"Invalidated {count} entries for move operation")
         
         elif strategy == "email_and_table":
@@ -581,7 +729,7 @@ class EmailDaemon:
             table = args.get("table", "inbox")
             
             if email_id:
-                count = self.cache.invalidate_email(str(email_id), table)
+                count = await self.cache.invalidate_email(str(email_id), table)
                 logger.debug(f"Invalidated {count} entries for email {email_id}")
         
         elif strategy == "email_and_flagged_cache":
@@ -590,26 +738,26 @@ class EmailDaemon:
             table = args.get("table", "inbox")
             
             if email_id:
-                count = self.cache.invalidate_email(str(email_id), table)
-                count += self.cache.invalidate_command("flagged")
-                count += self.cache.invalidate_command("unflagged")
+                count = await self.cache.invalidate_email(str(email_id), table)
+                count += await self.cache.invalidate_command("flagged")
+                count += await self.cache.invalidate_command("unflagged")
                 logger.debug(f"Invalidated {count} entries for flag operation")
         
         elif strategy == "sent_table":
             # Send - invalidate sent folder
-            count = self.cache.invalidate_table("sent")
+            count = await self.cache.invalidate_table("sent")
             logger.debug(f"Invalidated {count} entries for sent folder")
         
         elif strategy == "drafts_table":
             # Compose - invalidate drafts folder
-            count = self.cache.invalidate_table("drafts")
+            count = await self.cache.invalidate_table("drafts")
             logger.debug(f"Invalidated {count} entries for drafts folder")
         
         else:
             # Unknown command - invalidate all to be safe
             logger.warning(f"Unknown invalidation strategy for '{command}', clearing all cache")
-            self.cache.invalidate_all()
-    
+            await self.cache.invalidate_all()
+
     def _error_response(self, error: str) -> Dict[str, Any]:
         """Create standardized error response."""
 
@@ -621,27 +769,55 @@ class EmailDaemon:
             "metadata": {}
         }
     
+
     ## Client Handler
     
     async def handle_client(self, reader: asyncio.StreamReader,
                            writer: asyncio.StreamWriter) -> None:
-        """Handle incoming commands from CLI."""
+        """Handle incoming commands from CLI with authentication"""
+
+        await self._acquire_client_slot()
+        self.logger.debug("Client connection accepted")
 
         try:
-            line = await asyncio.wait_for(reader.readline(), timeout=5.0)
-            if not line:
+            auth_line = await asyncio.wait_for(reader.readline(), timeout=5.0)
+            if not auth_line:
+                logger.warning("No authentication token received from client")
                 return
             
+            try:
+                auth_data = json.loads(auth_line.decode().strip())
+                provided_token = auth_data.get("token", "")
+            
+            except (json.JSONDecodeError, KeyError):
+                logger.warning("Invalid authentication data received from client")
+                error_response = self._error_response("Authentication required")
+                writer.write(json.dumps(error_response).encode() + b"\n")
+                await writer.drain()
+                return
+
+            if not await DaemonAuth.verify_token(provided_token):
+                logger.warning("Invalid authentication token from client")
+                error_response = self._error_response("Authentication failed")
+                writer.write(json.dumps(error_response).encode() + b"\n")
+                await writer.drain()
+                return
+            
+            line = await asyncio.wait_for(reader.readline(), timeout=5.0)
+            if not line:
+                logger.warning("No command received from client")
+                return
+
             request = json.loads(line.decode().strip())
             command = request.get("command")
             args = request.get("args", {})
-            
+
             response = await self.execute_command(command, args)
-            
+
             response_json = json.dumps(response)
             writer.write(response_json.encode() + b"\n")
             await writer.drain()
-        
+
         except asyncio.TimeoutError:
             self.logger.warning("Client request timeout")
             error_response = self._error_response("Request timeout")
@@ -663,7 +839,9 @@ class EmailDaemon:
         finally:
             writer.close()
             await writer.wait_closed()
-    
+            await self._release_client_slot()
+            self.logger.debug("Client connection closed")
+
 
     ## Background Tasks
     
@@ -673,11 +851,13 @@ class EmailDaemon:
         while True:
             try:
                 await asyncio.sleep(60)
-                
-                idle_time = time.time() - self.last_activity
+
+                async with self._activity_lock:
+                    idle_time = time.time() - self.last_activity
+
                 if idle_time > self.idle_timeout:
                     self.logger.info(f"Daemon idle for {idle_time:.0f}s, shutting down")
-                    self.shutdown()
+                    await self.shutdown()
                     break
             
             except (KernelError, Exception) as e:
@@ -686,16 +866,30 @@ class EmailDaemon:
 
 
     ## Cleanup and Shutdown
-    
-    def shutdown(self) -> None:
+
+    async def shutdown(self) -> None:
         """Shutdown daemon and clean up resources."""
 
+        if self._shutting_down:
+            self.logger.warning("Shutdown already in progress")
+            return
+
+        self._shutting_down = True
         self.logger.info("Shutting down daemon...")
         
         try:
+            shutdown_start = time.time()
+            while await self.get_active_clients() > 0:
+                self.logger.info("Waiting for active clients to disconnect...")
+                if time.time() - shutdown_start > 30:
+                    active = await self.get_active_clients()
+                    self.logger.warning(f"Timeout waiting for {active} clients, forcing shutdown")
+                    break
+                await asyncio.sleep(0.5)
+
             self.connections.close_all()
             self.db = None
-            self.cache.invalidate_all()
+            await self.cache.invalidate_all()
             
             # Clean up files
             pid_file = DAEMON_PID_PATH
@@ -723,10 +917,11 @@ async def run_daemon() -> None:
     """Main daemon event loop with secure socket setup."""
     try:
         daemon = EmailDaemon()
-        
+
         def signal_handler(signum, frame):
-            daemon.shutdown()
-        
+            if not daemon._shutting_down:
+                asyncio.create_task(daemon.shutdown())
+
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
         
@@ -749,6 +944,8 @@ async def run_daemon() -> None:
         # Write PID file
         pid_file = DAEMON_PID_PATH
         pid_file.write_text(str(os.getpid()))
+
+        await DaemonAuth.rotate_token()
         
         # Start background tasks
         asyncio.create_task(daemon.connections.keepalive_loop())
@@ -757,7 +954,8 @@ async def run_daemon() -> None:
         daemon.logger.info(f"Daemon started (PID: {os.getpid()})")
         log_event("daemon_started", {
             "pid": os.getpid(),
-            "socket": str(socket_path)
+            "socket": str(socket_path),
+            "max_concurrent_clients": daemon._max_concurrent_clients
         })
         
         async with server:
@@ -774,6 +972,15 @@ async def run_daemon() -> None:
         logger.exception(f"Daemon encountered an error: {e}")
         sys.exit(1)
 
+    finally:
+        if daemon and not daemon._shutting_down:
+            try:
+                await daemon.shutdown()
+
+            except Exception as e:
+                logger.error(f"Error during final shutdown: {e}")
+
+## Entry Point
 
 if __name__ == "__main__":
     try:

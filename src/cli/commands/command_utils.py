@@ -1,21 +1,10 @@
 """Shared utilities for CLI commands"""
 import re
 
+from src.utils.console import print_error, print_warning
 from src.utils.log_manager import get_logger
 
 logger = get_logger(__name__)
-
-# Lazy load console to avoid blocking on import
-_console = None
-
-
-def _get_console():
-    """Get or create the console instance."""
-    global _console
-    if _console is None:
-        from rich.console import Console
-        _console = Console()
-    return _console
 
 
 def clean_ansi_output(text: str) -> str:
@@ -40,26 +29,7 @@ def clean_ansi_output(text: str) -> str:
     
     return text
 
-
-def print_status(message: str, color: str = "cyan") -> None:
-    """Print status message to console."""
-    _get_console().print(f"[bold {color}]{message}[/]")
-
-
-def print_success(message: str) -> None:
-    """Print success message to console."""
-    _get_console().print(f"[green]{message}[/]")
-
-
-def print_error(message: str) -> None:
-    """Print error message to console."""
-    _get_console().print(f"[red]{message}[/]")
-
-
-def print_warning(message: str) -> None:
-    """Print warning message to console."""
-    _get_console().print(f"[yellow]{message}[/]")
-
+## Utility Functions for CLI Commands
 
 def check_email_exists(table: str, email_id: int, email_name: str = "Email") -> bool:
     """Check if email exists in table."""
@@ -71,7 +41,6 @@ def check_email_exists(table: str, email_id: int, email_name: str = "Email") -> 
         print_warning(message)
         return False
     return True
-
 
 def get_email_with_validation(table: str, email_id: int) -> dict:
     """Retrieve email from table with validation."""
@@ -92,7 +61,6 @@ def get_email_with_validation(table: str, email_id: int) -> dict:
         logger.error(f"Failed to retrieve email: {e}")
         print_error(f"Failed to retrieve email: {e}")
         return None
-
 
 def validate_required_args(**kwargs) -> bool:
     """Validate required arguments are provided."""

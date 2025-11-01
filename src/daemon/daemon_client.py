@@ -27,6 +27,7 @@ from src.utils.error_handling import (
     NetworkTimeoutError,
 )
 from src.utils.log_manager import get_logger, log_event
+from src.utils.paths import DAEMON_SOCKET_PATH, DAEMON_PID_PATH
 
 logger = get_logger(__name__)
 
@@ -284,10 +285,10 @@ class FallbackExecutionStrategy:
 
 
 class DaemonClient:
-    """Client for communicating with EmailDaemon."""
-    
-    SOCKET_PATH = Path.home() / '.kernel' / 'daemon.sock'
-    PID_FILE = Path.home() / '.kernel' / 'daemon.pid'
+    """Client for communicating with EmailDaemon with authentication"""
+
+    SOCKET_PATH = DAEMON_SOCKET_PATH
+    PID_FILE = DAEMON_PID_PATH
     DAEMON_SCRIPT = Path(__file__).parent / 'email_daemon.py'
     
     # Timeouts

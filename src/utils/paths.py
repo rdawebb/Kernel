@@ -20,6 +20,7 @@ BACKUPS_DIR = DATA_DIR / "backups"
 # Specific files
 DATABASE_PATH = KERNEL_DIR / "kernel.db"
 DAEMON_SOCKET_PATH = KERNEL_DIR / "daemon.sock"
+DAEMON_TOKEN_PATH = KERNEL_DIR / "daemon.token"
 DAEMON_PID_PATH = KERNEL_DIR / "daemon.pid"
 MASTER_KEY_PATH = SECRETS_DIR / ".master.key"
 CREDENTIALS_PATH = SECRETS_DIR / "credentials.enc"

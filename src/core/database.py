@@ -542,7 +542,26 @@ def get_database(config_manager=None, db_manager: Optional[DatabaseManager] = No
     global _db_instance
 
     if _db_instance is None:
+        if config_manager is None:
+            from src.utils.config_manager import ConfigManager
+            config_manager = ConfigManager()
+
         _db_instance = Database(config_manager, db_manager)
+        logger.debug("Database singleton instance created")
+
+    elif config_manager is not None or db_manager is not None:
+        _db_instance = Database(config_manager, db_manager)
+        logger.debug("Database singleton instance reconfigured")
 
     return _db_instance
+
+def reset_database() -> None:
+    """Reset the singleton database instance (for testing/reconfiguration)."""
+
+    global _db_instance
+
+    if _db_instance:
+        _db_instance.close()
+        _db_instance = None
+        logger.debug("Database singleton instance reset")
                 
