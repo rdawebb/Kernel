@@ -7,7 +7,15 @@ from typing import Any, Callable, Dict, Optional
 
 from src.utils.log_manager import get_logger
 
-logger = get_logger(__name__)
+# Lazy logger initialization to avoid circular import
+_logger = None
+
+def _get_logger():
+    """Get logger with lazy initialization."""
+    global _logger
+    if _logger is None:
+        _logger = get_logger(__name__)
+    return _logger
 
 
 ## Error Categories
@@ -232,14 +240,14 @@ class ErrorHandler:
         """Handle errors with logging and user-friendly message."""
 
         if isinstance(error, KernelError):
-            logger.error(f"{context}: {error.message}", extra=error.details)
+            _get_logger().error(f"{context}: {error.message}", extra=error.details)
             if log_traceback:
-                logger.exception(error)
+                _get_logger().exception(error)
             return error.to_dict()
         else:
-            logger.error(f"{context}: {str(error)}")
+            _get_logger().error(f"{context}: {str(error)}")
             if log_traceback:
-                logger.exception(error)
+                _get_logger().exception(error)
             return {
                 "error_type": "UnknownError",
                 "category": ErrorCategory.UNKNOWN.value,
@@ -262,7 +270,7 @@ class ErrorHandler:
                     raise
                 
                 except Exception as e:
-                    logger.exception(f"Unexpected error in {func.__name__}")
+                    _get_logger().exception(f"Unexpected error in {func.__name__}")
                     raise KernelError(
                         message=f"Unexpected error: {str(e)}",
                         details={"function": func.__name__}
@@ -280,7 +288,7 @@ class ErrorHandler:
                     raise
                 
                 except Exception as e:
-                    logger.exception(f"Unexpected error in {func.__name__}")
+                    _get_logger().exception(f"Unexpected error in {func.__name__}")
                     raise KernelError(
                         message=f"Unexpected error: {str(e)}",
                         details={"function": func.__name__}

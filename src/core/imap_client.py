@@ -3,11 +3,10 @@
 from enum import Enum
 from typing import Optional
 
-from ..utils.email_parser import parse_email, process_email_message
-from ..utils.log_manager import get_logger, log_call
-from . import storage_api
+from src.core.database import get_database
+from src.utils.log_manager import get_logger, log_call
+from .email_handling import EmailParser
 from .imap_connection import get_account_info, imap_connection
-from .uid_cache import UIDCache
 
 logger = get_logger(__name__)
 
@@ -25,19 +24,18 @@ class IMAPClient:
         """Initialize IMAP client with optional account config."""
 
         self.account_config = account_config or get_account_info()
-        self.uid_cache = UIDCache()
     
     @log_call
     def _process_and_save_email(self, email_id: bytes, email_data: list) -> bool:
         """Process email data and save if new."""
 
         for msg_part in email_data:
-            email_message = process_email_message(msg_part)
+            email_message = EmailParser.parse_from_message(msg_part)
             if not email_message:
                 continue
-            email_dict = parse_email(email_message, email_id.decode())
-            if not storage_api.email_exists("inbox", email_dict['uid']):
-                storage_api.save_email_metadata(email_dict)
+            email_dict = EmailParser.parse_from_message(email_message, email_id.decode())
+            if not get_database().email_exists("inbox", email_dict['uid']):
+                get_database().save_email_metadata(email_dict)
                 return True
         return False
     

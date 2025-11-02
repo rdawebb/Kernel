@@ -7,19 +7,14 @@ Commands can be registered with additional metadata like description, category, 
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
-from .attachments import handle_attachments_daemon, handle_attachments_list_daemon
-from .backup import handle_backup_daemon
-from .compose import handle_compose_daemon
-from .delete import handle_delete_command_daemon
-from .delete_db import handle_delete_db_daemon
-from .download import handle_download_daemon
-from .export import handle_export_daemon
-from .flag import handle_flag_command_daemon
-from .list import handle_list_command_daemon
-from .move import handle_move_daemon
+from .attachments import AttachmentsCommandHandler
+from .base import create_command_handlers
+from .compose import ComposeCommandHandler
+from .database import DatabaseCommandHandler
+from .email import EmailCommandHandler
 from .refresh import handle_refresh_command_daemon
-from .search import handle_search_command_daemon
-from .view import handle_view_command_daemon
+from .search import SearchCommandHandler
+from .viewing import ViewingCommandHandler
 
 
 @dataclass
@@ -127,130 +122,138 @@ class CommandRegistry:
         return result
 
 
-# Create global registry instance
+## Global Registry Instance
+
 _registry = CommandRegistry()
 
 
-# Register all commands with metadata
+## Registration Helper
+
+def register_command_with_base(
+        regsitry: CommandRegistry,
+        name: str,
+        handler_class: type,
+        description: str,
+        category: str = "general",
+        aliases: List[str] = None,
+):
+    """Helper function to register commands using BaseCommandHandler"""
+
+    from .base import create_command_handlers
+
+    cli_handler, daemon_handler = create_command_handlers(handler_class)
+
+    regsitry.register(
+        name=name,
+        handler=daemon_handler,
+        description=description,
+        category=category,
+        aliases=aliases or []
+    )
+
+    return cli_handler
+
+
+## Initialize Registry with Commands
+
 def _initialize_registry():
     """Initialize the command registry with all available commands."""
     
-    # Email management commands
+    # Viewing commands (inbox, sent, drafts, trash)
+
+    viewing_cli, viewing_daemon = create_command_handlers(ViewingCommandHandler)
+    
     _registry.register(
-        "list",
-        handle_list_command_daemon,
-        description="List emails from inbox",
-        category="email"
+        "inbox",
+        handler=viewing_daemon,
+        description="View inbox emails",
+        category="viewing"
     )
     
     _registry.register(
-        "view",
-        handle_view_command_daemon,
-        description="View email details",
+        "sent",
+        handler=viewing_daemon,
+        description="View sent emails",
+        category="viewing"
+    )
+    
+    _registry.register(
+        "drafts",
+        handler=viewing_daemon,
+        description="View draft emails",
+        category="viewing"
+    )
+    
+    _registry.register(
+        "trash",
+        handler=viewing_daemon,
+        description="View deleted emails",
+        category="viewing"
+    )
+
+    # Email operations command
+
+    email_cli, email_daemon = create_command_handlers(EmailCommandHandler)
+    _registry.register(
+        "email",
+        handler=email_daemon,
+        description="Email operations (view, delete, flag, unflag, move)",
         category="email"
     )
     
+    # Search and compose commands
+    
+    search_cli, search_daemon = create_command_handlers(SearchCommandHandler)
     _registry.register(
         "search",
-        handle_search_command_daemon,
+        handler=search_daemon,
         description="Search emails by keyword",
         category="email"
     )
     
+    compose_cli, compose_daemon = create_command_handlers(ComposeCommandHandler)
     _registry.register(
         "compose",
-        handle_compose_daemon,
+        handler=compose_daemon,
         description="Compose and send email",
         category="email"
     )
-    
-    # Email actions
-    _registry.register(
-        "flag",
-        handle_flag_command_daemon,
-        description="Flag an email",
-        category="email_actions"
-    )
-    
-    _registry.register(
-        "unflag",
-        handle_flag_command_daemon,
-        description="Unflag an email",
-        category="email_actions",
-        aliases=[]
-    )
-    
-    _registry.register(
-        "move",
-        handle_move_daemon,
-        description="Move email to another folder",
-        category="email_actions"
-    )
-    
-    _registry.register(
-        "delete",
-        handle_delete_command_daemon,
-        description="Delete an email",
-        category="email_actions"
-    )
-    
+
     # Attachment commands
+
+    attachments_cli, attachments_daemon = create_command_handlers(AttachmentsCommandHandler)
     _registry.register(
         "attachments",
-        handle_attachments_daemon,
-        description="List emails with attachments",
+        handler=attachments_daemon,
+        description="Attachment operations (list, download, downloads, open)",
         category="attachments"
     )
-    
-    _registry.register(
-        "attachments-list",
-        handle_attachments_list_daemon,
-        description="List attachments for an email",
-        category="attachments"
-    )
-    
-    _registry.register(
-        "download",
-        handle_download_daemon,
-        description="Download email attachments",
-        category="attachments"
-    )
-    
-    # Database commands
+
+    # Maintenance commands
+
     _registry.register(
         "refresh",
         handle_refresh_command_daemon,
         description="Refresh emails from server",
-        category="database"
+        category="maintenance"
     )
     
+    database_cli, database_daemon = create_command_handlers(DatabaseCommandHandler)
     _registry.register(
-        "backup",
-        handle_backup_daemon,
-        description="Backup the database",
-        category="database"
-    )
-    
-    _registry.register(
-        "export",
-        handle_export_daemon,
-        description="Export emails to CSV",
-        category="database"
-    )
-    
-    _registry.register(
-        "delete-db",
-        handle_delete_db_daemon,
-        description="Delete the local database",
-        category="database"
+        "database",
+        handler=database_daemon,
+        description="Database operations (backup, export, delete, info)",
+        category="maintenance"
     )
 
 
-# Initialize registry on module import
+## Initialize Registry at Import
+
 _initialize_registry()
 
 
-# Public API - direct access to registry methods
+## Public API - direct access to registry methods
+
 def get_command_metadata(command: str) -> Optional[CommandMetadata]:
     """Get full metadata for a command."""
 

@@ -23,6 +23,11 @@ from .command_registry import (
 __all__ = [
     # Registry instance
     '_registry',
+    # CLI Commands
+    'inbox_cli',
+    'search_cli',
+    'view_cli',
+    'database_cli',
     # Metadata API
     'CommandMetadata',
     'get_command_metadata',

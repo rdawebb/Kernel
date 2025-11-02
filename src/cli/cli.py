@@ -3,19 +3,12 @@
 import asyncio
 from typing import Any, Dict
 
-from ..daemon.daemon_client import execute_via_daemon
-from ..utils.config_manager import ConfigManager
-from ..utils.log_manager import async_log_call, get_logger, log_call
+from src.daemon.daemon_client import execute_via_daemon
+from src.utils.config_manager import ConfigManager
+from src.utils.log_manager import async_log_call, get_logger, log_call
 from .cli_parser import setup_argument_parser
-from .cli_utils import handle_downloads_list, handle_open_attachment
 
 logger = get_logger(__name__)
-
-# Special commands that require local CLI handling
-LOCAL_ONLY_COMMANDS = {
-    "downloads-list",  # File system operations
-    "open",            # Desktop file operations
-}
 
 
 def _args_to_dict(args) -> Dict[str, Any]:
@@ -34,18 +27,6 @@ async def dispatch_command(args, cfg_manager):
     
     console = Console()
     command = args.command
-    
-    # Handle local-only commands that require file system/desktop access
-    if command in LOCAL_ONLY_COMMANDS:
-        try:
-            if command == "downloads-list":
-                await handle_downloads_list(args, cfg_manager)
-            elif command == "open":
-                await handle_open_attachment(args, cfg_manager)
-        except Exception as e:
-            logger.error(f"Error handling {command}: {e}")
-            console.print(f"[red]Error: {e}[/]")
-        return
     
     # Execute most commands via daemon
     try:

@@ -11,10 +11,6 @@ from typing import Any, Dict, Optional
 
 from rich.logging import RichHandler
 
-from .error_handling import (
-    FileSystemError,
-    KernelError,
-)
 from .paths import LOGS_DIR
 
 _LOG_DIR: Optional[Path] = None
@@ -22,6 +18,9 @@ _LOG_DIR: Optional[Path] = None
 
 def _get_log_dir() -> Path:
     """Get log directory, creating it on first access."""
+    
+    from .error_handling import FileSystemError
+    
     global _LOG_DIR
     
     if _LOG_DIR is None:
@@ -251,6 +250,8 @@ class LogManager:
     def _setup_handlers(self) -> None:
         """Setup console and file handlers with sensitive data filtering."""
 
+        from .error_handling import FileSystemError, KernelError
+
         sensitive_filter = SensitiveDataFilter(strategy="full")
 
         try:
@@ -329,6 +330,8 @@ class LogManager:
 
     def set_level(self, level: str):
         """Set logging level at runtime"""
+
+        from .error_handling import FileSystemError
 
         try:
             self.log_level = getattr(logging, level.upper())
@@ -413,19 +416,19 @@ def init_logging(log_level: str = "INFO") -> LogManager:
     """Initialize logging system and return LogManager instance."""
     
     global _log_manager
-    _log_manager = LogManager(log_level)
+
+    if _log_manager is None:
+        _log_manager = LogManager(log_level)
 
     return _log_manager
 
 def get_logger(name: Optional[str] = None, **context) -> logging.Logger:
     """Get a logger instance with optional context."""
 
-    logger = logging.getLogger(f"kernel.{name}" if name else "kernel")
+    if _log_manager is None:
+        init_logging()
 
-    if context:
-        return ContextAdapter(logger, context)
-
-    return logger
+    return _log_manager.get_logger(name, **context)
 
 def log_event(event_type: str, message: str, **extra):
     """Log an event with specific type and extra context (module-level wrapper)."""
