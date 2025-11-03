@@ -1,133 +1,417 @@
 """IMAP client for email operations - fetch, delete, and synchronization."""
 
+import aioimaplib
+import asyncio
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
-from src.core.database import get_database
-from src.utils.log_manager import get_logger, log_call
-from .email_handling import EmailParser
-from .imap_connection import get_account_info, imap_connection
+from src.core.email_handling import EmailParser
+from src.utils.error_handling import (
+    IMAPError,
+    NetworkError,
+    NetworkTimeoutError
+)
+from src.utils.log_manager import async_log_call, get_logger
+from .imap_connection import IMAPConnection
 
 logger = get_logger(__name__)
 
 
 class SyncMode(Enum):
-    """Email sync modes."""
-    INCREMENTAL = "incremental"  # Fetch only new emails since last sync
-    FULL = "full"  # Fetch all emails from server
+    """Synchronization modes for IMAP client."""
+
+    INCREMENTAL = "incremental"
+    FULL = "full"
 
 
 class IMAPClient:
-    """Handles IMAP operations: fetch, delete, and email synchronization."""
-    
-    def __init__(self, account_config: Optional[dict] = None):
-        """Initialize IMAP client with optional account config."""
+    """Asynchronous IMAP client for email operations."""
 
-        self.account_config = account_config or get_account_info()
-    
-    @log_call
-    def _process_and_save_email(self, email_id: bytes, email_data: list) -> bool:
-        """Process email data and save if new."""
+    RESONSE_OK = "OK"
+    RESONSE_NO = "NO"
+    RESONSE_BAD = "BAD"
 
-        for msg_part in email_data:
-            email_message = EmailParser.parse_from_message(msg_part)
-            if not email_message:
-                continue
-            email_dict = EmailParser.parse_from_message(email_message, email_id.decode())
-            if not get_database().email_exists("inbox", email_dict['uid']):
-                get_database().save_email_metadata(email_dict)
-                return True
-        return False
-    
-    @log_call
-    def fetch_new_emails(self, sync_mode: SyncMode = SyncMode.INCREMENTAL) -> int:
-        """Fetch emails from IMAP server and save to database."""
+    def __init__(self, config_manager):
+        """Initialize IMAP client with config manager."""
 
-        if not self.account_config:
-            logger.error("Account config not available")
-            print("Account configuration not available. Please configure your email account.")
-            return 0
+        self.config_manager = config_manager
+        self._connection = IMAPConnection(config_manager)
+        self._selected_folder = None
+
+    def _check_response(self, response, operation: str) -> None:
+        """Check IMAP response and raise error if not OK."""
         
-        with imap_connection(self.account_config) as mail:
+        if response.result != self.RESONSE_OK:
+            error_msg = response.lines[0] if response.lines else "No response"
+            if isinstance(error_msg, bytes):
+                error_msg = error_msg.decode()
             
-            if not mail:
+            raise IMAPError(
+                f"IMAP operation failed: {operation}",
+                details={"response": str(error_msg)}
+            )
+
+    async def _ensure_connection(self) -> aioimaplib.IMAP4_SSL:
+        """Ensure IMAP connection is established and valid."""
+
+        return await self._connection._ensure_connection()
+
+    async def _select_folder(self, folder: str = "INBOX") -> None:
+        """Select IMAP folder if not already selected."""
+
+        if self._selected_folder != folder:
+            client = await self._ensure_connection()
+
+            response = await asyncio.wait_for(
+                client.select(folder),
+                timeout=10.0
+            )
+
+            self._check_response(response, f"select folder '{folder}'")
+
+            self._selected_folder = folder
+            logger.debug(f"Selected IMAP folder: {folder}")
+
+
+    ## Email Fetching
+
+    @async_log_call
+    async def fetch_new_emails(self, sync_mode: SyncMode = SyncMode.INCREMENTAL) -> int:
+        """Fetch new emails from the IMAP server asynchronously."""
+
+        try:
+            client = await self._ensure_connection()
+            await self._select_folder("INBOX")
+
+            from src.core.database import get_database
+            db = get_database(self.config_manager)
+
+            email_uids = await self._search_emails(client, sync_mode, db)
+            if not email_uids:
+                logger.info("No new emails found.")
                 return 0
-            
-            mail.select("inbox")
-            
-            try:
-                # Search for emails
-                if sync_mode == SyncMode.FULL:
-                    status, messages = mail.search(None, "ALL")
-                else:
-                    highest_uid = self.uid_cache.get(db_fallback_func=storage_api.get_highest_uid)
-                    if highest_uid:
-                        status, messages = mail.uid('search', None, f'UID {highest_uid + 1}:*')
-                    else:
-                        status, messages = mail.search(None, "ALL")
+
+            logger.info(f"Found {len(email_uids)} new emails to fetch.")
+            emails_saved = 0
+
+            batch_size = 50
+            for i in range(0, len(email_uids), batch_size):
+                batch = email_uids[i:i + batch_size]
+
+                if i > 0:
+                    await asyncio.sleep(0.5)
                 
-                if status != "OK":
-                    logger.error(f"Error searching for emails: {status}")
-                    print("Unable to fetch emails. Please check your connection and try again.")
-                    return 0
-                
-                email_ids = messages[0].split()
-                if not email_ids or email_ids == [b'']:
-                    logger.debug("No new emails found")
-                    return 0
-                
-                emails_saved = 0
-                use_uid = sync_mode == SyncMode.INCREMENTAL and self.uid_cache.get() is not None
-                
-                # Fetch and process emails
-                for email_id in email_ids:
-                    try:
-                        status, email_data = (mail.uid('fetch', email_id, "(RFC822)") if use_uid
-                                            else mail.fetch(email_id, "(RFC822)"))
-                        
-                        if status != "OK":
-                            logger.error(f"Error fetching email ID {email_id}: {status}")
-                            continue
-                        
-                        if self._process_and_save_email(email_id, email_data):
-                            emails_saved += 1
-                    except Exception as e:
-                        logger.error(f"Error processing email {email_id}: {e}")
+                fetch_tasks = [self._fetch_email(client, uid) for uid in batch]
+                raw_emails = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+                for email_uid, raw_email in zip(batch, raw_emails):
+                    if isinstance(raw_email, Exception):
+                        logger.error(f"Error fetching email {email_uid}: {str(raw_email)}")
                         continue
-                
-                logger.info(f"Fetched and saved {emails_saved} new emails from IMAP server")
-                
-                # Update cache with new highest UID
-                if emails_saved > 0:
-                    new_highest_uid = storage_api.get_highest_uid()
-                    if new_highest_uid is not None:
-                        self.uid_cache.update(new_highest_uid)
-                
-                return emails_saved
+
+                    if not raw_email:
+                        continue
+
+                    try:
+                        email_uid_str = email_uid.decode() if isinstance(email_uid, bytes) else str(email_uid)
+                        email_dict = EmailParser.parse_from_bytes(raw_email, email_uid_str)
+
+                        if not await db.email_exists("inbox", email_dict["uid"]):
+                            await db.save_email("inbox", email_dict)
+                            emails_saved += 1
+
+                    except Exception as e:
+                        logger.error(f"Error processing email {email_uid}: {str(e)}")
+                        continue
+
+            logger.info(f"Fetched and saved {emails_saved} new emails.")
+
+            return emails_saved
+        
+        except (IMAPError, NetworkError, NetworkTimeoutError):
+            raise
+
+        except Exception as e:
+            logger.exception(f"Unexpected error fetching emails: {str(e)}")
+            raise IMAPError(
+                "Failed to fetch emails from server",
+                details={"error": str(e)}
+            ) from e
+
+    async def _search_emails(self, client: aioimaplib.IMAP4_SSL, sync_mode: SyncMode, db) -> List[bytes]:
+        """Search for new emails based on sync mode."""
+
+        try:
+            if sync_mode == SyncMode.FULL:
+                response = await asyncio.wait_for(
+                    client.uid_search("ALL"),
+                    timeout=30.0
+                )
+            else:
+                highest_uid = await db.get_highest_uid()
+                if highest_uid:
+                    response = await asyncio.wait_for(
+                        client.uid_search(f"(UID {highest_uid + 1}:*)"),
+                        timeout=30.0
+                    )
+                else:
+                    response = await asyncio.wait_for(
+                        client.uid_search("ALL"),
+                        timeout=30.0
+                    )
             
-            except Exception as e:
-                logger.error(f"Error fetching emails: {e}")
-                print("Sorry, something went wrong. Please check your settings or try again.")
-                return 0
+            self._check_response(response, "search emails")
+
+            uid_data = response.lines[0] if response.lines else b""
+            if not uid_data or uid_data == b'':
+                return []
+
+            uid_str = uid_data.decode() if isinstance(uid_data, bytes) else str(uid_data)
+            email_uids = [int(uid) for uid in uid_str.split() if uid.strip()]
+
+            return email_uids     
+        
+        except asyncio.TimeoutError as e:
+            raise NetworkTimeoutError("IMAP search timeout") from e
+
+        except Exception as e:
+            raise IMAPError(f"Failed to search emails: {str(e)}") from e
+
+    async def _fetch_email(self, client: aioimaplib.IMAP4_SSL, email_uid: int) -> Optional[bytes]:
+        """Fetch a single email by UID from the server."""
+
+        try:
+            response = await asyncio.wait_for(
+                client.uid("fetch", str(email_uid), "(RFC822)"),
+                timeout=30.0
+            )
+
+            if response.result != self.RESONSE_OK:
+                logger.warning(f"Failed to fetch email {email_uid}: {response.lines[0] if response.lines else 'No response'}")
+                return None
+
+            raw_email = None
+
+            for line in response.lines:
+                if isinstance(line, bytes) and len(line) > 100:
+                    raw_email = line
+                    break
+
+            if not raw_email:
+                logger.warning(f"Empty data for email {email_uid}")
+                return None
+
+            return raw_email
+
+        except asyncio.TimeoutError as e:
+            logger.error(f"Timeout fetching email {email_uid}: {str(e)}")
+            return None
+                
+        except Exception as e:
+            logger.error(f"Failed to fetch email {email_uid}: {str(e)}")
+            return None
     
-    @log_call
-    def delete_email(self, email_uid: str) -> bool:
-        """Delete an email by UID from the server."""
-        if not self.account_config:
-            logger.error("Account config not available")
-            print("Account configuration not available. Please configure your email account.")
+
+    ## Email Operations
+
+    async def _store_flags(self, email_uid: str, operation: str, flags: str, add: bool = True) -> bool:
+        """Generic flag store operation for emails."""
+        
+        try:
+            client = await self._ensure_connection()
+            await self._select_folder("INBOX")
+
+            flag_op = "+FLAGS" if add else "-FLAGS"
+            response = await asyncio.wait_for(
+                client.uid("STORE", email_uid, flag_op, flags),
+                timeout=10.0
+            )
+
+            self._check_response(response, f"{operation} for UID {email_uid}")
+            logger.info(f"{operation.capitalize()} email UID {email_uid} successfully.")
+            return True
+
+        except IMAPError:
+            raise
+
+        except Exception as e:
+            logger.exception(f"Error in {operation} for UID {email_uid}: {str(e)}")
+            return False
+
+
+    ## Email Deletion
+
+    @async_log_call
+    async def delete_email(self, email_uid: str) -> bool:
+        """Delete an email by UID on the server."""
+
+        try:
+            if not await self._store_flags(email_uid, "mark for deletion", r"(\Deleted)"):
+                return False
+
+            client = await self._ensure_connection()
+            response = await asyncio.wait_for(
+                client.expunge(),
+                timeout=10.0
+            )
+
+            self._check_response(response, f"expunge after delete UID {email_uid}")
+            logger.info(f"Deleted email UID {email_uid} from IMAP server.")
+            return True
+
+        except Exception as e:
+            logger.exception(f"Unexpected error deleting email UID {email_uid}: {str(e)}")
+            return False
+
+
+    ## Mark as Read/Unread
+
+    @async_log_call
+    async def update_read_status(self, email_uid: str, read: bool = True) -> bool:
+        """Mark an email as read or unread by UID on the server."""
+
+        return await self._store_flags(
+            email_uid,
+            f"mark as {'read' if read else 'unread'}",
+            r"(\Seen)",
+            add=read
+        )
+
+
+    ## Flag/Unflag Emails
+
+    @async_log_call
+    async def update_flag_status(self, email_uid: str, flagged: bool = True) -> bool:
+        """Flag or unflag an email by UID on the server."""
+
+        return await self._store_flags(
+            email_uid,
+            f"{'flag' if flagged else 'unflag'}",
+            r"(\Flagged)",
+            add=flagged
+        )
+
+    ## Move Emails
+
+    @async_log_call
+    async def move_email(self, email_uid: str, dest_folder: str) -> bool:
+        """Move an email by UID to another folder on the server."""
+
+        try:
+            client = await self._ensure_connection()
+            await self._select_folder("INBOX")
+
+            # Copy email to destination folder
+            response = await asyncio.wait_for(
+                client.uid("copy", email_uid, dest_folder),
+                timeout=10.0
+            )
+
+            self._check_response(response, f"copy email UID {email_uid} to {dest_folder}")
+
+            # Mark original email as deleted using flag store operation
+            if not await self._store_flags(email_uid, "mark for deletion in move", r"(\Deleted)"):
+                logger.warning(f"Failed to mark source email UID {email_uid} for deletion after copy")
+                return False
+
+            # Expunge the marked email
+            response = await asyncio.wait_for(
+                client.expunge(),
+                timeout=10.0
+            )
+
+            self._check_response(response, f"expunge after move UID {email_uid}")
+            logger.info(f"Moved email UID {email_uid} to {dest_folder} on IMAP server.")
+            return True
+
+        except Exception as e:
+            logger.exception(f"Unexpected error moving email UID {email_uid} to folder {dest_folder}: {str(e)}")
             return False
         
-        with imap_connection(self.account_config) as mail:
-            if not mail:
-                return False
-            
-            try:
-                mail.uid('STORE', email_uid, '+FLAGS', r'(\Deleted)')
-                mail.expunge()
-                logger.info(f"Deleted email UID {email_uid} from IMAP server")
-                return True
-            except Exception as e:
-                logger.error(f"Error deleting email UID {email_uid}: {e}")
-                print(f"Failed to delete email UID {email_uid}")
-                return False
+    
+    ## Folder Management
+
+    @async_log_call
+    async def get_folder_list(self) -> List[str]:
+        """Retrieve the list of folders from the IMAP server."""
+
+        try:
+            client = await self._ensure_connection()
+
+            response = await asyncio.wait_for(
+                client.list('""', '*'),
+                timeout=10.0
+            )
+
+            self._check_response(response, "list folders")
+
+            folders = []
+            for line in response.lines:
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8")
+                
+                if '""' in line:
+                    parts = line.split('""')
+                    if len(parts) >= 4:
+                        folder_name = parts[3].strip().strip('"')
+                        folders.append(folder_name)
+
+            logger.info(f"Retrieved {len(folders)} folders from IMAP server.")
+            return folders
+
+        except Exception as e:
+            logger.exception(f"Unexpected error retrieving folder list: {str(e)}")
+            raise IMAPError(
+                "Failed to retrieve folder list from server",
+                details={"error": str(e)}
+            ) from e
+
+    @async_log_call
+    async def get_folder_status(self, folder: str = "INBOX") -> dict:
+        """Get status of a folder from the IMAP server."""
+
+        try:
+            client = await self._ensure_connection()
+
+            response = await asyncio.wait_for(
+                client.status(folder, "(MESSAGES UNSEEN RECENT)"),
+                timeout=10.0
+            )
+
+            self._check_response(response, f"get status for folder '{folder}'")
+
+            status = {}
+            if response.lines:
+                line = response.lines[0]
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8")
+                
+                import re
+                messages_match = re.search(r'MESSAGES (\d+)', line)
+                unseen_match = re.search(r'UNSEEN (\d+)', line)
+                recent_match = re.search(r'RECENT (\d+)', line)
+
+                if messages_match:
+                    status["messages"] = int(messages_match.group(1))
+                if unseen_match:
+                    status["unseen"] = int(unseen_match.group(1))
+                if recent_match:
+                    status["recent"] = int(recent_match.group(1))
+
+            logger.info(f"Retrieved status for folder {folder}: {status}")
+            return status
+        
+        except Exception as e:
+            logger.exception(f"Unexpected error retrieving status for folder {folder}: {str(e)}")
+            raise IMAPError(
+                f"Failed to retrieve status for folder {folder}",
+                details={"error": str(e)}
+            ) from e
+
+
+## IMAP Client Factory
+
+def get_imap_client(config_manager) -> IMAPClient:
+    """Get an IMAP client instance."""
+
+    return IMAPClient(config_manager)

@@ -1,156 +1,203 @@
 """IMAP connection management - handles connection setup and cleanup."""
 
-import imaplib
-from contextlib import contextmanager
+import aioimaplib
+import asyncio
+import time
 from typing import Optional
 
-from security.key_store import KeyStore
-
-from ..utils.config_manager import ConfigManager
-from ..utils.error_handling import (
+from security.credential_manager import CredentialManager
+from security.key_store import get_keystore
+from src.utils.config_manager import ConfigManager
+from src.utils.error_handling import (
     IMAPError,
     InvalidCredentialsError,
     MissingCredentialsError,
-    NetworkTimeoutError,
+    NetworkError,
+    NetworkTimeoutError
 )
-from ..utils.log_manager import get_logger
+from src.utils.log_manager import async_log_call, get_logger
 
 logger = get_logger(__name__)
 
-
-def _prompt_for_config(config_key: str, prompt_text: str, default_value: str = "") -> Optional[str]:
-    """Prompt user for missing config value and save it."""
-    config_manager = ConfigManager()
-    
-    # Parse the config key path to access nested attributes
-    keys = config_key.split(".")
-    config_value = config_manager.config
-    for key in keys:
-        config_value = getattr(config_value, key, None)
-        if config_value is None:
-            break
-    
-    if not config_value or config_value == "":
-        logger.info(f"{config_key} not configured, prompting user")
-        user_input = input(prompt_text).strip()
-        
-        if user_input:
-            config_manager.set_config(config_key, user_input)
-            return user_input
-        elif default_value:
-            config_manager.set_config(config_key, default_value)
-            return default_value
-        else:
-            logger.error(f"{config_key} not provided")
-            return None
-    
-    return config_value
+RESPONSE_OK = "OK"
 
 
-def get_account_info(email: str = "") -> Optional[dict]:
-    """Retrieve all required account information, prompting for missing values."""
-    try:
-        config_manager = ConfigManager()
-        key_store = KeyStore()
+class IMAPConnection:
+    """Manages an IMAP connection lifecycle."""
+
+    def __init__(self, config_manager: ConfigManager):
+        """Initialize IMAP connection with config manager."""
+
+        self.config_manager = config_manager
+        self.credential_manager = CredentialManager(config_manager)
+        self.keystore = get_keystore()
+        self._client: Optional[aioimaplib.IMAP4_SSL] = None
+        self._lock = asyncio.Lock()
+        self._connection_created_at = None
+        self._connection_ttl = getattr(
+            self.config_manager.config.account,
+            "connection_ttl",
+            3600
+        )  # Default to 1 hour
+
+    def _check_response(self, response, operation: str) -> None:
+        """Check IMAP response and raise error if not OK."""
         
-        imap_server = _prompt_for_config(
-            'account.imap_server',
-            "Enter IMAP server address (e.g., imap.gmail.com): "
-        )
-        if not imap_server:
-            raise MissingCredentialsError("IMAP server is required")
-        
-        if not email:
-            email = _prompt_for_config(
-                'account.email',
-                "Enter your email address: "
+        if response.result != RESPONSE_OK:
+            error_msg = response.lines[0] if response.lines else "No response"
+            if isinstance(error_msg, bytes):
+                error_msg = error_msg.decode()
+            
+            raise IMAPError(
+                f"IMAP operation failed: {operation}",
+                details={"response": str(error_msg)}
             )
-            if not email:
-                raise MissingCredentialsError("Email address is required")
         
-        username = _prompt_for_config(
-            'account.username',
-            "Enter your username (or press Enter to use your email address): ",
-            default_value=email
-        )
-        if not username:
-            raise MissingCredentialsError("Username is required")
+    def _is_connection_expired(self) -> bool:
+        """Check if the IMAP connection has expired based on TTL."""
+
+        if self._client is None or self._connection_created_at is None:
+            return True
         
-        if not key_store:
-            raise MissingCredentialsError("KeyStore unavailable - cannot securely retrieve password")
-        
-        password = key_store.get_password("kernel_imap", username, prompt_if_missing=True)
-        if not password:
-            raise MissingCredentialsError("Password is required")
-        
-        imap_port = config_manager.config.account.imap_port
-        
-        return {
-            "imap_server": imap_server,
-            "imap_port": imap_port,
-            "username": username,
-            "email": email,
-            "password": password,
-        }
-    except MissingCredentialsError:
-        raise
-    except Exception as e:
-        raise IMAPError("Error retrieving account information") from e
+        elapsed = time.time() - self._connection_created_at
 
+        return elapsed > self._connection_ttl
 
-def connect_to_imap(account_config: dict) -> Optional[imaplib.IMAP4_SSL]:
-    """Establish connection to IMAP server."""
+    async def _ensure_connection(self) -> aioimaplib.IMAP4_SSL:
+        """Ensure an active IMAP connection."""
 
-    import getpass
+        async with self._lock:
+            if self._client is None or self._is_connection_expired():
+                if self._client is not None:
+                    logger.info("IMAP connection expired, reconnecting...")
+                    try:
+                        await self._client.logout()
+                    
+                    except Exception:
+                        pass
 
-    try:
-        mail = imaplib.IMAP4_SSL(account_config["imap_server"], account_config["imap_port"])
-        try:
-            mail.login(account_config["username"], account_config["password"])
-            logger.info(f"Connected to IMAP server: {account_config['imap_server']}")
-            return mail
-        
-        except imaplib.IMAP4.error as e:
-            logger.error(f"Error logging in to IMAP server: {e}")
-            password = getpass.getpass(f"Password for {account_config['username']}: ")
-
-            if password:
-                KeyStore().set_password("kernel_imap", account_config["username"], password)
-
+                self._client = await self._connect()
+                self._connection_created_at = time.time()
+            else:
                 try:
-                    mail.login(account_config["username"], password)
-                    logger.info(f"Connected to IMAP server after re-prompt: {account_config['imap_server']}")
-                    return mail
+                    await asyncio.wait_for(self._client.noop(), timeout=5.0)
+                    logger.debug("IMAP connection health check passed.")
+                
+                except (asyncio.TimeoutError, Exception) as e:
+                    logger.warning(f"IMAP connection lost: {e}, reconnecting...")
+                    try:
+                        await self._client.logout()
+
+                    except Exception:
+                        pass
+
+                    self._client = await self._connect()
+                    self._connection_created_at = time.time()
+
+        return self._client
+
+    async def _connect(self) -> aioimaplib.IMAP4_SSL:
+        """Connect to IMAP server asynchronously."""
+
+        config = self.config_manager.config.account
+
+        try:
+            await self.credential_manager.validate_and_prompt()
+
+            password = self.keystore.retrieve(config.username)
+            if not password:
+                raise MissingCredentialsError("Password not found after validation.")
+
+            logger.info(f"Connecting to IMAP server: {config.imap_server}...")
+            
+            client = aioimaplib.IMAP4_SSL(
+                host=config.imap_server,
+                port=config.imap_port,
+                timeout=30
+            )
+
+            await asyncio.wait_for(
+                client.wait_hello_from_server(),
+                timeout=30.0
+            )
+
+            response = await asyncio.wait_for(
+                client.login(config.username, password),
+                timeout=30.0
+            )
+
+            self._check_response(response, "login")
+            
+            logger.info(f"Connected to IMAP server: {config.imap_server} as {config.username}")
+
+            return client
+        
+        except asyncio.TimeoutError as e:
+            raise NetworkTimeoutError(
+                "IMAP connection timeout",
+                details={"server": config.imap_server}
+            ) from e
+
+        except InvalidCredentialsError as e:
+            logger.warning(f"Authentication failed: {e.message}")
+
+            await self.credential_manager.handle_auth_failure()
+            logger.info("Retrying connection with new credentials...")
+            return await self._connect()
+
+        except aioimaplib.AioImapException as e:
+            error_msg = str(e).lower()
+            if "authentication failed" in error_msg or "login" in error_msg:
+                raise InvalidCredentialsError(
+                    "IMAP authentication failed",
+                    details={"server": config.imap_server, "username": config.username}
+                ) from e
+            
+            else:
+                raise IMAPError(
+                    f"IMAP connection error: {str(e)}",
+                    details={"server": config.imap_server}
+                ) from e
+            
+        except (MissingCredentialsError, InvalidCredentialsError):
+            raise
+        
+        except Exception as e:
+            raise NetworkError(
+                f"Failed to connect to IMAP server: {str(e)}",
+                details={"server": config.imap_server}
+            ) from e
+
+    @async_log_call
+    async def close_connection(self) -> None:
+        """Close the IMAP connection."""
+
+        async with self._lock:
+            if self._client:
+                try:
+                    await asyncio.wait_for(
+                        self._client.logout(),
+                        timeout=5.0
+                    )
+                    logger.debug("IMAP connection closed successfully.")
                 
                 except Exception as e:
-                    raise InvalidCredentialsError("Invalid credentials for IMAP server") from e
-            else:
-                raise MissingCredentialsError("Password required for IMAP authentication")
-            
-    except (InvalidCredentialsError, MissingCredentialsError):
-        raise
-    except imaplib.IMAP4.abort:
-        raise NetworkTimeoutError("IMAP connection timeout") 
-    except Exception as e:
-        raise IMAPError("Failed to connect to IMAP server") from e
+                    logger.debug(f"Error closing IMAP connection: {str(e)}")
 
+                finally:
+                    self._client = None
+                    self._connection_created_at = None
 
-@contextmanager
-def imap_connection(account_config: dict):
-    """Context manager for IMAP connection with automatic cleanup."""
-    try:
-        mail = connect_to_imap(account_config)
-        if not mail:
-            raise IMAPError("Failed to establish IMAP connection")
-        try:
-            yield mail
-        finally:
-            try:
-                mail.close()
-                mail.logout()
-            except Exception:
-                pass
-    except (IMAPError, InvalidCredentialsError, MissingCredentialsError, NetworkTimeoutError):
-        raise
-    except Exception as e:
-        raise IMAPError("IMAP connection error") from e
+    
+    ## Context Manager Helpers
+
+    async def __aenter__(self):
+        """Enter async context manager."""
+
+        await self._ensure_connection()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Exit async context manager."""
+
+        await self.close_connection()

@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Optional
 
 from src.utils.log_manager import get_logger
 
-# Lazy logger initialization to avoid circular import
+
 _logger = None
 
 def _get_logger():

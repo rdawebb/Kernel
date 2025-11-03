@@ -24,10 +24,13 @@ __all__ = [
     # Registry instance
     '_registry',
     # CLI Commands
-    'inbox_cli',
     'search_cli',
-    'view_cli',
+    'viewing_cli',
     'database_cli',
+    'compose_cli',
+    'attachments_cli',
+    'email_cli',
+    'refresh_cli',
     # Metadata API
     'CommandMetadata',
     'get_command_metadata',

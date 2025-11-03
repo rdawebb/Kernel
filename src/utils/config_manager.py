@@ -40,6 +40,8 @@ class AccountConfig(BaseModel):
     username: str = ""
     email: str = ""
     use_tls: bool = True
+    network_timeout: int = 30  # in seconds
+    connection_ttl: int = 3600  # in seconds
 
 class FeaturesConfig(BaseModel):
     """Pydantic model for feature toggles."""

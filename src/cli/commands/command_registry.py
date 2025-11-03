@@ -12,7 +12,7 @@ from .base import create_command_handlers
 from .compose import ComposeCommandHandler
 from .database import DatabaseCommandHandler
 from .email import EmailCommandHandler
-from .refresh import handle_refresh_command_daemon
+from .refresh import RefreshCommandHandler
 from .search import SearchCommandHandler
 from .viewing import ViewingCommandHandler
 
@@ -231,9 +231,10 @@ def _initialize_registry():
 
     # Maintenance commands
 
+    refresh_cli, refresh_daemon = create_command_handlers(RefreshCommandHandler)
     _registry.register(
         "refresh",
-        handle_refresh_command_daemon,
+        handler=refresh_daemon,
         description="Refresh emails from server",
         category="maintenance"
     )

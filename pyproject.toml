@@ -11,7 +11,14 @@ dependencies = [
     "python-dotenv==1.1.1",
     "email_validator==2.1.1",
     "pandas>=2.0.0",
-    "textual==6.2.1"
+    "textual==6.2.1",
+    "pytest==8.2.0",
+    "pytest-asyncio==1.2.0",
+    "pydantic>=2.0.0",
+    "keyring>=24.0.0",
+    "cryptography>=41.0.0",
+    "aiosqlite>=0.19.0",
+    "aioimaplib>=2.0.1"
 ]
 
 [project.scripts]

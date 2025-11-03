@@ -13,38 +13,42 @@ logger = get_logger(__name__)
 
 def _args_to_dict(args) -> Dict[str, Any]:
     """Convert argparse Namespace to dictionary for daemon."""
+
     result = {}
     for key, value in vars(args).items():
         if key != 'command' and value is not None:
             result[key] = value
+
     return result
 
 
 @async_log_call
 async def dispatch_command(args, cfg_manager):
     """Route parsed command via daemon (with fallback) or local handlers."""
+
     from rich.console import Console
     
     console = Console()
     command = args.command
     
-    # Execute most commands via daemon
     try:
         args_dict = _args_to_dict(args)
         result = await execute_via_daemon(command, args_dict)
-        # Display output or error
+
         if result['success']:
             if result.get('data'):
                 print(result['data'])
+
             via_daemon = " (via daemon)" if result.get('via_daemon') else " (direct)"
             logger.debug(f"Command {command} executed{via_daemon}")
         else:
             logger.error(f"Command {command} failed: {result.get('error')}")
             console.print(f"[red]Error: {result.get('error')}[/]")
+
     except ValueError as ve:
-        # Handle unrecognized command error from LazyCommandRegistry
         logger.error(f"Unrecognized command: {ve}")
         console.print(f"[red]{ve}[/]")
+
     except Exception as e:
         logger.error(f"Error executing command {command}: {e}")
         console.print(f"[red]Error: {e}[/]")
@@ -52,6 +56,7 @@ async def dispatch_command(args, cfg_manager):
 @log_call
 def main():
     """Main CLI entry point"""
+    
     from rich.console import Console
     
     console = Console()
