@@ -148,7 +148,7 @@ class BaseCommandHandler(ABC):
                 details={"table": table, "valid_tables": list(SCHEMAS.keys())}
             )
 
-    def validate_email_exists(self, db: Any, table: str, email_id: str, 
+    async def validate_email_exists(self, db: Any, table: str, email_id: str, 
                              include_body: bool = True) -> Dict[str, Any]:
         """Validate that an email with the given ID exists in the specified table."""
 
@@ -158,7 +158,7 @@ class BaseCommandHandler(ABC):
                 details={"table": table, "email_id": email_id}
             )
 
-        email = db.get_email(table, email_id, include_body=include_body)
+        email = await db.get_email(table, email_id, include_body=include_body)
         if not email:
             raise ValidationError(
                 f"Email with ID {email_id} could not be retrieved from {table}",

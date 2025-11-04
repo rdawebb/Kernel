@@ -279,22 +279,22 @@ class EmailComposer:
             raise SMTPError("Failed to send email") from e
         
 
-    def schedule_email(self, email_dict: Dict[str, Any],
+    async def schedule_email(self, email_dict: Dict[str, Any],
                        send_at: str) -> Tuple[bool, Optional[str]]:
         """Schedule an email to be sent at a later time"""
 
         parsed_dt, error = DateTimeParser.parse_datetime(send_at)
         if error:
             raise ValidationError(error)
-        
-        email_dict["send_at"] = send_at
+
+        email_dict["send_at"] = parsed_dt
         email_dict["send_status"] = "pending"
 
         try:
             from src.core.database import get_database
 
             db = get_database(self.config)
-            db.save_email("sent_emails", email_dict)
+            await db.save_email("sent_emails", email_dict)
 
             logger.info(f"Email scheduled to be sent at {send_at}")
             return True, None
@@ -401,6 +401,7 @@ class DateTimeParser:
         
         return None
     
+
 ## Email Validation
 
 class EmailValidator:

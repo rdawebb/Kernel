@@ -1,6 +1,8 @@
 """Configuration manager for persistent settings stored as JSON."""
 
+import asyncio
 import json
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -14,7 +16,7 @@ from .error_handling import (
     KernelError,
     MissingConfigError,
 )
-from .log_manager import get_logger, log_call
+from .log_manager import async_log_call, get_logger, log_call
 from .paths import (
     ATTACHMENTS_DIR,
     BACKUP_DB_PATH,
@@ -62,7 +64,9 @@ class UIConfig(BaseModel):
     compact_mode: bool = False
     show_preview_pane: bool = True
     default_folder: str = "inbox"
-    manage_list_columns: list[str] = Field(default_factory=lambda: ["from", "subject", "date"])
+    manage_list_columns: list[str] = Field(
+        default_factory=lambda: ["from", "subject", "date"]
+    )
 
 class LoggingConfig(BaseModel):
     """Pydantic model for logging settings."""
@@ -91,23 +95,42 @@ class AppConfig(BaseModel):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
 
 class ConfigManager:
-    """Manages persistent application configuration."""
+    """Thread-safe configuration manager."""
 
-    _instance = None
+    _instance = Optional["ConfigManager"] = None
+    _lock = threading.Lock()
     _initialized = False
 
+    CURRENT_VERSION = "0.1.0"
+
     def __new__(cls, *args, **kwargs):
+        """Thread-safe singleton implementation."""
+
         if cls._instance is None:
-            cls._instance = super(ConfigManager, cls).__new__(cls)
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(ConfigManager, cls).__new__(cls)
+
         return cls._instance
 
     def __init__(self, config_path: Optional[Path] = None):
-        if not ConfigManager._initialized:
+        """Initialize ConfigManager, loading config from file."""
+        
+        if ConfigManager._initialized:
+            return
+        
+        with self._lock:
+            if ConfigManager._initialized:
+                return
+
             self.path = config_path or CONFIG_PATH
             self.config = self._load_or_create_config()
+            self._write_lock = threading.Lock()
+
             logger.info(f"Configuration loaded from {self.path}")
             ConfigManager._initialized = True
 
+    @log_call
     def _load_or_create_config(self) -> AppConfig:
         """Load configuration from file or create default if not present."""
 
@@ -122,105 +145,222 @@ class ConfigManager:
         try:
             with open(self.path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+            config_version = data.get("version", "0.0.0")
+            if config_version != self.CURRENT_VERSION:
+                data = self._migrate_config(data, config_version)
+
             config = AppConfig(**data)
             logger.debug("Configuration successfully loaded and validated.")
             return config
         
         except FileNotFoundError as e:
-            raise FileSystemError(f"Configuration file not found: {self.path}") from e
+            raise FileSystemError(
+                f"Configuration file not found: {self.path}"
+            ) from e
+        
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse config file: {e}")
-            raise InvalidConfigError(f"Configuration file is not valid JSON: {str(e)}") from e
+            raise InvalidConfigError(
+                f"Configuration file is not valid JSON: {str(e)}"
+            ) from e
+
         except ValidationError as e:
             logger.error(f"Failed to validate config file: {e}")
-            raise InvalidConfigError(f"Configuration data does not match expected schema: {str(e)}") from e
+            raise InvalidConfigError(
+                f"Configuration data does not match expected schema: {str(e)}"
+            ) from e
+
         except KernelError:
             raise
+
         except Exception as e:
             logger.exception(f"Unexpected error loading config: {e}")
-            raise ConfigurationError(f"Failed to load configuration: {str(e)}") from e
-        
+            raise ConfigurationError(
+                f"Failed to load configuration: {str(e)}"
+            ) from e
+
+    def _migrate_config(self, data: dict, from_version: str) -> dict:
+        """Migrate configuration data from an older version to the current version."""
+
+        logger.info(f"Migrating configuration from version {from_version} to {self.CURRENT_VERSION}")
+
+        # Migration logic to be added here as needed for future versions.
+
+        data["version"] = self.CURRENT_VERSION
+        self._backup_config_file(suffix=f"_v{from_version}_backup")
+
+        logger.info(f"Configuration migration complete: {from_version} -> {self.CURRENT_VERSION}")
+        return data
+
     def _save_config(self, config: Optional[AppConfig] = None):
         """Save the current configuration to file."""
 
         config = config or self.config
             
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.path, "w", encoding="utf-8") as f:
-                json.dump(
-                    config.model_dump(),
-                    f,
-                    indent=2,
-                    ensure_ascii=False
-                )
-            logger.debug("Configuration successfully saved.")
-        except FileNotFoundError as e:
-            raise FileSystemError(f"Configuration directory does not exist: {self.path.parent}") from e
-        except IOError as e:
-            raise FileSystemError(f"Failed to write configuration file: {str(e)}") from e
-        except Exception as e:
-            raise ConfigurationError(f"Failed to save configuration: {str(e)}") from e
-    
+        with self._write_lock:
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                temp_path = self.path.with_suffix(".tmp")
+
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(
+                        config.model_dump(),
+                        f,
+                        indent=2,
+                        ensure_ascii=False
+                    )
+
+                temp_path.replace(self.path)    
+                logger.debug("Configuration successfully saved.")
+
+            except FileNotFoundError as e:
+                raise FileSystemError(
+                    f"Configuration directory does not exist: {self.path.parent}"
+                ) from e
+            
+            except IOError as e:
+                raise FileSystemError(
+                    f"Failed to write configuration file: {str(e)}"
+                ) from e
+            
+            except Exception as e:
+                raise ConfigurationError(
+                    f"Failed to save configuration: {str(e)}"
+                ) from e
+            
+    @async_log_call
+    async def save_config_async(self, config: Optional[AppConfig] = None) -> None:
+        """Asynchronously save the current configuration to file."""
+
+        await asyncio.to_thread(self._save_config, config)
+
     @log_call
     def get_account_config(self) -> dict:
         """Retrieve account configuration as a dictionary."""
+
         try:
-            return self.config.account.model_dump()
+            with self._lock:
+                return self.config.account.model_dump()
+            
         except Exception as e:
-            raise ConfigurationError(f"Failed to retrieve account configuration: {str(e)}") from e
+            raise ConfigurationError(
+                f"Failed to retrieve account configuration: {str(e)}"
+            ) from e
 
     @log_call
-    def set_config(self, key_path: str, value: Any, persist: bool = True):
-        """Set a configuration value using dot-separated key path."""
+    def set_config(self, key_path: str, value: Any, 
+                   persist: bool = True, validate: bool = True) -> None:
+        """Set a configuration value with optional persistence and validation."""
         
-        try:
+        with self._lock:
+            try:
+                keys = key_path.split(".")
+                obj = self.config
+
+                for key in keys[:-1]:
+                    if not hasattr(obj, key):
+                        raise MissingConfigError(
+                            f"Configuration path '{key_path}' is invalid: '{key}' not found"
+                        )
+                    obj = getattr(obj, key)
+
+                if not hasattr(obj, keys[-1]):
+                    raise MissingConfigError(
+                        f"Configuration key '{keys[-1]}' does not exist in path '{key_path}'"
+                    )
+                
+                if validate:
+                    old_value = getattr(obj, keys[-1])
+                    if not isinstance(value, type(old_value)) and old_value is not None:
+                        logger.warning(
+                            f"Type mismatch for config key '{key_path}': "
+                            f"expected {type(old_value).__name__}, got {type(value).__name__}"
+                        )
+
+                setattr(obj, keys[-1], value)
+
+                if persist:
+                    self._save_config()
+            
+                logger.info(f"Config key '{key_path}' updated and saved.")
+        
+            except KernelError:
+                raise
+
+            except Exception as e:
+                raise ConfigurationError(
+                    f"Failed to set configuration key '{key_path}': {str(e)}"
+                ) from e
+            
+    @async_log_call
+    async def set_config_async(self, key_path: str, value: Any, validate: bool = True) -> None:
+        """Asynchronously set a configuration value with optional validation."""
+        
+        with self._lock:
             keys = key_path.split(".")
             obj = self.config
 
             for key in keys[:-1]:
                 if not hasattr(obj, key):
-                    raise MissingConfigError(f"Configuration path '{key_path}' is invalid: '{key}' not found")
+                    raise MissingConfigError(
+                        f"Configuration path '{key_path}' is invalid: '{key}' not found"
+                    )
                 obj = getattr(obj, key)
 
-            if not hasattr(obj, keys[-1]):
-                raise MissingConfigError(f"Configuration key '{keys[-1]}' does not exist in path '{key_path}'")
+                if not hasattr(obj, keys[-1]):
+                    raise MissingConfigError(
+                        f"Configuration key '{keys[-1]}' does not exist in path '{key_path}'"
+                    )
             
+            if validate:
+                old_value = getattr(obj, keys[-1])
+                if not isinstance(value, type(old_value)) and old_value is not None:
+                    logger.warning(
+                        f"Type mismatch for config key '{key_path}': "
+                        f"expected {type(old_value).__name__}, got {type(value).__name__}"
+                    )
+
             setattr(obj, keys[-1], value)
 
-            if persist:
-                self._save_config()
-            
-            logger.info(f"Config key '{key_path}' updated and saved.")
-        
-        except KernelError:
-            raise
-        except Exception as e:
-            raise ConfigurationError(f"Failed to set configuration key '{key_path}': {str(e)}") from e
+        await self.save_config_async()
+        logger.info(f"Config key '{key_path}' updated and saved.")
 
     @log_call
     def reset_to_defaults(self):
         """Reset configuration to default values."""
-        
-        try:
-            logger.warning("Resetting configuration to default values.")
-            self.config = AppConfig()
-            self._save_config()
-            logger.info("Configuration reset to default values.")
-        except KernelError:
-            raise
-        except Exception as e:
-            raise ConfigurationError(f"Failed to reset configuration to defaults: {str(e)}") from e
+
+        with self._lock:
+            try:
+                logger.warning("Resetting configuration to default values.")
+                self._backup_config_file(suffix="_before_reset")
+                self.config = AppConfig()
+                self._save_config()
+                logger.info("Configuration reset to default values.")
+
+            except KernelError:
+                raise
+
+            except Exception as e:
+                raise ConfigurationError(
+                    f"Failed to reset configuration to defaults: {str(e)}"
+                ) from e
 
     @log_call
     def backup_config(self) -> Path:
         """Create a backup of the current configuration file."""
         
+        return self._backup_config_file()
+
+    def _backup_config_file(self, suffix: str = "") -> Path:
+        """Create a backup of the current configuration file."""
+        
         try:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = self.path.with_name(f"config_backup_{timestamp}.json")
-
+            backup_name = f"config_backup{suffix}_{timestamp}.json"
+            backup_path = self.path.with_name(backup_name)
             backup_path.parent.mkdir(parents=True, exist_ok=True)
+
             with open(backup_path, "w", encoding="utf-8") as f:
                 json.dump(self.config.model_dump(), f, indent=2)
 
@@ -228,8 +368,25 @@ class ConfigManager:
             return backup_path
         
         except FileNotFoundError as e:
-            raise FileSystemError(f"Cannot create backup: directory not found {backup_path.parent}") from e
+            raise FileSystemError(
+                f"Cannot create backup: directory not found {backup_path.parent}"
+            ) from e
+        
         except IOError as e:
-            raise FileSystemError(f"Failed to write backup file: {str(e)}") from e
+            raise FileSystemError(
+                f"Failed to write backup file: {str(e)}"
+            ) from e
+        
         except Exception as e:
-            raise ConfigurationError(f"Failed to backup configuration: {str(e)}") from e
+            raise ConfigurationError(
+                f"Failed to backup configuration: {str(e)}"
+            ) from e
+        
+    @classmethod
+    def reset_singleton(cls):
+        """Reset the singleton instance (for testing purposes)."""
+
+        with cls._lock:
+            cls._instance = None
+            cls._initialized = False
+            logger.debug("ConfigManager singleton instance has been reset.")

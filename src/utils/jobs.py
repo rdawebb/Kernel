@@ -12,7 +12,7 @@ from src.utils.error_handling import (
     NetworkError,
     ValidationError,
 )
-from src.utils.log_manager import get_logger, log_call
+from src.utils.log_manager import async_log_call, get_logger
 
 DATE_FORMAT = "%Y-%m-%d"
 DATETIME_FORMAT = "%Y-%m-%d %H:%M"
@@ -23,31 +23,37 @@ logger = get_logger(__name__)
 config_manager = ConfigManager()
 
 
-@log_call
-def automatic_backup() -> None:
+@async_log_call
+async def automatic_backup() -> None:
     """Backup the database automatically."""
+
     logger.info("Starting automatic database backup...")
+    
     try:
         db = get_database(config_manager)
-        backup_path = db.backup()
+        backup_path = await db.backup()
         logger.info(f"Database backup completed successfully: {backup_path}")
         print(f"Database backup completed successfully: {backup_path}")
+
     except DatabaseError:
         raise
+
     except KernelError:
         raise
+
     except Exception as e:
         raise DatabaseError("Unexpected error during database backup") from e
 
 
-@log_call
-def clear_deleted_emails() -> None:
+@async_log_call
+async def clear_deleted_emails() -> None:
     """Delete emails from deleted folder older than 30 days."""
+
     logger.info("Starting cleanup of old deleted emails...")
     
     try:
         db = get_database(config_manager)
-        deleted_emails = db.get_emails("deleted_emails", limit=9999)
+        deleted_emails = await db.get_emails("deleted_emails", limit=9999)
         current_date = datetime.now().date()
         deleted_count = 0
         
@@ -57,7 +63,7 @@ def clear_deleted_emails() -> None:
                     deleted_date = datetime.strptime(email["deleted_at"], DATE_FORMAT).date()
 
                     if (current_date - deleted_date).days >= CLEANUP_DAYS_THRESHOLD:
-                        db.delete_email("deleted_emails", email["uid"])
+                        await db.delete_email("deleted_emails", email["uid"])
                         deleted_count += 1
 
                 except ValueError as e:
@@ -72,19 +78,22 @@ def clear_deleted_emails() -> None:
 
     except DatabaseError:
         raise
+
     except KernelError:
         raise
+
     except Exception as e:
         raise DatabaseError("Unexpected error during email cleanup") from e
 
-@log_call
-def send_scheduled_emails() -> None:
+@async_log_call
+async def send_scheduled_emails() -> None:
     """Send emails that are ready to be sent."""
+
     logger.info("Checking for scheduled emails ready to send...")
     
     try:
         db = get_database(config_manager)
-        pending_emails = db.get_pending_emails()
+        pending_emails = await db.get_pending_emails()
         current_time = datetime.now()
         sent_count = 0
         failed_count = 0
@@ -137,21 +146,24 @@ def send_scheduled_emails() -> None:
 
     except (DatabaseError, NetworkError):
         raise
+
     except KernelError:
         raise
+
     except Exception as e:
         raise NetworkError("Unexpected error during scheduled email processing") from e
 
-@log_call
-def check_for_new_emails() -> None:
+@async_log_call
+async def check_for_new_emails() -> None:
     """Check for new emails from server."""
+    
     logger.info("Checking for new emails from server...")
     
     try:
         account_config = config_manager.get_account_config()
         imap_client = IMAPClient(account_config)
 
-        new_count = imap_client.fetch_new_emails(account_config, SyncMode.INCREMENTAL)
+        new_count = await imap_client.fetch_new_emails(account_config, SyncMode.INCREMENTAL)
 
         if new_count > 0:
             msg = f"Downloaded {new_count} new email(s) from the server."
@@ -163,7 +175,9 @@ def check_for_new_emails() -> None:
 
     except NetworkError:
         raise
+
     except KernelError:
         raise
+
     except Exception as e:
         raise NetworkError("Unexpected error while checking for new emails") from e

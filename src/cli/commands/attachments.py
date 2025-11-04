@@ -114,6 +114,7 @@ class AttachmentsCommandHandler(BaseCommandHandler):
         except (DatabaseError, ValidationError) as e:
             return self.error_result(str(e))
 
+
     ## CLI Subcommand Handlers
 
     async def _list_emails_cli(self, args, config_manager) -> None:
@@ -157,7 +158,6 @@ class AttachmentsCommandHandler(BaseCommandHandler):
         print_status(f"Downloading attachments for email {email_id}...")
 
         try:
-            # Get email data with raw email content
             db = get_database(config_manager)
             email_data = await db.get_email("inbox", email_id, include_body=True)
 
@@ -167,7 +167,6 @@ class AttachmentsCommandHandler(BaseCommandHandler):
                     details={"email_id": email_id}
                 )
 
-            # Download attachments using AttachmentManager
             attachment_manager = _get_attachment_manager(config_manager)
             
             if download_all:
@@ -180,7 +179,6 @@ class AttachmentsCommandHandler(BaseCommandHandler):
                 self.logger.info(f"No attachments to download for email {email_id}")
                 return
 
-            # Display downloaded files
             print_status(f"Successfully downloaded {len(downloaded_files)} attachment(s):")
             for file_path in downloaded_files:
                 print_status(f"  • {file_path}")
@@ -241,6 +239,7 @@ class AttachmentsCommandHandler(BaseCommandHandler):
                 details={"filename": filename}
             )
 
+
     ## Daemon Subcommand Handlers
 
     async def _list_emails_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
@@ -294,7 +293,6 @@ class AttachmentsCommandHandler(BaseCommandHandler):
             )
 
         try:
-            # Get email data with raw email content
             email_data = await daemon.db.get_email("inbox", email_id, include_body=True)
 
             if not email_data:
@@ -303,7 +301,6 @@ class AttachmentsCommandHandler(BaseCommandHandler):
                     email_id=email_id
                 )
 
-            # Download attachments using AttachmentManager
             attachment_manager = _get_attachment_manager(None, daemon)
             
             if download_all:
@@ -317,7 +314,6 @@ class AttachmentsCommandHandler(BaseCommandHandler):
                     email_id=email_id
                 )
 
-            # Format downloaded files for response
             file_paths = [str(f) for f in downloaded_files]
             message = f"Successfully downloaded {len(downloaded_files)} attachment(s) from email {email_id}"
 

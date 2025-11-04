@@ -77,7 +77,7 @@ class IMAPClient:
 
     @async_log_call
     async def fetch_new_emails(self, sync_mode: SyncMode = SyncMode.INCREMENTAL) -> int:
-        """Fetch new emails from the IMAP server asynchronously."""
+        """Fetch new emails from the IMAP server with batch saving."""
 
         try:
             client = await self._ensure_connection()
@@ -92,42 +92,50 @@ class IMAPClient:
                 return 0
 
             logger.info(f"Found {len(email_uids)} new emails to fetch.")
-            emails_saved = 0
+            emails_to_save = 0
+            failed_count = 0
 
-            batch_size = 50
-            for i in range(0, len(email_uids), batch_size):
-                batch = email_uids[i:i + batch_size]
+            fetch_batch_size = 50
+            for i in range(0, len(email_uids), fetch_batch_size):
+                batch = email_uids[i:i + fetch_batch_size]
 
-                if i > 0:
-                    await asyncio.sleep(0.5)
-                
-                fetch_tasks = [self._fetch_email(client, uid) for uid in batch]
-                raw_emails = await asyncio.gather(*fetch_tasks, return_exceptions=True)
-
-                for email_uid, raw_email in zip(batch, raw_emails):
-                    if isinstance(raw_email, Exception):
-                        logger.error(f"Error fetching email {email_uid}: {str(raw_email)}")
-                        continue
-
-                    if not raw_email:
-                        continue
-
+                for email_uid in batch:
                     try:
-                        email_uid_str = email_uid.decode() if isinstance(email_uid, bytes) else str(email_uid)
-                        email_dict = EmailParser.parse_from_bytes(raw_email, email_uid_str)
+                        raw_email = await self._fetch_email(client, email_uid)
+                        if not raw_email:
+                            failed_count += 1
+                            continue
 
-                        if not await db.email_exists("inbox", email_dict["uid"]):
-                            await db.save_email("inbox", email_dict)
-                            emails_saved += 1
+                        email_dict = EmailParser.parse_from_bytes(raw_email, str(email_uid))
+
+                        if sync_mode == SyncMode.INCREMENTAL:
+                            if await db.email_exists("emails", email_dict["uid"]):
+                                continue
+                        
+                        emails_to_save.append(email_dict)
 
                     except Exception as e:
-                        logger.error(f"Error processing email {email_uid}: {str(e)}")
+                        logger.error(f"Failed to process email UID {email_uid}: {str(e)}")
+                        failed_count += 1
                         continue
 
-            logger.info(f"Fetched and saved {emails_saved} new emails.")
+                if i + fetch_batch_size < len(email_uids):
+                    await asyncio.sleep(0.1)
 
-            return emails_saved
-        
+            if emails_to_save:
+                logger.info(f"Saving {len(emails_to_save)} new emails to database...")
+                saved_count = await db.save_emails_batch("inbox", emails_to_save, batch_size=100)
+
+                logger.info(
+                    f"Successfully saved {saved_count} new email(s)."
+                    f"({failed_count}) email(s) failed to fetch."
+                )
+
+                return saved_count
+            else:
+                logger.info("No new emails to save.")
+                return 0
+
         except (IMAPError, NetworkError, NetworkTimeoutError):
             raise
 

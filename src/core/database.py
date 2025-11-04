@@ -1,6 +1,8 @@
 """Unified database access layer for email storage and retrieval."""
 
 import aiosqlite
+import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -92,13 +94,13 @@ class TableSchema:
         """Generate SQL for creating indexes on table."""
 
         indexes = [
-            f"CREATE INDEX IF NOT EXISTS idx_{self.name}_uid ON {self.name} (uid);",
-            f"CREATE INDEX IF NOT EXISTS idx_{self.name}_date ON {self.name} (date DESC, time DESC);",
-            f"CREATE INDEX IF NOT EXISTS idx_{self.name}_sender ON {self.name} (sender);",
+            f"CREATE INDEX IF NOT EXISTS idx_{self.name}_uid ON {self.name}(uid);",
+            f"CREATE INDEX IF NOT EXISTS idx_{self.name}_date ON {self.name}(date DESC, time DESC);",
+            f"CREATE INDEX IF NOT EXISTS idx_{self.name}_sender ON {self.name}(sender);",
         ]
 
         if "flagged" in self.additional_columns:
-            indexes.append(f"CREATE INDEX IF NOT EXISTS idx_{self.name}_flagged ON {self.name} (flagged) WHERE flagged = 1;")
+            indexes.append(f"CREATE INDEX IF NOT EXISTS idx_{self.name}_flagged ON {self.name}(flagged) WHERE flagged = 1;")
 
         return indexes
 
@@ -116,6 +118,13 @@ SCHEMAS = {
 class Database:
     """Async database access layer for email storage and retrieval."""
 
+    DEFAULT_TIMEOUT = 30.0  # seconds
+    HEALTH_CHECK_TIMEOUT = 5.0  # seconds
+    MAX_RETRIES = 3
+    RETRY_DELAY = 1.0  # seconds
+    MAX_EXPORT_LIMIT = 1_000_000  # maximum records to export
+    HEALTH_CHECK_INTERVAL = 60  # seconds between health checks
+
     def __init__(self, config_manager=None, db_path: Optional[Path] = None) -> None:
         """Initialize database with config manager."""
 
@@ -123,6 +132,10 @@ class Database:
         self.db_path = db_path or self._resolve_db_path(config_manager)
         self._connection = None
         self.initialized = False
+        self._last_health_check = None
+        self._health_check_interval = 60  # seconds
+        self._is_healthy = True
+        self._lock = asyncio.Lock()
 
 
     ## Path Management
@@ -156,37 +169,97 @@ class Database:
 
     ## Connection Management
 
-    async def _get_connection(self) -> aiosqlite.Connection:
+    async def _get_connection(self, retry: bool = True) -> aiosqlite.Connection:
         """Get or create an database connection."""
 
-        if self._connection is None:
-            await self._connect()
+        async with self._lock:
+            if self._connection is None:
+                if retry:
+                    await self._connect_with_retry()
+                else:
+                    await self._connect()
+
+            try:
+                await asyncio.wait_for(
+                    self._connection.execute("SELECT 1;"),
+                    timeout=self.DEFAULT_TIMEOUT
+                )
+
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.warning(f"Database connection lost: {e}, reconnecting...")
+                await self._reconnect()
 
         return self._connection
     
+    async def _connect_with_retry(self) -> None:
+        """Attempt to connect to the database with retries."""
+
+        last_error = None
+
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                await self._connect()
+                logger.info(f"Database connected (attempt {attempt + 1})")
+                return
+            
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Database connection attempt {attempt + 1} failed: {e}")
+
+                if attempt < self.MAX_RETRIES - 1:
+                    await asyncio.sleep(self.RETRY_DELAY * (attempt + 1))
+
+        raise DatabaseConnectionError(
+            f"Failed to connect to database after {self.MAX_RETRIES} attempts",
+            details={"last_error": str(last_error)}
+        ) from last_error
+            
     async def _connect(self) -> None:
         """Establish a new database connection."""
 
         try:
-            self.db_path = self.get_db_path()
             self.db_path.mkdir(parents=True, exist_ok=True)
 
             self._connection = await aiosqlite.connect(
                 str(self.db_path),
-                timeout=30.0
+                timeout=self.DEFAULT_TIMEOUT
             )
 
             await self._connection.execute("PRAGMA foreign_keys = ON;")
             await self._connection.execute("PRAGMA journal_mode = WAL;")
+            await self._connection.execute(
+                f"PRAGMA busy_timeout = {int(self.DEFAULT_TIMEOUT * 1000)};"
+            )
 
             self._connection.row_factory = aiosqlite.Row
             logger.debug(f"Database connected: {self.db_path}")
+
+        except asyncio.TimeoutError as e:
+            raise DatabaseConnectionError(
+                "Database connection timed out",
+                details={"db_path": str(self.db_path), "timeout": self.DEFAULT_TIMEOUT}
+            ) from e
 
         except Exception as e:
             raise DatabaseConnectionError(
                 "Failed to connect to database",
                 details={"db_path": str(self.db_path), "error": str(e)}
             ) from e
+        
+    async def _reconnect(self) -> None:
+        """Reconnect to the database."""
+
+        if self._connection:
+            try:
+                await self._connection.close()
+            
+            except Exception as e:
+                logger.debug(f"Error closing old database connection: {e}")
+
+            finally:
+                self._connection = None
+
+        await self._connect_with_retry()
 
     async def close_connection(self) -> None:
         """Close the database connection."""
@@ -199,7 +272,7 @@ class Database:
 
     ## Initialization
 
-    async def __initialize(self) -> None:
+    async def _initialize(self) -> None:
         """Create all necessary tables and indexes in the database."""
 
         if self.initialized:
@@ -242,17 +315,8 @@ class Database:
         self._validate_table(table)
         return SCHEMAS[table]
 
-
-    ## CRUD Operations
-
-    @async_log_call
-    async def save_email(self, table: str, email: Dict[str, Any]) -> None:
-        """Save an email to the specified table (INSERT or REPLACE)."""
-
-        if not self.initialized:
-            await self.__initialize()
-
-        schema = self._get_schema(table)
+    def _extract_email_values(self, email: Dict[str, Any], schema: TableSchema) -> List[Any]:
+        """Extract email values in the correct column order for a schema."""
 
         values = []
         for col in schema.all_columns:
@@ -265,6 +329,21 @@ class Database:
                 values.append(email.get("recipient") or email.get("to", ""))
             else:
                 values.append(email.get(col, ""))
+        
+        return values
+
+
+    ## CRUD Operations
+
+    @async_log_call
+    async def save_email(self, table: str, email: Dict[str, Any]) -> None:
+        """Save an email to the specified table (INSERT or REPLACE)."""
+
+        if not self.initialized:
+            await self._initialize()
+
+        schema = self._get_schema(table)
+        values = self._extract_email_values(email, schema)
 
         placeholders = ", ".join(["?" for _ in schema.all_columns])
         query = f"INSERT OR REPLACE INTO {table} ({schema.insert_columns}) VALUES ({placeholders})"
@@ -282,11 +361,59 @@ class Database:
             ) from e
 
     @async_log_call
+    async def save_emails_batch(self, table: str, emails: List[Dict[str, Any]],
+                                batch_size: int = 100) -> int:
+        """Save multiple emails to the specified table in batches."""
+
+        if not emails:
+            return 0
+
+        if not self.initialized:
+            await self._initialize()
+
+        schema = self._get_schema(table)
+        saved_count = 0
+
+        for i in range(0, len(emails), batch_size):
+            batch_emails = emails[i:i + batch_size]
+
+            try:
+                saved = await self._save_batch(table, schema, batch_emails)
+                saved_count += saved
+
+                if len(emails) > batch_size and (i + batch_size) % (batch_size * 5) == 0:
+                    logger.info(f"Saved {saved_count}/{len(emails)} emails to {table}")
+
+            except Exception as e:
+                logger.error(f"Error saving batch at index {i}: {e}")
+                continue
+
+        return saved_count
+
+    async def _save_batch(self, table: str, schema: TableSchema, emails: List[Dict[str, Any]]) -> int:
+        """Helper to save a batch of emails."""
+
+        conn = await self._get_connection()
+
+        all_values = []
+        for email in emails:
+            values = self._extract_email_values(email, schema)
+            all_values.append(tuple(values))
+
+        placeholders = ", ".join(["?" for _ in schema.all_columns])
+        query = f"INSERT OR REPLACE INTO {table} ({schema.insert_columns}) VALUES ({placeholders})"
+
+        await conn.executemany(query, all_values)
+        await conn.commit()
+
+        return len(emails)
+
+    @async_log_call
     async def get_email(self, table: str, uid: str, include_body: bool = True) -> Optional[Dict]:
         """Retrieve an email by UID from the specified table."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         schema = self._get_schema(table)
         columns = self._get_columns(schema, include_body)
@@ -311,7 +438,7 @@ class Database:
         """Retrieve multiple emails from the specified table."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         schema = self._get_schema(table)
         columns = self._get_columns(schema, include_body)
@@ -336,6 +463,40 @@ class Database:
             ) from e
 
     @async_log_call
+    async def get_emails_by_uids(self, table: str, uids: List[str],
+                                 include_body: bool = True,
+                                 batch_size: int = 100) -> List[Dict]:
+        """Retrieve multiple emails by UIDs from the specified table in batches."""
+
+        if not uids:
+            return []
+        
+        if not self.initialized:
+            await self._initialize()
+
+        schema = self._get_schema(table)
+        columns = self._get_columns(schema, include_body)
+        all_emails = []
+
+        for i in range(0, len(uids), batch_size):
+            batch_uids = uids[i:i + batch_size]
+            placeholders = ", ".join(["?" for _ in batch_uids])
+
+            query = f"""SELECT {columns} FROM {table} WHERE uid IN ({placeholders})"""
+
+            try:
+                conn = await self._get_connection()
+                async with conn.execute(query, tuple(batch_uids)) as cursor:
+                    rows = await cursor.fetchall()
+                    all_emails.extend([dict(row) for row in rows])
+
+            except Exception as e:
+                logger.error(f"Error retrieving batch at index {i}: {e}")
+                continue
+
+        return all_emails
+
+    @async_log_call
     async def get_filtered_emails(self, table: str, limit: int = 50,
                               is_flagged: Optional[bool] = None,
                               is_read: Optional[bool] = None,
@@ -343,7 +504,7 @@ class Database:
         """Retrieve emails from the specified table with filters."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         schema = self._get_schema(table)
         columns = self._get_columns(schema, include_body=False)
@@ -390,7 +551,7 @@ class Database:
         """Delete an email by UID from the specified table."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         self._validate_table(table)
 
@@ -407,13 +568,47 @@ class Database:
                 f"Failed to delete email from {table}",
                 details={"uid": uid, "error": str(e)}
             ) from e
+        
+    @async_log_call
+    async def delete_emails_batch(self, table: str, uids: List[str],
+                                  batch_size: int = 100) -> int:
+        """Delete a batch of emails by UID from the specified table."""
+
+        if not uids:
+            return 0
+        
+        if not self.initialized:
+            await self._initialize()
+
+        self._validate_table(table)
+        deleted_count = 0
+
+        for i in range(0, len(uids), batch_size):
+            batch_uids = uids[i:i + batch_size]
+
+            try:
+                conn = await self._get_connection()
+                placeholders = ", ".join(["?" for _ in batch_uids])
+                query = f"DELETE FROM {table} WHERE uid IN ({placeholders})"
+
+                await conn.execute(query, tuple(batch_uids))
+                await conn.commit()
+
+                deleted_count += len(batch_uids)
+
+            except Exception as e:
+                logger.error(f"Error deleting batch at index {i}: {e}")
+                continue
+
+        logger.info(f"Batch delete complete: {deleted_count} emails deleted from {table}")
+        return deleted_count
 
     @async_log_call
     async def email_exists(self, table: str, uid: str) -> bool:
         """Check if an email exists in the specified table by UID."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         self._validate_table(table) 
 
@@ -436,7 +631,7 @@ class Database:
         """Move an email from source table to destination table by UID."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         email = await self.get_email(source_table, uid, include_body=True)
         if not email:
@@ -451,11 +646,56 @@ class Database:
         logger.info(f"Moved email {uid} from {source_table} to {dest_table}")
 
     @async_log_call
+    async def move_emails_batch(self, source_table: str, dest_table: str,
+                                   uids: List[str], batch_size: int = 50,
+                                   **extra_fields) -> int:
+        """Move multiple emails from source table to destination table by UIDs."""
+
+        if not uids:
+            return 0
+        
+        if not self.initialized:
+            await self._initialize()
+
+        dest_schema = self._get_schema(dest_table)
+        moved_count = 0
+
+        for i in range(0, len(uids), batch_size):
+            batch_uids = uids[i:i + batch_size]
+
+            try:
+                placeholders = ", ".join(["?" for _ in batch_uids])
+                query = f"SELECT * FROM {source_table} WHERE uid IN ({placeholders})"
+    
+                conn = await self._get_connection()
+                async with conn.execute(query, tuple(batch_uids)) as cursor:
+                    rows = await cursor.fetchall()
+                    emails = [dict(row) for row in rows]
+
+                for email in emails:
+                    email.update(extra_fields)
+
+                await self._save_batch(dest_table, dest_schema, emails)
+
+                delete_query = f"DELETE FROM {source_table} WHERE uid IN ({placeholders})"
+                await conn.execute(delete_query, tuple(batch_uids))
+                await conn.commit()
+
+                moved_count += len(emails)
+
+            except Exception as e:
+                logger.error(f"Error moving batch at index {i}: {e}")
+                continue
+
+        logger.info(f"Batch move complete: {moved_count} emails moved from {source_table} to {dest_table}")
+        return moved_count
+
+    @async_log_call
     async def update_field(self, table: str, uid: str, field: str, value: Any) -> None:
         """Update a specific field of an email by UID in the specified table."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         schema = self._get_schema(table)
         
@@ -479,6 +719,51 @@ class Database:
                 f"Failed to update field {field} in {table}",
                 details={"uid": uid, "field": field, "error": str(e)}
             ) from e
+        
+    @async_log_call
+    async def update_fields_batch(self, table: str, updates: List[Dict[str, Any]],
+                                  batch_size: int = 100) -> int:
+        """Update multiple fields of emails in the specified table in batches."""
+
+        if not updates:
+            return 0
+        
+        if not self.initialized:
+            await self._initialize()
+
+        schema = self._get_schema(table)
+        updated_count = 0
+
+        updates_by_field = {}
+        for update in updates:
+            field = update["field"]
+            if field not in updates_by_field:
+                updates_by_field[field] = []
+            updates_by_field[field].append((update["value"], str(update["uid"])))
+
+        for field, values in updates_by_field.items():
+            if field not in schema.all_columns:
+                logger.warning(f"Skipping invalid field: {field}")
+                continue
+
+            for i in range(0, len(values), batch_size):
+                batch_values = values[i:i + batch_size]
+
+                try:
+                    conn = await self._get_connection()
+                    query = f"UPDATE {table} SET {field} = ? WHERE uid = ?"
+
+                    await conn.executemany(query, batch_values)
+                    await conn.commit()
+
+                    updated_count += len(batch_values)
+
+                except Exception as e:
+                    logger.error(f"Error updating batch for field {field}: {e}")
+                    continue
+            
+        logger.info(f"Batch update complete: {updated_count} updates in {table}")
+        return updated_count
 
 
     ## Search Operations
@@ -489,7 +774,7 @@ class Database:
         """Search emails in the specified table by keyword."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         schema = self._get_schema(table)
         
@@ -525,7 +810,7 @@ class Database:
         """Search emails across all tables by keyword."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         union_parts = []
         params = []
@@ -568,7 +853,7 @@ class Database:
         """Search emails with attachments in the specified table."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         schema = self._get_schema(table)
 
@@ -600,7 +885,7 @@ class Database:
         """Get the highest UID from the inbox table."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         query = "SELECT MAX(CAST(uid AS INTEGER)) AS max_uid FROM inbox"
 
@@ -623,7 +908,7 @@ class Database:
         """Get the total number of emails in the specified table."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         self._validate_table(table)
         
@@ -682,7 +967,7 @@ class Database:
         """Export specified tables to CSV files."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         try:
             export_dir = Path(export_dir)
@@ -698,7 +983,7 @@ class Database:
                     logger.warning(f"Skipping invalid table for export: {table}")
                     continue
 
-                emails = await self.get_emails(table, limit=1000000, include_body=True)
+                emails = await self.get_emails(table, limit=self.MAX_EXPORT_LIMIT, include_body=True)
 
                 if not emails:
                     logger.info(f"No emails to export in table: {table}")
@@ -749,6 +1034,94 @@ class Database:
                 details={"error": str(e)}
             ) from e
 
+
+    ## Health Check & Monitoring
+
+    @async_log_call
+    async def health_check(self, quick: bool = False) -> bool:
+        """Perform database health check, quick for connection only"""
+
+        try:
+            conn = await asyncio.wait_for(
+                self._get_connection(),
+                timeout=self.HEALTH_CHECK_TIMEOUT
+            )
+
+            if quick:
+                return conn is not None
+            
+            async with conn.execute("SELECT 1;") as cursor:
+                result = await cursor.fetchone()
+                healthy = result is not None
+
+            self._is_healthy = healthy
+            self._last_health_check = asyncio.get_event_loop().time()
+
+            if healthy:
+                logger.debug("Database health check: OK")
+            else:
+                logger.warning("Database health check: FAILED")
+
+            return healthy
+        
+        except asyncio.TimeoutError:
+            self._is_healthy = False
+            logger.error("Database health check timed out")
+            return False
+        
+    async def is_healthy(self) -> bool:
+        """Check if the database is healthy, performing health check if needed."""
+
+        current_time = asyncio.get_event_loop().time()
+
+        if (self._last_health_check and
+            current_time - self._last_health_check < self.HEALTH_CHECK_INTERVAL):
+            return self._is_healthy
+        
+        return await self.health_check(quick=True)
+    
+    @async_log_call
+    async def get_connection_stats(self) -> Dict[str, Any]:
+        """Get database connection statistics."""
+
+        try:
+            conn = await self._get_connection()
+            
+            stats = {
+                "connected": conn is not None,
+                "healthy": await self.is_healthy(),
+                "database_path": str(self.db_path),
+                "database_size": self.db_path.stat().st_size if self.db_path.exists() else 0,
+                "last_health_check": self._last_health_check,
+            }
+
+            if conn:
+                async with conn.execute("PRAGMA page_count;") as cursor:
+                    page_count = (await cursor.fetchone())[0]
+
+                async with conn.execute("PRAGMA page_size;") as cursor:
+                    page_size = (await cursor.fetchone())[0]
+
+                async with conn.execute("PRAGMA journal_mode;") as cursor:
+                    journal_mode = (await cursor.fetchone())[0]
+
+                stats.update({
+                    "page_count": page_count,
+                    "page_size": page_size,
+                    "journal_mode": journal_mode,
+                    "estimated_size": page_count * page_size,
+                })
+
+            return stats
+        
+        except Exception as e:
+            logger.error(f"Failed to get connection stats: {e}")
+            return {
+                "connected": False,
+                "healthy": False,
+                "error": str(e)
+            }
+
     
     ## Helper Methods
 
@@ -772,7 +1145,7 @@ class Database:
         """Async context manager entry."""
 
         if not self.initialized:
-            await self.__initialize()
+            await self._initialize()
 
         return self
     
@@ -780,6 +1153,24 @@ class Database:
         """Async context manager exit."""
 
         await self.close_connection()
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Transaction context manager for atomic operations."""
+
+        if not self.initialized:
+            await self._initialize()
+
+        conn = await self._get_connection()
+
+        try:
+            await conn.execute("BEGIN;")
+            yield conn
+            await conn.commit()
+
+        except Exception:
+            await conn.rollback()
+            raise
 
 
 ## Singleton Instance

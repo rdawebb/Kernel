@@ -175,9 +175,8 @@ class IMAPConnectionPool(EmailConnectionPool):
 
         if self.pool.client and not self.pool.is_expired(time.time()):
             try:
-                if hasattr(self.pool.client, 'noop'):
-                    self.pool.client.noop()
-                    logger.debug(f"{self.CLIENT_TYPE} keepalive sent")
+               self.pool.client._connection.noop()
+               logger.debug(f"{self.CLIENT_TYPE} keepalive sent")
 
             except Exception as e:
                 logger.warning(f"{self.CLIENT_TYPE} keepalive failed: {e}")
@@ -585,8 +584,6 @@ class EmailDaemon:
             
             from src.core.database import get_database
             self.db = get_database(self.config)
-            self.db._initialize()
-            self.logger.info("Database initialized with persistent connection")
             
             self.connections = ConnectionManager(self.config, self.keystore)
             self.cache = CacheManager(max_entries=50, ttl_seconds=60)
@@ -654,7 +651,6 @@ class EmailDaemon:
             if not _registry.exists(command):
                 return self._error_response(f"Unknown command: {command}")
             
-            # Try cache for cacheable commands
             cache_key = None
             if command in self.CACHEABLE_COMMANDS:
                 cache_key = await self.cache.get_cache_key(command, args)
@@ -670,18 +666,15 @@ class EmailDaemon:
                         "metadata": {"cache_age_seconds": age}
                     }
             
-            # Execute command
             handler = _registry.get_handler(command)
             if not handler:
                 return self._error_response(f"No handler for command: {command}")
 
             result = await handler(self, args)
             
-            # Cache successful results
             if cache_key and result.get("success"):
                 await self.cache.set(cache_key, result["data"])
 
-            # Selective cache invalidation for write commands
             if command in self.WRITE_COMMANDS:
                 await self._invalidate_cache_selective(command, args)
 
@@ -713,7 +706,6 @@ class EmailDaemon:
             await self.cache.invalidate_all()
 
         elif strategy == "source_and_dest_tables":
-            # Move command - invalidate both tables
             source_table = args.get("source", args.get("table", "inbox"))
             dest_table = args.get("destination", args.get("dest"))
             
@@ -724,7 +716,6 @@ class EmailDaemon:
             logger.debug(f"Invalidated {count} entries for move operation")
         
         elif strategy == "email_and_table":
-            # Delete - invalidate email and table
             email_id = args.get("id")
             table = args.get("table", "inbox")
             
@@ -733,7 +724,6 @@ class EmailDaemon:
                 logger.debug(f"Invalidated {count} entries for email {email_id}")
         
         elif strategy == "email_and_flagged_cache":
-            # Flag/unflag - invalidate email and flagged lists
             email_id = args.get("id")
             table = args.get("table", "inbox")
             
@@ -744,17 +734,14 @@ class EmailDaemon:
                 logger.debug(f"Invalidated {count} entries for flag operation")
         
         elif strategy == "sent_table":
-            # Send - invalidate sent folder
             count = await self.cache.invalidate_table("sent")
             logger.debug(f"Invalidated {count} entries for sent folder")
         
         elif strategy == "drafts_table":
-            # Compose - invalidate drafts folder
             count = await self.cache.invalidate_table("drafts")
             logger.debug(f"Invalidated {count} entries for drafts folder")
         
         else:
-            # Unknown command - invalidate all to be safe
             logger.warning(f"Unknown invalidation strategy for '{command}', clearing all cache")
             await self.cache.invalidate_all()
 
@@ -888,10 +875,10 @@ class EmailDaemon:
                 await asyncio.sleep(0.5)
 
             self.connections.close_all()
+            await self.db.close()
             self.db = None
             await self.cache.invalidate_all()
             
-            # Clean up files
             pid_file = DAEMON_PID_PATH
             socket_path = SocketSecurity.get_socket_path()
             
@@ -918,6 +905,10 @@ async def run_daemon() -> None:
     try:
         daemon = EmailDaemon()
 
+        logger.info("Initializing database...")
+        await daemon.db.__initialize()
+        logger.info("Database initialized")
+
         def signal_handler(signum, frame):
             if not daemon._shutting_down:
                 asyncio.create_task(daemon.shutdown())
@@ -925,29 +916,23 @@ async def run_daemon() -> None:
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
         
-        # Verify socket security
         socket_path = SocketSecurity.get_socket_path()
         SocketSecurity.verify_socket_location(socket_path)
         
-        # Remove old socket if exists
         socket_path.unlink(missing_ok=True)
-        
-        # Start server
+
         server = await asyncio.start_unix_server(
             daemon.handle_client,
             path=str(socket_path)
         )
         
-        # Set secure permissions
         SocketSecurity.secure_socket_permissions(socket_path)
         
-        # Write PID file
         pid_file = DAEMON_PID_PATH
         pid_file.write_text(str(os.getpid()))
 
         await DaemonAuth.rotate_token()
-        
-        # Start background tasks
+
         asyncio.create_task(daemon.connections.keepalive_loop())
         asyncio.create_task(daemon.idle_checker())
         
