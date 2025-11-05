@@ -16,8 +16,6 @@ logger = get_logger(__name__)
 
 class ModelManager:
     """Manages model installation, selection, and tracking"""
-
-    # Mapping of model choices to model names
     MODEL_MAP = {
         1: "sumy",
         2: "minibart",
@@ -60,10 +58,16 @@ class ModelManager:
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "install", package])
             logger.info(f"Successfully installed {package}")
+
         except subprocess.CalledProcessError as e:
-            raise ValidationError(f"Failed to install package {package}: {str(e)}") from e
+            raise ValidationError(
+                f"Failed to install package {package}: {str(e)}"
+            ) from e
+
         except Exception as e:
-            raise ValidationError(f"Unexpected error installing {package}: {str(e)}") from e
+            raise ValidationError(
+                f"Unexpected error installing {package}: {str(e)}"
+            ) from e
 
     @staticmethod
     @log_call
@@ -72,10 +76,16 @@ class ModelManager:
         try:
             subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", package])
             logger.info(f"Successfully uninstalled {package}")
+
         except subprocess.CalledProcessError as e:
-            raise ValidationError(f"Failed to uninstall package {package}: {str(e)}") from e
+            raise ValidationError(
+                f"Failed to uninstall package {package}: {str(e)}"
+            ) from e
+        
         except Exception as e:
-            raise ValidationError(f"Unexpected error uninstalling {package}: {str(e)}") from e
+            raise ValidationError(
+                f"Unexpected error uninstalling {package}: {str(e)}"
+            ) from e
 
     def is_installed(self, model_name):
         """Check if a model is marked as installed."""
@@ -115,8 +125,11 @@ class ModelManager:
         
         except KernelError:
             raise
+
         except Exception as e:
-            raise ConfigurationError(f"Failed to choose model {choice}: {str(e)}") from e
+            raise ConfigurationError(
+                f"Failed to choose model {choice}: {str(e)}"
+            ) from e
 
     @log_call
     def _cleanup_unused_models(self, keep_model):
@@ -127,10 +140,14 @@ class ModelManager:
                     logger.info(f"Uninstalling unused model: {model_name}")
                     self.uninstall(model_name)
                     self.set_installed(model_name, False)
+
         except KernelError:
             raise
+
         except Exception as e:
-            raise ConfigurationError(f"Failed to cleanup unused models: {str(e)}") from e
+            raise ConfigurationError(
+                f"Failed to cleanup unused models: {str(e)}"
+            ) from e
 
     def get_current_model(self):
         """Get the currently selected model."""

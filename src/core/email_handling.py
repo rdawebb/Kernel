@@ -3,8 +3,9 @@
 import email
 import re
 from datetime import datetime
-from email import message_from_bytes
 from typing import Any, Dict, Optional, Tuple
+
+from fast_mail_parser import parse_email
 
 from src.utils.error_handling import (
     DatabaseError,
@@ -28,34 +29,23 @@ class EmailParser:
         """Parse raw email bytes into structured dictionary"""
 
         try:
-            message = message_from_bytes(raw_email)
-            return EmailParser.parse_from_message(message, uid)
-        
+            parsed_email = parse_email(raw_email)
+            return EmailParser._to_dict(parsed_email, uid)
+
         except KernelError:
             raise
         
         except Exception as e:
             raise ValidationError("Failed to parse email bytes") from e
         
-    
     @staticmethod
     def parse_from_message(message: email.message.Message, uid: str) -> Dict[str, Any]:
         """Parse email.message.Message into structured dictionary"""
 
         try:
-            email_dict = {
-                "uid": uid,
-                "subject": EmailParser._decode_header(message.get("Subject", "")),
-                "sender": EmailParser._decode_header(message.get("From", "")),
-                "recipient": EmailParser._decode_header(message.get("To", "")),
-                "date": EmailParser._extract_date(message.get("Date", "")),
-                "time": EmailParser._extract_time(message.get("Date", "")),
-                "body": EmailParser._extract_body(message),
-                "attachments": "",
-                "flagged": 0,
-            }
-
-            return email_dict
+            raw_bytes = message.as_bytes()
+            parsed_email = parse_email(raw_bytes)
+            return EmailParser._to_dict(parsed_email, uid)
         
         except KernelError:
             raise
@@ -63,145 +53,26 @@ class EmailParser:
         except Exception as e:
             raise ValidationError("Failed to parse email message") from e
         
-    
     @staticmethod
-    def _decode_header(header: str) -> str:
-        """Decode email header (handles various encodings)"""
+    def _to_dict(parsed_email: Any, uid: str) -> Dict[str, Any]:
+        """Convert fast-mail-parser result to dictionary format"""
 
-        if not header:
-            return ""
-        
-        try:
-            decoded_parts = email.header.decode_header(header)
-            decoded_str = ""
-
-            for content, encoding in decoded_parts:
-                if isinstance(content, bytes):
-                    decoded_str += content.decode(encoding or "utf-8", errors="replace")
-                else:
-                    decoded_str += content
-
-            return decoded_str.strip()
-        
-        except Exception as e:
-            logger.warning(f"Failed to decode header '{header[:50]}...': {e}")
-            return str(header)
-        
-    
-    @staticmethod
-    def _extract_body(message: email.message.Message) -> str:
-        """Extract plain text body from email message"""
-
-        body = ""
-
-        try:
-            if message.is_multipart():
-                for part in message.walk():
-                    content_type = part.get_content_type()
-
-                    if content_type == "text/plain":
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            charset = part.get_content_charset() or "utf-8"
-                            body += payload.decode(charset, errors="replace")
-                    
-                    elif content_type == "text/html" and not body:
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            charset = part.get_content_charset() or "utf-8"
-                            html_body = payload.decode(charset, errors="replace")
-                            body = EmailParser._html_to_text(html_body)
-
-            else:
-                payload = message.get_payload(decode=True)
-                if payload:
-                    charset = part.get_content_charset() or "utf-8"
-                    body = payload.decode(charset, errors="replace")
-
-        except Exception as e:
-            logger.warning(f"Failed to extract body: {e}")
-
-        return body.strip()
-    
-
-    @staticmethod
-    def _html_to_text(html: str) -> str:
-        """Convert HTML to plain text"""
-
-        html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
-        html = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
-
-        text = re.sub(r'<[^>]+>', '', html)
-
-        import html as html_module
-
-        text = html_module.unescape(text)
-        text = re.sub(r'\s+', ' ', text)
-
-        return text.strip()
-    
-
-    @staticmethod
-    def _extract_date(date_header: str) -> str:
-        """Extract date in YYYY-MM-DD format from Date header"""
-
-        if not date_header:
-            return datetime.now().strftime("%Y-%m-%d")
-        
-        try:
-            from email.utils import parsedate_to_datetime
-            dt = parsedate_to_datetime(date_header)
-            return dt.strftime("%Y-%m-%d")
-        
-        except Exception:
-            date_match = re.search(r'(\d{1,2})\s+(\w{3})\s+(\d{4})', date_header)
-            if date_match:
-                day, month_str, year = date_match.groups()
-                month_map = {
-                    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4,
-                    "May": 5, "Jun": 6, "Jul": 7, "Aug": 8,
-                    "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12
-                }
-                month = month_map.get(month_str, "01")
-                return f"{year}-{month}-{day.zfill(2)}"
-            
-            return datetime.now().strftime("%Y-%m-%d")
-        
-    
-    @staticmethod
-    def _extract_time(date_header: str) -> str:
-        """Extract time in HH:MM format from Date header"""
-
-        if not date_header:
-            return datetime.now().strftime("%H:%M")
-        
-        try:
-            from email.utils import parsedate_to_datetime
-            dt = parsedate_to_datetime(date_header)
-            return dt.strftime("%H:%M")
-        
-        except Exception:
-            time_match = re.search(r'(\d{1,2}):(\d{2})', date_header)
-            if time_match:
-                hour, minute = time_match.groups()
-                return f"{hour.zfill(2)}:{minute}"
-            
-            return datetime.now().strftime("%H:%M")
-        
-    
-    @staticmethod
-    def _empty_email_dict(uid: str) -> Dict[str, Any]:
-        """Return an empty email dictionary with UID"""
+        sender = ", ".join(parsed_email.from_) if isinstance(parsed_email.from_, list) else (parsed_email.from_ or "")
+        recipient = ", ".join(parsed_email.to) if isinstance(parsed_email.to, list) else (parsed_email.to or "")
+        attachments = ", ".join(att.filename for att in parsed_email.attachments) if parsed_email.attachments else ""
+        date_str = parsed_email.date.strftime("%Y-%m-%d") if parsed_email.date else ""
+        time_str = parsed_email.date.strftime("%H:%M") if parsed_email.date else ""
+        body = parsed_email.text or parsed_email.html or ""
 
         return {
             "uid": uid,
-            "subject": "[Error parsing email]",
-            "sender": "",
-            "recipient": "",
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "time": datetime.now().strftime("%H:%M"),
-            "body": "",
-            "attachments": "",
+            "subject": parsed_email.subject or "",
+            "sender": sender,
+            "recipient": recipient,
+            "date": date_str,
+            "time": time_str,
+            "body": body,
+            "attachments": attachments,
             "flagged": 0,
         }
     
@@ -217,7 +88,6 @@ class EmailComposer:
         self.config = config
         self.smtp_client = smtp_client
 
-    
     def create_email_dict(self, recipient: str, subject: str, body: str,
                           sender: Optional[str] = None,
                           attachments: Optional[list] = None) -> Dict[str, Any]:
@@ -238,7 +108,6 @@ class EmailComposer:
             "body": body,
             "attachments": ",".join(attachments) if attachments else "",
         }
-    
 
     def send_email(self, to_email: str, subject: str, body: str,
                    cc: Optional[list] = None, bcc: Optional[list] = None) -> Tuple[bool, Optional[str]]:
@@ -273,12 +142,13 @@ class EmailComposer:
             
         except (ValidationError, SMTPError):
             raise
+
         except KernelError:
             raise
+
         except Exception as e:
             raise SMTPError("Failed to send email") from e
         
-
     async def schedule_email(self, email_dict: Dict[str, Any],
                        send_at: str) -> Tuple[bool, Optional[str]]:
         """Schedule an email to be sent at a later time"""
@@ -306,7 +176,6 @@ class EmailComposer:
         except Exception as e:
             raise DatabaseError("Failed to schedule email") from e
         
-    
     def _generate_uid(self) -> str:
         """Generate a unique identifier for the email"""
 
@@ -361,7 +230,6 @@ class DateTimeParser:
 
         return None, f"Invalid date-time format: '{dt_str}'."
     
-
     @staticmethod
     def _parse_natural_language(text: str) -> Optional[datetime]:
         """Parse basic natural language date-time strings"""
@@ -418,7 +286,6 @@ class EmailValidator:
 
         return bool(re.match(pattern, email_address.strip()))
     
-
     @staticmethod
     def validate_email_dict(email_dict: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """Validate structured email dictionary"""
@@ -428,14 +295,19 @@ class EmailValidator:
         for field in required_fields:
             if field not in email_dict:
                 raise ValidationError(f"Missing required field: {field}")
+            
             if not email_dict[field] and field != "body":
                 raise ValidationError(f"Field '{field}' cannot be empty")
             
         if not EmailValidator.is_valid_email(email_dict["sender"]):
-            raise InvalidEmailAddressError(f"Invalid sender email address: {email_dict['sender']}")
-        
+            raise InvalidEmailAddressError(
+                f"Invalid sender email address: {email_dict['sender']}"
+            )
+
         if not EmailValidator.is_valid_email(email_dict["recipient"]):
-            raise InvalidEmailAddressError(f"Invalid recipient email address: {email_dict['recipient']}")
+            raise InvalidEmailAddressError(
+                f"Invalid recipient email address: {email_dict['recipient']}"
+            )
 
         return True, None
 
