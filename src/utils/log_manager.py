@@ -430,10 +430,16 @@ def get_logger(name: Optional[str] = None, **context) -> logging.Logger:
 
     return _log_manager.get_logger(name, **context)
 
-def log_event(event_type: str, message: str, **extra):
+def log_event(event_type: str, message, **extra):
     """Log an event with specific type and extra context (module-level wrapper)."""
     
     if _log_manager is None:
         init_logging()
+    
+    # Handle both string messages and dict-based messages
+    if isinstance(message, dict):
+        # If message is a dict, merge it with extra and create a string message
+        extra.update(message)
+        message = f"Event: {event_type}"
     
     return _log_manager.log_event(event_type, message, **extra)

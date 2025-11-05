@@ -68,33 +68,30 @@ class AttachmentsCommandHandler(BaseCommandHandler):
     """Handler for the 'attachments' command with subcommand routing."""
 
     @async_log_call
-    async def execute_cli(self, args, config_manager) -> None:
+    async def execute_cli(self, args, config_manager) -> bool:
         """Route to appropriate subcommand handler (CLI mode)."""
-        
         subcommand = getattr(args, "attachment_command", None)
 
         try:
             if subcommand == "list" or subcommand is None:
                 # Default: list emails with attachments
-                await self._list_emails_cli(args, config_manager)
+                return await self._list_emails_cli(args, config_manager)
             elif subcommand == "download":
-                await self._download_attachments_cli(args, config_manager)
+                return await self._download_attachments_cli(args, config_manager)
             elif subcommand == "downloads":
-                await self._list_downloads_cli(args, config_manager)
+                return await self._list_downloads_cli(args, config_manager)
             elif subcommand == "open":
-                await self._open_attachment_cli(args, config_manager)
+                return await self._open_attachment_cli(args, config_manager)
             else:
-                raise ValidationError(
-                    f"Unknown attachments subcommand: {subcommand}",
-                    details={"subcommand": subcommand}
-                )
-        except (DatabaseError, ValidationError):
-            raise
+                await print_status(f"Unknown attachments subcommand: {subcommand}")
+                return False
+        except (DatabaseError, ValidationError) as e:
+            await print_status(f"Attachment command failed: {e}")
+            return False
 
     @async_log_call
     async def execute_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Route to appropriate subcommand handler (daemon mode)."""
-        
         subcommand = args.get("attachment_command", None)
 
         try:
@@ -117,11 +114,10 @@ class AttachmentsCommandHandler(BaseCommandHandler):
 
     ## CLI Subcommand Handlers
 
-    async def _list_emails_cli(self, args, config_manager) -> None:
+    async def _list_emails_cli(self, args, config_manager) -> bool:
         """List emails with attachments (CLI)."""
-        
         limit = getattr(args, "limit", 10)
-        print_status("Loading emails with attachments...")
+        await print_status("Loading emails with attachments...")
 
         db = get_database(config_manager)
 
@@ -129,20 +125,22 @@ class AttachmentsCommandHandler(BaseCommandHandler):
             emails = await db.search_with_attachments("inbox", limit=limit)
 
             if not emails:
-                print_status("No emails with attachments found.", color="yellow")
+                await print_status("No emails with attachments found.")
                 self.logger.info("No emails with attachments found")
-                return
+                return True
 
-            inbox_viewer.display_inbox("Emails with Attachments", emails)
-            print_status(f"Found {len(emails)} email(s) with attachments.")
+            await inbox_viewer.display_inbox("Emails with Attachments", emails)
+            await print_status(f"Found {len(emails)} email(s) with attachments.")
             self.logger.info(f"Listed {len(emails)} emails with attachments")
+            return True
 
-        except DatabaseError:
-            raise
+        except DatabaseError as e:
+            await print_status(f"Failed to list emails with attachments: {e}")
+            self.logger.error(f"Failed to list emails with attachments: {e}")
+            return False
 
-    async def _download_attachments_cli(self, args, config_manager) -> None:
+    async def _download_attachments_cli(self, args, config_manager) -> bool:
         """Download email attachments (CLI)."""
-        
         email_id = getattr(args, "id", None)
         download_all = getattr(args, "all", False)
         attachment_index = getattr(args, "index", None)
@@ -150,22 +148,18 @@ class AttachmentsCommandHandler(BaseCommandHandler):
         self.validate_args({"id": email_id}, "id")
 
         if not download_all and attachment_index is None:
-            raise ValidationError(
-                "Please specify either --all to download all attachments or --index to download a specific attachment",
-                details={"all": download_all, "index": attachment_index}
-            )
+            await print_status("Please specify either --all to download all attachments or --index to download a specific attachment")
+            return False
 
-        print_status(f"Downloading attachments for email {email_id}...")
+        await print_status(f"Downloading attachments for email {email_id}...")
 
         try:
             db = get_database(config_manager)
             email_data = await db.get_email("inbox", email_id, include_body=True)
 
             if not email_data:
-                raise ValidationError(
-                    f"Email with ID {email_id} not found",
-                    details={"email_id": email_id}
-                )
+                await print_status(f"Email with ID {email_id} not found")
+                return False
 
             attachment_manager = _get_attachment_manager(config_manager)
             
@@ -175,76 +169,77 @@ class AttachmentsCommandHandler(BaseCommandHandler):
                 downloaded_files = attachment_manager.download_from_email_data(email_data, attachment_index=attachment_index)
 
             if not downloaded_files:
-                print_status(f"No attachments found for email {email_id}", color="yellow")
+                await print_status(f"No attachments found for email {email_id}")
                 self.logger.info(f"No attachments to download for email {email_id}")
-                return
+                return True
 
-            print_status(f"Successfully downloaded {len(downloaded_files)} attachment(s):")
+            await print_status(f"Successfully downloaded {len(downloaded_files)} attachment(s):")
             for file_path in downloaded_files:
-                print_status(f"  • {file_path}")
+                await print_status(f"  • {file_path}")
             
             self.logger.info(f"Downloaded {len(downloaded_files)} attachment(s) for email {email_id}")
+            return True
 
-        except ValidationError:
-            raise
+        except ValidationError as e:
+            await print_status(f"Validation error: {e}")
+            return False
+
         except Exception as e:
-            raise ValidationError(
-                f"Failed to download attachments: {e}",
-                details={"email_id": email_id}
-            )
+            await print_status(f"Failed to download attachments: {e}")
+            self.logger.error(f"Failed to download attachments for email {email_id}: {e}")
+            return False
 
-    async def _list_downloads_cli(self, args, config_manager) -> None:
+    async def _list_downloads_cli(self, args, config_manager) -> bool:
         """List all downloaded attachments (CLI)."""
         
-        print_status("Loading downloaded attachments...")
+        await print_status("Loading downloaded attachments...")
 
         try:
             attachment_manager = _get_attachment_manager(config_manager)
             downloaded_files = attachment_manager.list_downloaded_attachments()
 
             if not downloaded_files:
-                print_status("No downloaded attachments found.", color="yellow")
+                await print_status("No downloaded attachments found.")
                 self.logger.info("No downloaded attachments found")
-                return
+                return True
 
-            print_status(f"Found {len(downloaded_files)} downloaded attachment(s):")
+            await print_status(f"Found {len(downloaded_files)} downloaded attachment(s):")
             for file_path, size in downloaded_files:
-                print_status(f"  • {file_path.name} ({size} bytes)")
+                await print_status(f"  • {file_path.name} ({size} bytes)")
 
             self.logger.info(f"Listed {len(downloaded_files)} downloaded attachments")
+            return True
 
         except Exception as e:
-            raise ValidationError(
-                f"Failed to list downloaded attachments: {e}",
-                details={}
-            )
+            await print_status(f"Failed to list downloaded attachments: {e}")
+            self.logger.error(f"Failed to list downloaded attachments: {e}")
+            return False
 
-    async def _open_attachment_cli(self, args, config_manager) -> None:
+    async def _open_attachment_cli(self, args, config_manager) -> bool:
         """Open a downloaded attachment (CLI)."""
         
         filename = getattr(args, "filename", None)
         self.validate_args({"filename": filename}, "filename")
 
-        print_status(f"Opening attachment: {filename}...")
+        await print_status(f"Opening attachment: {filename}...")
 
         try:
             attachment_manager = _get_attachment_manager(config_manager)
             attachment_manager.open_attachment(filename)
-            print_status(f"Opened attachment: {filename}")
+            await print_status(f"Opened attachment: {filename}")
             self.logger.info(f"Opened attachment: {filename}")
+            return True
 
         except Exception as e:
-            raise ValidationError(
-                f"Failed to open attachment: {e}",
-                details={"filename": filename}
-            )
+            await print_status(f"Failed to open attachment: {e}")
+            self.logger.error(f"Failed to open attachment {filename}: {e}")
+            return False
 
 
     ## Daemon Subcommand Handlers
 
     async def _list_emails_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """List emails with attachments (daemon)."""
-
         limit = args.get("limit", 10)
 
         try:
@@ -278,7 +273,6 @@ class AttachmentsCommandHandler(BaseCommandHandler):
 
     async def _download_attachments_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Download email attachments (daemon)."""
-
         email_id = args.get("id")
         download_all = args.get("all", False)
         attachment_index = args.get("index", None)
@@ -331,7 +325,6 @@ class AttachmentsCommandHandler(BaseCommandHandler):
 
     async def _list_downloads_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """List all downloaded attachments (daemon)."""
-
         try:
             attachment_manager = _get_attachment_manager(None, daemon)
             downloaded_files = attachment_manager.list_downloaded_attachments()
@@ -347,7 +340,6 @@ class AttachmentsCommandHandler(BaseCommandHandler):
 
     async def _open_attachment_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Open a downloaded attachment (daemon)."""
-
         filename = args.get("filename")
         self.validate_args({"filename": filename}, "filename")
 

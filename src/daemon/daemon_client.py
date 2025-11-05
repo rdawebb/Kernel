@@ -238,7 +238,7 @@ class FallbackExecutionStrategy:
         logger.debug(f"Fallback: executing command '{command}' directly")
         
         try:
-            from src.cli.commands import _registry
+            from src.cli.commands.command_registry import _registry
             
             if not _registry.exists(command):
                 return {
@@ -251,7 +251,9 @@ class FallbackExecutionStrategy:
                 }
             
             handler = _registry.get_handler(command)
-            result = await handler(None, args)
+            # For fallback, pass args dict and None for config_manager
+            # The handler (cli_wrapper) expects (args, config_manager)
+            result = await handler(args, None)
             
             return {
                 'success': result.get('success', True),
@@ -372,10 +374,16 @@ class DaemonClient:
             python_exe = self._find_python_executable()
             
             try:
+                # Capture stderr to a temp file for debugging
+                import tempfile
+                stderr_file = tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.log')
+                stderr_path = stderr_file.name
+                stderr_file.close()
+                
                 process = subprocess.Popen(
                     [python_exe, str(self.DAEMON_SCRIPT)],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stderr=open(stderr_path, 'w'),
                     start_new_session=True,
                 )
             except FileNotFoundError as e:
@@ -392,7 +400,18 @@ class DaemonClient:
                     return True
                 await asyncio.sleep(0.1)
             
+            # Timeout - try to read stderr for debugging
             logger.error("Daemon failed to start (timeout)")
+            try:
+                if stderr_path and Path(stderr_path).exists():
+                    with open(stderr_path, 'r') as f:
+                        stderr_content = f.read()
+                        if stderr_content:
+                            logger.error(f"Daemon stderr:\n{stderr_content}")
+                        Path(stderr_path).unlink()  # Clean up
+            except Exception as e:
+                logger.debug(f"Could not read daemon stderr: {e}")
+            
             return False
         
         except KernelError:

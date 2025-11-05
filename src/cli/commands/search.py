@@ -32,18 +32,22 @@ class SearchCommandHandler(BaseCommandHandler):
 
         try:
             if search_all:
-                print_status(f"Searching all folders for '{keyword}'...")
+                await print_status(f"Searching all folders for '{keyword}'...")
                 results = await db.search_all_tables(keyword, limit=limit)
-                search_viewer.display_search_results("all emails", results, keyword)
+                await search_viewer.display_search_results(results, "all emails", keyword)
                 self.logger.info(f"Searched all folders for '{keyword}', found {len(results)} results")
             else:
-                print_status(f"Searching folder '{table}' for '{keyword}'...")
+                await print_status(f"Searching folder '{table}' for '{keyword}'...")
                 results = await db.search(table, keyword, limit=limit)
-                search_viewer.display_search_results(table, results, keyword)
+                await search_viewer.display_search_results(results, table, keyword)
                 self.logger.info(f"Searched folder '{table}' for '{keyword}', found {len(results)} results")
+            
+            return True
 
-        except DatabaseError:
-            raise
+        except (DatabaseError, ValidationError) as e:
+            await print_status(f"[red]Error: {e}[/]")
+            self.logger.error(f"Error during search: {e}")
+            return False
 
     @async_log_call
     async def execute_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
@@ -68,7 +72,7 @@ class SearchCommandHandler(BaseCommandHandler):
                 title = table
 
             output = self.render_for_daemon(
-                search_viewer.display_search_results,
+                await search_viewer.display_search_results,
                 title,
                 results,
                 keyword

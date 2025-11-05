@@ -22,7 +22,8 @@ class CommandMetadata:
     """Metadata for a registered command."""
     
     name: str
-    handler: Callable
+    cli_handler: Callable
+    daemon_handler: Callable
     description: str = ""
     category: str = "general"
     aliases: List[str] = None
@@ -43,44 +44,41 @@ class CommandRegistry:
     def register(
         self,
         name: str,
-        handler: Callable,
+        cli_handler: Callable,
+        daemon_handler: Callable,
         description: str = "",
         category: str = "general",
         aliases: Optional[List[str]] = None,
         requires_daemon: bool = True
     ) -> None:
         """Register a command with metadata."""
-
         metadata = CommandMetadata(
             name=name,
-            handler=handler,
+            cli_handler=cli_handler,
+            daemon_handler=daemon_handler,
             description=description,
             category=category,
             aliases=aliases or [],
             requires_daemon=requires_daemon
         )
         
-        # Register primary name
         self._commands[name] = metadata
-        
-        # Register aliases
         for alias in metadata.aliases:
             self._commands[alias] = metadata
     
-    def get_handler(self, command: str) -> Optional[Callable]:
-        """Get handler function for a command."""
-
+    def get_handler(self, command: str, daemon: bool = False) -> Optional[Callable]:
+        """Get handler function for a command. Returns daemon_handler if daemon=True, else cli_handler."""
         metadata = self._commands.get(command)
-        return metadata.handler if metadata else None
+        if not metadata:
+            return None
+        return metadata.daemon_handler if daemon else metadata.cli_handler
     
     def get_metadata(self, command: str) -> Optional[CommandMetadata]:
         """Get full metadata for a command."""
-
         return self._commands.get(command)
     
     def exists(self, command: str) -> bool:
         """Check if a command exists."""
-
         return command in self._commands
     
     def list_commands(self, category: Optional[str] = None) -> List[str]:
@@ -100,13 +98,11 @@ class CommandRegistry:
     
     def list_categories(self) -> List[str]:
         """List all command categories."""
-
         categories = {meta.category for meta in self._commands.values()}
         return sorted(categories)
     
     def get_commands_by_category(self) -> Dict[str, List[str]]:
         """Get commands grouped by category."""
-
         result: Dict[str, List[str]] = {}
         
         for metadata in self._commands.values():
@@ -130,7 +126,7 @@ _registry = CommandRegistry()
 ## Registration Helper
 
 def register_command_with_base(
-        regsitry: CommandRegistry,
+        registry: CommandRegistry,
         name: str,
         handler_class: type,
         description: str,
@@ -138,12 +134,11 @@ def register_command_with_base(
         aliases: List[str] = None,
 ):
     """Helper function to register commands using BaseCommandHandler"""
-
     from .base import create_command_handlers
 
     cli_handler, daemon_handler = create_command_handlers(handler_class)
 
-    regsitry.register(
+    registry.register(
         name=name,
         handler=daemon_handler,
         description=description,
@@ -165,28 +160,32 @@ def _initialize_registry():
     
     _registry.register(
         "inbox",
-        handler=viewing_daemon,
+        cli_handler=viewing_cli,
+        daemon_handler=viewing_daemon,
         description="View inbox emails",
         category="viewing"
     )
     
     _registry.register(
         "sent",
-        handler=viewing_daemon,
+        cli_handler=viewing_cli,
+        daemon_handler=viewing_daemon,
         description="View sent emails",
         category="viewing"
     )
     
     _registry.register(
         "drafts",
-        handler=viewing_daemon,
+        cli_handler=viewing_cli,
+        daemon_handler=viewing_daemon,
         description="View draft emails",
         category="viewing"
     )
     
     _registry.register(
         "trash",
-        handler=viewing_daemon,
+        cli_handler=viewing_cli,
+        daemon_handler=viewing_daemon,
         description="View deleted emails",
         category="viewing"
     )
@@ -196,7 +195,8 @@ def _initialize_registry():
     email_cli, email_daemon = create_command_handlers(EmailCommandHandler)
     _registry.register(
         "email",
-        handler=email_daemon,
+        cli_handler=email_cli,
+        daemon_handler=email_daemon,
         description="Email operations (view, delete, flag, unflag, move)",
         category="email"
     )
@@ -206,7 +206,8 @@ def _initialize_registry():
     search_cli, search_daemon = create_command_handlers(SearchCommandHandler)
     _registry.register(
         "search",
-        handler=search_daemon,
+        cli_handler=search_cli,
+        daemon_handler=search_daemon,
         description="Search emails by keyword",
         category="email"
     )
@@ -214,7 +215,8 @@ def _initialize_registry():
     compose_cli, compose_daemon = create_command_handlers(ComposeCommandHandler)
     _registry.register(
         "compose",
-        handler=compose_daemon,
+        cli_handler=compose_cli,
+        daemon_handler=compose_daemon,
         description="Compose and send email",
         category="email"
     )
@@ -224,7 +226,8 @@ def _initialize_registry():
     attachments_cli, attachments_daemon = create_command_handlers(AttachmentsCommandHandler)
     _registry.register(
         "attachments",
-        handler=attachments_daemon,
+        cli_handler=attachments_cli,
+        daemon_handler=attachments_daemon,
         description="Attachment operations (list, download, downloads, open)",
         category="attachments"
     )
@@ -234,7 +237,8 @@ def _initialize_registry():
     refresh_cli, refresh_daemon = create_command_handlers(RefreshCommandHandler)
     _registry.register(
         "refresh",
-        handler=refresh_daemon,
+        cli_handler=refresh_cli,
+        daemon_handler=refresh_daemon,
         description="Refresh emails from server",
         category="maintenance"
     )
@@ -242,7 +246,8 @@ def _initialize_registry():
     database_cli, database_daemon = create_command_handlers(DatabaseCommandHandler)
     _registry.register(
         "database",
-        handler=database_daemon,
+        cli_handler=database_cli,
+        daemon_handler=database_daemon,
         description="Database operations (backup, export, delete, info)",
         category="maintenance"
     )
@@ -257,15 +262,12 @@ _initialize_registry()
 
 def get_command_metadata(command: str) -> Optional[CommandMetadata]:
     """Get full metadata for a command."""
-
     return _registry.get_metadata(command)
 
 def get_categories() -> List[str]:
     """Get all command categories."""
-
     return _registry.list_categories()
 
 def get_commands_grouped_by_category() -> Dict[str, List[str]]:
     """Get commands organized by category."""
-    
     return _registry.get_commands_by_category()

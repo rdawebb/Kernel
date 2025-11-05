@@ -16,29 +16,29 @@ class DatabaseCommandHandler(BaseCommandHandler):
     """Handler for database operations with subcommand routing."""
 
     @async_log_call
-    async def execute_cli(self, args, config_manager) -> None:
+    async def execute_cli(self, args, config_manager) -> bool:
         """Route to appropriate database operation (CLI mode)."""
-        
         db_command = getattr(args, "db_command", None)
 
-        if db_command == "backup":
-            await self._backup_cli(args, config_manager)
-        elif db_command == "export":
-            await self._export_cli(args, config_manager)
-        elif db_command == "delete":
-            await self._delete_cli(args, config_manager)
-        elif db_command == "info":
-            await self._info_cli(args, config_manager)
-        else:
-            raise ValidationError(
-                f"Unknown database command: {db_command}",
-                details={"db_command": db_command}
-            )
+        try:
+            if db_command == "backup":
+                return await self._backup_cli(args, config_manager)
+            elif db_command == "export":
+                return await self._export_cli(args, config_manager)
+            elif db_command == "delete":
+                return await self._delete_cli(args, config_manager)
+            elif db_command == "info":
+                return await self._info_cli(args, config_manager)
+            else:
+                await print_status(f"Unknown database command: {db_command}")
+                return False
+        except (DatabaseError, ValidationError) as e:
+            await print_status(f"Database command failed: {e}")
+            return False
 
     @async_log_call
     async def execute_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Route to appropriate database operation (daemon mode)."""
-
         db_command = args.get("db_command")
 
         if db_command == "backup":
@@ -59,11 +59,10 @@ class DatabaseCommandHandler(BaseCommandHandler):
     # Backup operations
 
     async def _backup_cli(self, args, config_manager) -> None:
-        """Backup the database to a file (CLI mode)."""
-        
+        """Backup the database to a file (CLI mode)."""  
         backup_path = getattr(args, "path", None)
 
-        print_status("Starting database backup...")
+        await print_status("Starting database backup...")
 
         db = get_database(config_manager)
 
@@ -73,15 +72,16 @@ class DatabaseCommandHandler(BaseCommandHandler):
             else:
                 backup_file = await db.backup()
 
-            print_status(f"Database backed up successfully to: {backup_file}")
+            await print_status(f"Database backed up successfully to: {backup_file}")
             self.logger.info(f"Database backup completed to {backup_file}")
+            return True
 
-        except DatabaseError:
-            raise
+        except (DatabaseError, ValidationError) as e:
+            self.logger.error(f"Database backup failed: {e}")
+            return False
 
     async def _backup_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Backup the database to a file (daemon mode)."""
-
         backup_path = args.get("path", None)
 
         try:
@@ -97,7 +97,7 @@ class DatabaseCommandHandler(BaseCommandHandler):
                 backup_path=str(backup_file)
             )
 
-        except DatabaseError as e:
+        except (DatabaseError, ValidationError) as e:
             return self.error_result(str(e))
 
 
@@ -105,7 +105,6 @@ class DatabaseCommandHandler(BaseCommandHandler):
 
     async def _export_cli(self, args, config_manager) -> None:
         """Export all email tables to CSV files (CLI mode)."""
-        
         export_path = getattr(args, "path", "./exports")
         tables = getattr(args, "tables", None)
 
@@ -115,7 +114,7 @@ class DatabaseCommandHandler(BaseCommandHandler):
                 details={"path": export_path}
             )
 
-        print_status("Starting email export to CSV...")
+        await print_status("Starting email export to CSV...")
 
         db = get_database(config_manager)
 
@@ -124,20 +123,23 @@ class DatabaseCommandHandler(BaseCommandHandler):
             exported_files = await db.export_to_csv(export_dir, tables=tables)
 
             if exported_files:
-                print_status(f"Successfully exported {len(exported_files)} CSV file(s) to: {export_dir}")
+                await print_status(f"Successfully exported {len(exported_files)} CSV file(s) to: {export_dir}")
                 for file_path in exported_files:
-                    print_status(f"  • {file_path}")
+                    await print_status(f"  • {file_path}")
                 self.logger.info(f"Exported {len(exported_files)} CSV file(s) to {export_dir}")
             else:
-                print_status(f"No tables found to export. Export directory created at: {export_dir}", color="yellow")
+                await print_status(f"No tables found to export. Export directory created at: {export_dir}")
                 self.logger.info(f"No tables to export. Export directory: {export_dir}")
+            
+            return True
 
-        except DatabaseError:
-            raise
+        except (DatabaseError, ValidationError) as e:
+            await print_status(f"Email export failed: {e}")
+            self.logger.error(f"Email export failed: {e}")
+            return False
 
     async def _export_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Export all email tables to CSV files (daemon mode)."""
-
         export_path = args.get("path", "./exports")
         tables = args.get("tables", None)
 
@@ -181,7 +183,7 @@ class DatabaseCommandHandler(BaseCommandHandler):
         db = get_database(config_manager)
 
         try:
-            db_path = db.get_db_path()
+            db_path = await db.get_db_path()
 
             if not db_path.exists():
                 raise ValidationError(
@@ -190,38 +192,40 @@ class DatabaseCommandHandler(BaseCommandHandler):
                 )
             
             # Offer to backup before deletion
-            if confirm_action("Would you like to back up the database before deletion?"):
+            if await confirm_action("Would you like to back up the database before deletion?"):
                 try:
                     backup_file = await db.backup()
-                    print_status(f"Database backed up successfully to: {backup_file}")
+                    await print_status(f"Database backed up successfully to: {backup_file}")
                     self.logger.info(f"Database backup completed to {backup_file}")
                 except DatabaseError as e:
-                    print_status(f"Failed to backup database: {e}", color="red")
+                    await print_status(f"Failed to backup database: {e}")
                     self.logger.error(f"Failed to backup database: {e}")
-                    return
+                    return False
             
             # First confirmation
-            if not confirm_action(f"Are you sure you want to delete the database file at '{db_path}'? This action cannot be undone."):
-                print_status("Database deletion cancelled", color="yellow")
+            if not await confirm_action(f"Are you sure you want to delete the database file at '{db_path}'? This action cannot be undone."):
+                await print_status("Database deletion cancelled")
                 self.logger.info("Database deletion cancelled by user")
-                return
+                return False
 
             # Second confirmation for extra safety
-            if not confirm_action("This is your last chance to cancel. Proceed with deletion?"):
-                print_status("Database deletion cancelled", color="yellow")
+            if not await confirm_action("This is your last chance to cancel. Proceed with deletion?"):
+                await print_status("Database deletion cancelled")
                 self.logger.info("Database deletion cancelled by user")
-                return
+                return False
 
             await db.delete_database()
-            print_status(f"Database file '{db_path}' deleted successfully.")
+            await print_status(f"Database file '{db_path}' deleted successfully.")
             self.logger.info(f"Database deleted: {db_path}")
+            return True
 
-        except DatabaseError:
-            raise
+        except (DatabaseError, ValidationError) as e:
+            await print_status(f"Database deletion failed: {e}")
+            self.logger.error(f"Database deletion failed: {e}")
+            return False
 
     async def _delete_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Delete the local database (daemon mode)."""
-
         confirm_flag = args.get("confirm", False)
 
         if not confirm_flag:
@@ -231,7 +235,7 @@ class DatabaseCommandHandler(BaseCommandHandler):
             )
 
         try:
-            db_path = daemon.db.get_db_path()
+            db_path = await daemon.db.get_db_path()
 
             if not db_path.exists():
                 return self.error_result(
@@ -262,20 +266,16 @@ class DatabaseCommandHandler(BaseCommandHandler):
                 backup_path=str(backup_file) if backup_file else None
             )
 
-        except DatabaseError as e:
+        except (DatabaseError, ValidationError) as e:
             return self.error_result(str(e))
 
 
     # Info operations (placeholder)
 
-    async def _info_cli(self, args, config_manager) -> None:
-        """Display database information (CLI mode)."""
-        
-        # TODO: Implement database info display
-        # Ideas: database size, number of emails, tables, last backup, etc.
-        
-        print_status("Database info command not yet implemented", color="yellow")
-        self.logger.info("Database info command called but not implemented")
+    async def _info_cli(self, args, config_manager) -> bool:
+        """Display information about the database (CLI mode)."""
+        await print_status("Database info command not yet implemented")
+        return True
 
     async def _info_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Display database information (daemon mode)."""

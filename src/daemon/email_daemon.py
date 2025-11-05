@@ -248,7 +248,7 @@ class ConnectionManager:
             
             # Keepalive for IMAP
             await safe_execute(
-                self.imap_pool.keepalive(),
+                self.imap_pool.keepalive,
                 default=None,
                 context="imap_keepalive"
             )
@@ -875,7 +875,8 @@ class EmailDaemon:
                 await asyncio.sleep(0.5)
 
             self.connections.close_all()
-            await self.db.close()
+            if self.db and hasattr(self.db, 'connection_manager'):
+                await self.db.connection_manager.close()
             self.db = None
             await self.cache.invalidate_all()
             
@@ -902,15 +903,16 @@ class EmailDaemon:
 
 async def run_daemon() -> None:
     """Main daemon event loop with secure socket setup."""
+    daemon = None
     try:
         daemon = EmailDaemon()
 
         logger.info("Initializing database...")
-        await daemon.db.__initialize()
+        await daemon.db._initialize()
         logger.info("Database initialized")
 
         def signal_handler(signum, frame):
-            if not daemon._shutting_down:
+            if daemon and not daemon._shutting_down:
                 asyncio.create_task(daemon.shutdown())
 
         signal.signal(signal.SIGTERM, signal_handler)

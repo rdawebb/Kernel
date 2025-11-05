@@ -22,7 +22,6 @@ class EmailFilters:
     @classmethod
     def from_args(cls, args):
         """Create filters from command-line arguments."""
-
         flagged = None
         if getattr(args, "flagged", False):
             flagged = True
@@ -45,7 +44,6 @@ class EmailFilters:
     
     def has_filters(self) -> bool:
         """Check if any filters are active."""
-        
         return (
             self.flagged is not None or
             self.unread is not None or
@@ -54,7 +52,6 @@ class EmailFilters:
     
     def to_dict(self) -> dict:
         """Convert filters to dictionary for querying."""
-        
         result = {}
         if self.flagged is not None:
             result["flagged"] = self.flagged
@@ -81,7 +78,6 @@ class CommandResult:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert result to dictionary."""
-        
         return {
             "success": self.success,
             "data": self.data,
@@ -95,7 +91,6 @@ class BaseCommandHandler(ABC):
 
     def __init__(self, config_manager=None):
         """Initialize command handler with optional config manager."""
-
         self.config_manager = config_manager
         self.console = get_console()
         self.logger = logger
@@ -121,7 +116,6 @@ class BaseCommandHandler(ABC):
     def validate_args(self, args: Dict[str, Any], *required_keys: str, 
                       allow_empty_strings: bool = False) -> None:
         """Validate that required arguments are present."""
-
         missing = []
         for key in required_keys:
             value = args.get(key)
@@ -138,7 +132,6 @@ class BaseCommandHandler(ABC):
         
     def validate_table(self, table: str) -> None:
         """Validate that the table name is allowed."""
-
         from src.core.database import SCHEMAS
 
         if table not in SCHEMAS:
@@ -151,8 +144,7 @@ class BaseCommandHandler(ABC):
     async def validate_email_exists(self, db: Any, table: str, email_id: str, 
                              include_body: bool = True) -> Dict[str, Any]:
         """Validate that an email with the given ID exists in the specified table."""
-
-        if not db.email_exists(table, email_id):
+        if not await db.email_exists(table, email_id):
             raise ValidationError(
                 f"Email with ID {email_id} not found in {table}",
                 details={"table": table, "email_id": email_id}
@@ -172,12 +164,10 @@ class BaseCommandHandler(ABC):
 
     def success_result(self, data: Any = None, **metadata) -> CommandResult:
         """Create a success CommandResult."""
-        
         return CommandResult(success=True, data=data, metadata=metadata)
     
     def error_result(self, error: str, **metadata) -> CommandResult:
         """Create an error CommandResult."""
-        
         return CommandResult(success=False, error=error, metadata=metadata)
     
 
@@ -185,7 +175,6 @@ class BaseCommandHandler(ABC):
 
     def render_for_daemon(self, render_func: Callable, *args, **kwargs) -> str:
         """Render Rich output to a string for daemon use."""
-
         from io import StringIO
         from rich.console import Console
 
@@ -209,7 +198,6 @@ class BaseCommandHandler(ABC):
 
     async def safe_execute_cli(self, args, config_manager) -> None:
         """Execute a CLI command with error handling."""
-
         from src.utils.console import print_error
 
         self.logger.debug(f"Executing CLI command: {self.__class__.__name__}")
@@ -223,12 +211,16 @@ class BaseCommandHandler(ABC):
         )
 
         if result is None:
-            print_error(f"Failed to execute CLI command: {self.__class__.__name__}")
+            await print_error(f"Failed to execute CLI command: {self.__class__.__name__}")
+            return
+        
+        # If result is falsy but not None (e.g., False), it's still an error
+        if not result:
+            await print_error(f"Failed to execute CLI command: {self.__class__.__name__}")
             return
         
     async def safe_execute_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Execute a daemon command with error handling."""
-
         try:
             return await self.execute_daemon(daemon, args)
         
@@ -245,11 +237,11 @@ class BaseCommandHandler(ABC):
 
 def create_command_handlers(handler_class: type) -> Tuple:
     """Create CLI and daemon command handlers from a command handler class."""
-
     handler = handler_class(config_manager=None)
 
     async def cli_wrapper(args, config_manager):
         await handler.safe_execute_cli(args, config_manager)
+        return {'success': True}
 
     async def daemon_wrapper(daemon, args: Dict[str, Any]) -> Dict[str, Any]:
         result = await handler.safe_execute_daemon(daemon, args)

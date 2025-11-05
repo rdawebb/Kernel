@@ -1,6 +1,7 @@
 """Unified email processing module"""
 
 import email
+import email.message
 import re
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
@@ -27,7 +28,6 @@ class EmailParser:
     @staticmethod
     def parse_from_bytes(raw_email: bytes, uid: str) -> Dict[str, Any]:
         """Parse raw email bytes into structured dictionary"""
-
         try:
             parsed_email = parse_email(raw_email)
             return EmailParser._to_dict(parsed_email, uid)
@@ -41,7 +41,6 @@ class EmailParser:
     @staticmethod
     def parse_from_message(message: email.message.Message, uid: str) -> Dict[str, Any]:
         """Parse email.message.Message into structured dictionary"""
-
         try:
             raw_bytes = message.as_bytes()
             parsed_email = parse_email(raw_bytes)
@@ -56,7 +55,6 @@ class EmailParser:
     @staticmethod
     def _to_dict(parsed_email: Any, uid: str) -> Dict[str, Any]:
         """Convert fast-mail-parser result to dictionary format"""
-
         sender = ", ".join(parsed_email.from_) if isinstance(parsed_email.from_, list) else (parsed_email.from_ or "")
         recipient = ", ".join(parsed_email.to) if isinstance(parsed_email.to, list) else (parsed_email.to or "")
         attachments = ", ".join(att.filename for att in parsed_email.attachments) if parsed_email.attachments else ""
@@ -84,7 +82,6 @@ class EmailComposer:
 
     def __init__(self, config=None, smtp_client=None):
         """Initialize EmailComposer with config and SMTP client"""
-
         self.config = config
         self.smtp_client = smtp_client
 
@@ -92,9 +89,9 @@ class EmailComposer:
                           sender: Optional[str] = None,
                           attachments: Optional[list] = None) -> Dict[str, Any]:
         """Create structured email dictionary for storage"""
-
         if sender is None and self.config:
-            sender = self.config.get_account_config("email", "")
+            account_config = self.config.get_account_config()
+            sender = account_config.get("email", "")
 
         now = datetime.now()
 
@@ -112,7 +109,6 @@ class EmailComposer:
     def send_email(self, to_email: str, subject: str, body: str,
                    cc: Optional[list] = None, bcc: Optional[list] = None) -> Tuple[bool, Optional[str]]:
         """Send an email via SMTP client"""
-
         try:
             if self.smtp_client:
                 smtp = self.smtp_client
@@ -152,7 +148,6 @@ class EmailComposer:
     async def schedule_email(self, email_dict: Dict[str, Any],
                        send_at: str) -> Tuple[bool, Optional[str]]:
         """Schedule an email to be sent at a later time"""
-
         parsed_dt, error = DateTimeParser.parse_datetime(send_at)
         if error:
             raise ValidationError(error)
@@ -171,16 +166,16 @@ class EmailComposer:
         
         except DatabaseError:
             raise
+
         except KernelError:
             raise
+
         except Exception as e:
             raise DatabaseError("Failed to schedule email") from e
         
     def _generate_uid(self) -> str:
         """Generate a unique identifier for the email"""
-
         import uuid
-
         return f"composed-{uuid.uuid4().hex[:12]}"
     
 
@@ -192,7 +187,6 @@ class DateTimeParser:
     @staticmethod
     def parse_datetime(dt_str: str) -> Tuple[Optional[datetime], Optional[str]]:
         """Parse date-time string into datetime object"""
-
         if not dt_str or not dt_str.strip():
             return None, None
         
@@ -233,7 +227,6 @@ class DateTimeParser:
     @staticmethod
     def _parse_natural_language(text: str) -> Optional[datetime]:
         """Parse basic natural language date-time strings"""
-        
         from datetime import timedelta
 
         text = text.lower().strip()
@@ -278,7 +271,6 @@ class EmailValidator:
     @staticmethod
     def is_valid_email(email_address: str) -> bool:
         """Validate email address format"""
-
         if not email_address or not isinstance(email_address, str):
             return False
         
@@ -289,7 +281,6 @@ class EmailValidator:
     @staticmethod
     def validate_email_dict(email_dict: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
         """Validate structured email dictionary"""
-
         required_fields = ["uid", "subject", "sender", "recipient", "body"]
 
         for field in required_fields:
@@ -319,7 +310,6 @@ def create_test_email(subject: str = "Test Email",
                       recipient: str = "recipient@example.com",
                       body: str = "This is a test email.") -> Dict[str, Any]:
     """Create a test email dictionary"""
-
     composer = EmailComposer()
     
     return composer.create_email_dict(

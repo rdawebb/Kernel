@@ -1,88 +1,142 @@
 """Unified email table viewer - displays emails in formatted tables with dynamic columns"""
 
-from rich.table import Table
+from typing import Any, Dict, List, Optional
 
-from ..utils.log_manager import get_logger, log_call
+from rich.table import Table
+from rich.console import Console
+
+from src.utils.console import get_console
+from src.utils.error_handling import ValidationError
+from src.utils.log_manager import async_log_call, get_logger
 
 logger = get_logger(__name__)
 
 
-@log_call
-def display_email_table(
-    emails,
-    title="Emails",
-    show_source=False,
-    show_flagged=False,
-    keyword=None,
-    console_obj=None
-):
-
-    """Display emails in formatted table with optional columns."""
-    # Console must be provided by caller (daemon handler or CLI)
-    if console_obj is None:
-        raise ValueError("console_obj must be provided to display_email_table")
+def _validate_email_list(emails: List[Dict[str, Any]]) -> None:
+    """Validate the list of emails before display"""
+    if not isinstance(emails, list):
+        raise ValidationError(
+            f"Emails must be provided as a list, got {type(emails).__name__} instead.",
+            details={"type": type(emails).__name__}
+        )
     
-    output_console = console_obj
-    
-    if not emails:
-        if keyword:
-            output_console.print(f"[yellow]No emails found matching '{keyword}'.[/]")
-        else:
-            output_console.print("[yellow]No emails to display.[/]")
-        return
-
-    table = Table(title=title)
-
-    # Base columns
+    for idx, email in enumerate(emails):
+        if not isinstance(email, dict):
+            raise ValidationError(
+                f"Each email must be a dictionary, got {type(email).__name__} at index {idx}.",
+                details={"index": idx, "type": type(email).__name__}
+            )
+        
+def _build_table_columns(table: Table, show_source: bool, 
+                         show_flagged: bool) -> None:
+    """Dynamically add columns to the table based on flags"""
     table.add_column("ID", justify="right", style="cyan", no_wrap=True)
     table.add_column("From", style="magenta", min_width=20)
-    table.add_column("Subject", style="green", min_width=15)
+    table.add_column("Subject", style="green", min_width=20)
     table.add_column("Date", justify="right", style="yellow")
     table.add_column("Time", justify="right", style="yellow")
-    table.add_column("", style="blue", width=3)  # Attachments column
+    table.add_column("", justify="center", width=3)  # Attachments indicator
 
-    # Optional columns
     if show_source:
-        table.add_column("Source", style="bright_white", width=12)
+        table.add_column("Source", style="white", min_width=12)
+
     if show_flagged:
-        table.add_column("", justify="center", style="red", width=3)  # Flagged column
+        table.add_column("", justify="center", width=3) # Flagged indicator
 
-    for email in emails:
-        uid_value = email.get("uid")
-        uid = str(uid_value) if uid_value is not None else "N/A"
-        sender = email.get("from", "N/A")
-        subject = email.get("subject", "No Subject")
-        date = email.get("date", "Unknown Date")
-        time = email.get("time", "Unknown Time")
+def _format_source_display(source_table: str) -> str:
+    """Format the source table name for display"""
+    source_map = {
+        "inbox": "Inbox",
+        "sent": "Sent",
+        "drafts": "Drafts",
+        "trash": "Trash",
+    }
 
-        attachments_raw = email.get("attachments", "")
+    return source_map.get(source_table, source_table.title())
+
+def _build_table_rows(email: Dict[str, Any], show_source: bool, 
+                      show_flagged: bool) -> List[Any]:
+    """Build a row for the table based on email data and flags"""
+    uid_value = email.get("uid")
+    uid = str(uid_value) if uid_value is not None else "N/A"
+    sender = email.get("from", "N/A")
+    subject = email.get("subject", "No Subject")
+    date = email.get("date", "Unknown Date")
+    time = email.get("time", "Unknown Time")
+
+    attachments_raw = email.get("attachments", "")
+    if isinstance(attachments_raw, list):
+        attachments_indicator = "📎" if attachments_raw else ""
+    else:
         attachments_stripped = attachments_raw.strip() if attachments_raw else ""
-        has_attachments = bool(attachments_stripped)
-        attachment_indicator = "📎" if has_attachments else ""
+        attachments_indicator = "📎" if bool(attachments_stripped) else ""
 
-        row_data = [
-            uid,
-            sender,
-            subject,
-            date,
-            time,
-            attachment_indicator
-        ]
+    row_data = [
+        uid,
+        sender,
+        subject,
+        date,
+        time,
+        attachments_indicator
+    ]
+    
+    if show_source:
+        source_table = email.get("source_table", "unknown")
+        row_data.append(_format_source_display(source_table))
 
-        if show_source:
-            source_table = email.get("source_table", "unknown")
-            source_display = {
-                "inbox": "Inbox",
-                "sent_emails": "Sent",
-                "drafts": "Drafts",
-                "deleted_emails": "Deleted"
-            }.get(source_table, source_table)
-            row_data.append(source_display)
+    if show_flagged:
+        flagged_indicator = "🚩" if email.get("flagged") else ""
+        row_data.append(flagged_indicator)
 
-        if show_flagged:
-            flagged_indicator = "🚩" if email.get("flagged") else ""
-            row_data.append(flagged_indicator)
+    return row_data
 
-        table.add_row(*row_data)
+def _display_empty_message(console: Console, keyword: Optional[str] = None) -> None:
+    """Display a message when there are no emails to show"""
+    if keyword:
+        console.print(f"[yellow]No emails found matching the keyword '{keyword}'.[/]")
+    else:
+        console.print("[yellow]No emails to display.[/]")
+    
+@async_log_call
+async def display_email_table(emails: List[Dict[str, Any]], 
+                              title: str = "Emails", 
+                              show_source: bool = False, 
+                              show_flagged: bool = False,
+                              keyword: Optional[str] = None,
+                              console: Optional[Console] = None) -> None:
+    """Display emails in a formatted table with dynamic columns"""
+    _validate_email_list(emails)
 
-    output_console.print(table)
+    output_console = console or get_console()
+
+    try:
+        if not emails:
+            _display_empty_message(output_console, keyword)
+            logger.debug(f"No emails to display for table: {title}.")
+            return
+        
+        table = Table(title=title)
+        _build_table_columns(table, show_source, show_flagged)
+
+        for email in emails:
+            try:
+                row_data = _build_table_rows(email, show_source, show_flagged)
+                table.add_row(*row_data)
+
+            except Exception as e:
+                logger.warning(
+                    f"Error building email row: {e}",
+                    extra={"email_uid": email.get("uid")}
+                )
+                continue
+
+        output_console.print(table)
+        logger.debug(f"Displayed email table '{title}' with {len(emails)} emails.")
+
+    except Exception as e:
+        logger.error(f"Error displaying email table: {e}")
+        raise ValidationError(
+            "Failed to display email table.",
+            details={"error": str(e), "title": title, "email_count": len(emails)}
+        ) from e
+    

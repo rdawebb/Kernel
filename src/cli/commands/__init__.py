@@ -14,24 +14,12 @@ Command handlers are organized by function:
 # Import registry and metadata
 from .command_registry import (
     CommandMetadata,
-    _registry,
     get_categories,
     get_command_metadata,
     get_commands_grouped_by_category,
 )
 
 __all__ = [
-    # Registry instance
-    '_registry',
-    # CLI Commands
-    'search_cli',
-    'viewing_cli',
-    'database_cli',
-    'compose_cli',
-    'attachments_cli',
-    'email_cli',
-    'refresh_cli',
-    # Metadata API
     'CommandMetadata',
     'get_command_metadata',
     'get_categories',

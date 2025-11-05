@@ -323,7 +323,7 @@ class Database:
         """Resolve the database file path from config manager."""
         if config_manager:
             import os
-            raw_path = config_manager.database.database_path
+            raw_path = config_manager.config.database.database_path
             return Path(os.path.expanduser(raw_path))
         else:
             return DATABASE_PATH
@@ -335,10 +335,9 @@ class Database:
     def get_backup_path(self) -> Path:
         """Get the database backup file path."""
         if self.config_manager:
-            backup_path = self.config_manager.database.backup_path
+            backup_path = self.config_manager.config.database.backup_path
             if backup_path:
                 return Path(backup_path)
-            
         return self.get_db_path().parent / "kernel_backup.db"
 
 
@@ -364,16 +363,14 @@ class Database:
             await conn.execute(query, params)
             await conn.commit()
             return None
-        
+
         async with conn.execute(query, params) as cursor:
             if fetch_one:
                 row = await cursor.fetchone()
                 return dict(row) if row else None
-            elif fetch_all:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
 
-            return None
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows] if rows else []
 
     async def _execute_many(self, query: str, param_list: List[Tuple], 
                             commit: bool = True) -> None:
@@ -1098,6 +1095,17 @@ def get_database(config_manager=None, db_path: Optional[Path] = None) -> Databas
         logger.debug("Database singleton instance reconfigured")
 
     return _db_instance
+
+async def close_database() -> None:
+    """Close the database connection (but keep the singleton for reuse)."""
+    global _db_instance
+
+    if _db_instance:
+        try:
+            await _db_instance.connection_manager.close()
+            logger.debug("Database connection closed")
+        except Exception as e:
+            logger.warning(f"Error closing database connection: {e}")
 
 def reset_database() -> None:
     """Reset the singleton database instance (for testing/reconfiguration)."""

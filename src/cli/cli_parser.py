@@ -7,7 +7,6 @@ import argparse
 
 def add_filter_arguments(parser: argparse.ArgumentParser) -> None:
     """Add common filter arguments to the parser."""
-    
     filter_group = parser.add_argument_group("filters", "Filter displayed emails")
 
     filter_group.add_argument(
@@ -38,7 +37,6 @@ def add_filter_arguments(parser: argparse.ArgumentParser) -> None:
 
 def add_limit_argument(parser: argparse.ArgumentParser, default: int = 10) -> None:
     """Add limit argument for the number of emails to display."""
-
     parser.add_argument(
         "--limit",
         type=int,
@@ -48,7 +46,6 @@ def add_limit_argument(parser: argparse.ArgumentParser, default: int = 10) -> No
 
 def add_folder_argument(parser: argparse.ArgumentParser) -> None:
     """Add folder argument for displaying emails in a specific folder."""
-
     parser.add_argument(
         "--folder",
         default="inbox",
@@ -61,7 +58,6 @@ def add_folder_argument(parser: argparse.ArgumentParser) -> None:
 
 def setup_viewing_commands(subparsers) -> None:
     """Setup inbox, sent, drafts, and trash viewing commands with filters."""
-
     inbox_parser = subparsers.add_parser(
         "inbox",
         help="View emails in the inbox",
@@ -96,7 +92,6 @@ def setup_viewing_commands(subparsers) -> None:
 
 def setup_email_commands(subparsers) -> None:
     """Setup email-related commands (view, delete, move, flag, etc)."""
-
     email_parser = subparsers.add_parser(
         "email",
         help="Email operations",
@@ -161,7 +156,6 @@ def setup_email_commands(subparsers) -> None:
 
 def setup_search_command(subparsers) -> None:
     """Setup the search command with filters."""
-
     search_parser = subparsers.add_parser(
         "search",
         help="Search emails",
@@ -188,7 +182,6 @@ def setup_search_command(subparsers) -> None:
 
 def setup_attachment_commands(subparsers) -> None:
     """Setup attachment-related commands."""
-
     attachments_parser = subparsers.add_parser(
         "attachments",
         help="Attachment operations",
@@ -239,7 +232,6 @@ def setup_attachment_commands(subparsers) -> None:
 
 def setup_compose_commands(subparsers) -> None:
     """Setup compose command."""
-
     compose_parser = subparsers.add_parser(
         "compose",
         help="Compose a new email",
@@ -273,7 +265,6 @@ def setup_compose_commands(subparsers) -> None:
 
 def setup_maintenance_commands(subparsers) -> None:
     """Setup maintenance commands (refresh, backup, etc)."""
-
     refresh_parser = subparsers.add_parser(
         "refresh",
         help="Fetch new emails from server",
@@ -334,7 +325,6 @@ def setup_maintenance_commands(subparsers) -> None:
 
 def setup_config_commands(subparsers) -> None:
     """Setup configuration management commands."""
-
     config_parser = subparsers.add_parser(
         "config",
         help="Configuration management",
@@ -380,7 +370,6 @@ def setup_config_commands(subparsers) -> None:
 
 def setup_argument_parser() -> argparse.ArgumentParser:
     """Setup the main argument parser for the Kernel CLI."""
-
     parser = argparse.ArgumentParser(
         prog="kernel",
         description="Minimal Email Client - fetch, view, send, and manage emails",

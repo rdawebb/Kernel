@@ -1,8 +1,10 @@
 """Main CLI entrypoint - routes commands via daemon with fallback"""
 
 import asyncio
+import sys
 from typing import Any, Dict
 
+from src.cli.commands.command_registry import get_command_metadata
 from src.daemon.daemon_client import execute_via_daemon
 from src.utils.config_manager import ConfigManager
 from src.utils.log_manager import async_log_call, get_logger, log_call
@@ -16,53 +18,71 @@ def _args_to_dict(args) -> Dict[str, Any]:
 
     result = {}
     for key, value in vars(args).items():
-        if key != 'command' and value is not None:
+        if value is not None:
             result[key] = value
 
     return result
 
 
 @async_log_call
-async def dispatch_command(args, cfg_manager):
+async def dispatch_command(args, cfg_manager) -> None:
     """Route parsed command via daemon (with fallback) or local handlers."""
-
     from rich.console import Console
-    
+
     console = Console()
     command = args.command
     
     try:
         args_dict = _args_to_dict(args)
-        result = await execute_via_daemon(command, args_dict)
+        
+        try:
+            result = await execute_via_daemon(command, args_dict)
+        
+        except Exception as daemon_exc:
+            logger.warning(f"Daemon unavailable or failed: {daemon_exc}")
+            result = {"success": False, "error": str(daemon_exc), "via_daemon": False}
 
         if result['success']:
             if result.get('data'):
-                print(result['data'])
+                console.print(result['data'])
 
             via_daemon = " (via daemon)" if result.get('via_daemon') else " (direct)"
             logger.debug(f"Command {command} executed{via_daemon}")
         else:
-            logger.error(f"Command {command} failed: {result.get('error')}")
-            console.print(f"[red]Error: {result.get('error')}[/]")
+            logger.info(f"Falling back to local handler for command: {command}")
+            meta = get_command_metadata(command)
 
-    except ValueError as ve:
-        logger.error(f"Unrecognized command: {ve}")
-        console.print(f"[red]{ve}[/]")
+            if meta and meta.cli_handler:
+                await meta.cli_handler(args, cfg_manager)
+            else:
+                logger.error(f"No local handler found for command: {command}")
+                console.print(f"[red]Error executing command: {result.get('error')}[/]")
+
+    except ValueError as e:
+        logger.error(f"Unrecognized command: {e}")
+        console.print(f"[red]{e}[/]")
 
     except Exception as e:
         logger.error(f"Error executing command {command}: {e}")
         console.print(f"[red]Error: {e}[/]")
+    
+    finally:
+        from src.core.database import close_database
+        await close_database()
 
 @log_call
-def main():
+def main() -> None:
     """Main CLI entry point"""
-    
     from rich.console import Console
     
     console = Console()
-
     parser = setup_argument_parser()
     args = parser.parse_args()
+
+    if not hasattr(args, 'command') or args.command is None:
+        console.print("[yellow]No command provided. Showing help:[/]")
+        parser.print_help()
+        sys.exit(2)
 
     try:
         cfg_manager = ConfigManager()
@@ -70,9 +90,15 @@ def main():
     except Exception as e:
         logger.error(f"Configuration error: {e}")
         console.print(f"[red]Configuration error: {e}[/]")
-        return
+        sys.exit(1)
 
-    asyncio.run(dispatch_command(args, cfg_manager))
+    try:
+        asyncio.run(dispatch_command(args, cfg_manager))
+
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        console.print(f"[red]Fatal error: {e}[/]")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

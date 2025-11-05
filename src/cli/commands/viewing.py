@@ -3,6 +3,7 @@
 from typing import Any, Dict
 
 from src.core.database import get_database
+from src.ui import inbox_viewer, table_viewer
 from src.utils.console import print_status
 from src.utils.error_handling import DatabaseError, ValidationError
 from src.utils.log_manager import async_log_call
@@ -13,7 +14,6 @@ from .base import BaseCommandHandler, CommandResult
 class ViewingCommandHandler(BaseCommandHandler):
     """Handler for viewing commands with folder-based routing."""
 
-    # Map commands to their corresponding folder names
     COMMAND_TO_FOLDER = {
         "inbox": "inbox",
         "sent": "sent",
@@ -24,9 +24,18 @@ class ViewingCommandHandler(BaseCommandHandler):
     @async_log_call
     async def execute_cli(self, args, config_manager) -> None:
         """Display emails from a folder (CLI mode)."""
+        # Debug logging
+        self.logger.debug(f"execute_cli called with args type: {type(args)}, args: {args}")
         
-        # Get the command to determine which folder to display
-        command = getattr(args, "command", None)
+        # Handle both dict and argparse Namespace
+        if isinstance(args, dict):
+            command = args.get("command", None)
+            limit = args.get("limit", 10)
+        else:
+            command = getattr(args, "command", None)
+            limit = getattr(args, "limit", 10)
+        
+        self.logger.debug(f"Extracted command: {command}, limit: {limit}")
         
         if command not in self.COMMAND_TO_FOLDER:
             raise ValidationError(
@@ -35,25 +44,28 @@ class ViewingCommandHandler(BaseCommandHandler):
             )
         
         folder = self.COMMAND_TO_FOLDER[command]
-        
-        print_status(f"Loading {folder} emails...")
+        await print_status(f"Loading {folder} emails...")
 
         db = get_database(config_manager)
-
-        limit = getattr(args, "limit", 10)
         
-        # Filter arguments
-        flagged = getattr(args, "flagged", False)
-        unflagged = getattr(args, "unflagged", False)
-        unread = getattr(args, "unread", False)
-        read = getattr(args, "read", False)
-        with_attachments = getattr(args, "with_attachments", False)
+        # Handle both dict and argparse Namespace for filter arguments
+        if isinstance(args, dict):
+            flagged = args.get("flagged", False)
+            unflagged = args.get("unflagged", False)
+            unread = args.get("unread", False)
+            read = args.get("read", False)
+            with_attachments = args.get("with_attachments", False)
+        else:
+            flagged = getattr(args, "flagged", False)
+            unflagged = getattr(args, "unflagged", False)
+            unread = getattr(args, "unread", False)
+            read = getattr(args, "read", False)
+            with_attachments = getattr(args, "with_attachments", False)
 
         self.validate_table(folder)
         self.validate_args({"folder": folder, "limit": limit}, "folder", "limit")
 
         try:
-            # Build filter dict
             filters = {}
             if flagged:
                 filters["is_flagged"] = True
@@ -71,19 +83,19 @@ class ViewingCommandHandler(BaseCommandHandler):
             else:
                 emails = await db.get_emails(folder, limit=limit, include_body=False)
 
-        except DatabaseError:
-            raise
+        except DatabaseError as e:
+            await print_status(f"[red]Database error: {e}[/]")
+            self.logger.error(f"Database error: {e}")
+            return True
 
-        from src.ui import inbox_viewer
-        inbox_viewer.display_inbox(emails, folder)
+        await inbox_viewer.display_inbox(emails, folder)
 
         self.logger.info(f"Listed {len(emails)} emails from {folder}")
+        return True
 
     @async_log_call
     async def execute_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Display emails from a folder (daemon mode)."""
-
-        # Get the command to determine which folder to display
         command = args.get("command")
         
         if command not in self.COMMAND_TO_FOLDER:
@@ -97,7 +109,6 @@ class ViewingCommandHandler(BaseCommandHandler):
         
         limit = args.get("limit", 50)
         
-        # Filter arguments
         flagged = args.get("flagged", False)
         unflagged = args.get("unflagged", False)
         unread = args.get("unread", False)
@@ -108,7 +119,6 @@ class ViewingCommandHandler(BaseCommandHandler):
         self.validate_args({"folder": folder, "limit": limit}, "folder", "limit")
 
         try:
-            # Build filter dict
             filters = {}
             if flagged:
                 filters["is_flagged"] = True
@@ -122,17 +132,19 @@ class ViewingCommandHandler(BaseCommandHandler):
                 filters["has_attachments"] = True
 
             if filters:
-                emails = await daemon.db.get_filtered_emails(folder, limit=limit, **filters)
+                emails = await daemon.db.get_emails(folder, limit=limit, include_body=False, **filters)
             else:
                 emails = await daemon.db.get_emails(folder, limit=limit, include_body=False)
 
-        except DatabaseError:
-            raise
-
-        from src.ui import table_viewer
+        except DatabaseError as e:
+            self.logger.error(f"Database error: {e}")
+            return self.error_result(
+                f"Database error: {e}",
+                folder=folder
+            )
 
         output = self.render_for_daemon(
-            table_viewer.display_email_table,
+            await table_viewer.display_email_table,
             emails,
             title=folder.replace("_", " ").title()
         )

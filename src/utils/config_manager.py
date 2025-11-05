@@ -97,7 +97,7 @@ class AppConfig(BaseModel):
 class ConfigManager:
     """Thread-safe configuration manager."""
 
-    _instance = Optional["ConfigManager"] = None
+    _instance: Optional["ConfigManager"] = None
     _lock = threading.Lock()
     _initialized = False
 

@@ -1,18 +1,30 @@
 """Inbox viewer - displays emails in a formatted table"""
 
-from ..utils.log_manager import get_logger, log_call
+from typing import Any, Dict, List, Optional
+
+from rich.console import Console
+
+from src.utils.console import get_console
+from src.utils.log_manager import async_log_call, get_logger
 from .table_viewer import display_email_table
 
 logger = get_logger(__name__)
 
-@log_call
-def display_inbox(table_name, emails, console_obj=None):
-    """Display inbox emails in a formatted table with optional flagged indicator"""
-    
-    display_email_table(
-        emails,
-        title=table_name.capitalize(),
+
+@async_log_call
+async def display_inbox(emails: List[Dict[str, Any]], table_name: str = "inbox",
+                        console: Optional[Console] = None) -> None:
+    """Display inbox emails in a formatted table"""
+    output_console = console or get_console()
+
+    show_flagged = (table_name.lower() == "inbox")
+
+    await display_email_table(
+        emails=emails,
+        title=table_name.title(),
         show_source=False,
-        show_flagged=(table_name == "inbox"),
-        console_obj=console_obj
+        show_flagged=show_flagged,
+        console=output_console
     )
+
+    logger.debug(f"Displayed {table_name} with {len(emails)} emails.")

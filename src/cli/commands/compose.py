@@ -2,7 +2,7 @@
 
 from typing import Any, Dict
 
-from src.ui.composer import Composer
+from src.ui.composer import compose_email
 from src.utils.console import print_status
 from src.utils.error_handling import DatabaseError
 from src.utils.log_manager import async_log_call
@@ -14,42 +14,39 @@ class ComposeCommandHandler(BaseCommandHandler):
     """Handler for the 'compose' command to compose and send emails."""
 
     @async_log_call
-    async def execute_cli(self, args, config_manager) -> None:
+    async def execute_cli(self, args, config_manager) -> bool:
         """Compose and send a new email (CLI mode)."""
         
         # Check if direct composition arguments were provided
         to = getattr(args, "to", None)
         subject = getattr(args, "subject", None)
         body = getattr(args, "body", None)
-        cc = getattr(args, "cc", None)
-        bcc = getattr(args, "bcc", None)
         
         try:
-            composer = Composer()
-            
             # If direct arguments provided, use them (non-interactive mode)
             if to or subject or body:
                 # TODO: Implement non-interactive composition with direct arguments
-                print_status("Direct composition with arguments not yet fully implemented.", color="yellow")
-                print_status("Falling back to interactive mode...")
-                self.logger.warning("Direct composition attempted but not fully implemented")
+                await print_status("Direct composition with arguments not yet fully implemented.")
+                await print_status("Falling back to interactive mode...")
+                self.logger.debug("Direct composition attempted but not fully implemented")
             
             # Interactive composition
-            result = composer.compose_email()
+            result = await compose_email()
 
             if not result:
-                print_status("Email composition cancelled or failed.", color="yellow")
                 self.logger.info("Email composition cancelled or failed")
+                return False
             else:
-                print_status("Email composed and sent successfully.")
                 self.logger.info("Email composed and sent successfully")
+                return True
 
-        except DatabaseError:
-            raise
+        except DatabaseError as e:
+            self.logger.error(f"Database error during composition: {e}")
+            return False
+
         except Exception as e:
-            print_status(f"Failed to compose/send email: {e}", color="red")
             self.logger.error(f"Failed to compose/send email: {e}")
-            raise
+            return False
 
     @async_log_call
     async def execute_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
@@ -58,11 +55,8 @@ class ComposeCommandHandler(BaseCommandHandler):
         recipient = args.get("to", "")
         subject = args.get("subject", "")
         body = args.get("body", "")
-        cc = args.get("cc", [])
-        bcc = args.get("bcc", [])
 
         try:
-            # Validate required fields
             if not recipient or not subject:
                 return self.error_result(
                     "Email requires 'to' and 'subject' fields",
@@ -70,18 +64,11 @@ class ComposeCommandHandler(BaseCommandHandler):
                     subject=subject
                 )
 
-            # In daemon mode, create email data dictionary instead of interactive compose
             email_data = {
                 "to": recipient,
                 "subject": subject,
                 "body": body,
             }
-            
-            # Add cc and bcc if provided
-            if cc:
-                email_data["cc"] = cc if isinstance(cc, list) else [cc]
-            if bcc:
-                email_data["bcc"] = bcc if isinstance(bcc, list) else [bcc]
 
             return self.success_result(
                 data="Email composition initiated",

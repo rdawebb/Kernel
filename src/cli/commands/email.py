@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any, Dict
 
 from src.core.database import get_database
+from src.ui import email_viewer
 from src.utils.console import print_status
 from src.utils.error_handling import DatabaseError, ValidationError
 from src.utils.log_manager import async_log_call
@@ -18,19 +19,18 @@ class EmailCommandHandler(BaseCommandHandler):
     @async_log_call
     async def execute_cli(self, args, config_manager) -> None:
         """Route to appropriate email operation (CLI mode)."""
-        
         email_command = getattr(args, "email_command", None)
 
         if email_command == "view":
-            await self._view_cli(args, config_manager)
+            return await self._view_cli(args, config_manager)
         elif email_command == "delete":
-            await self._delete_cli(args, config_manager)
+            return await self._delete_cli(args, config_manager)
         elif email_command == "flag":
-            await self._flag_cli(args, config_manager)
+            return await self._flag_cli(args, config_manager)
         elif email_command == "unflag":
-            await self._unflag_cli(args, config_manager)
+            return await self._unflag_cli(args, config_manager)
         elif email_command == "move":
-            await self._move_cli(args, config_manager)
+            return await self._move_cli(args, config_manager)
         else:
             raise ValidationError(
                 f"Unknown email command: {email_command}",
@@ -40,7 +40,6 @@ class EmailCommandHandler(BaseCommandHandler):
     @async_log_call
     async def execute_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Route to appropriate email operation (daemon mode)."""
-
         email_command = args.get("email_command")
 
         if email_command == "view":
@@ -59,18 +58,18 @@ class EmailCommandHandler(BaseCommandHandler):
                 email_command=email_command
             )
 
+
     # View operations
 
     async def _view_cli(self, args, config_manager) -> None:
         """View a specific email by ID (CLI mode)."""
-        
         email_id = getattr(args, "id", None)
         table = getattr(args, "folder", "inbox")
 
         self.validate_args({"id": email_id, "folder": table}, "id", "folder")
         self.validate_table(table)
         
-        print_status(f"Fetching email {email_id} from {table}...")
+        await print_status(f"Fetching email {email_id} from {table}...")
 
         db = get_database(config_manager)
 
@@ -84,15 +83,17 @@ class EmailCommandHandler(BaseCommandHandler):
                 )
             
             from src.ui import email_viewer
-            email_viewer.display_email(email_data)
+            await email_viewer.display_email(email_data)
             self.logger.info(f"Viewed email {email_id} from {table}")
+            return True
 
-        except DatabaseError:
-            raise
+        except (DatabaseError, ValidationError) as e:
+            await print_status(f"[red]Error: {e}[/]")
+            self.logger.error(f"Error during email view: {e}")
+            return False
 
     async def _view_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """View a specific email by ID (daemon mode)."""
-
         email_id = args.get("id")
         table = args.get("folder", "inbox")
 
@@ -109,10 +110,8 @@ class EmailCommandHandler(BaseCommandHandler):
                     table=table
                 )
 
-            from src.ui import email_viewer
-
             output = self.render_for_daemon(
-                email_viewer.display_email,
+                await email_viewer.display_email,
                 email_data
             )
 
@@ -125,11 +124,11 @@ class EmailCommandHandler(BaseCommandHandler):
         except (DatabaseError, ValidationError) as e:
             return self.error_result(str(e))
 
+
     # Delete operations
 
     async def _delete_cli(self, args, config_manager) -> None:
         """Delete emails by ID from specified table (CLI mode)."""
-        
         email_id = getattr(args, "id", None)
         permanent = getattr(args, "permanent", False)
         
@@ -149,28 +148,30 @@ class EmailCommandHandler(BaseCommandHandler):
                 )
             
             if table == "trash" or permanent:
-                if not confirm_action("Permanently delete the email(s) from 'trash'? This action cannot be undone - (y/n): "):
-                    print_status("Deletion cancelled", color="yellow")
-                    return
+                if not await confirm_action("Permanently delete the email(s) from 'trash'? This action cannot be undone - (y/n): "):
+                    await print_status("Deletion cancelled", color="yellow")
+                    return False
                 
                 await db.delete_email("trash", email_id)
-                print_status(f"Permanently deleted email(s) with ID {email_id} from 'trash'.")
+                await print_status(f"Permanently deleted email(s) with ID {email_id} from 'trash'.")
             else:
-                if not confirm_action(f"Delete email(s) {email_id} from '{table}'? - (y/n): "):
-                    print_status("Deletion cancelled", color="yellow")
-                    return
+                if not await confirm_action(f"Delete email(s) {email_id} from '{table}'? - (y/n): "):
+                    await print_status("Deletion cancelled", color="yellow")
+                    return False
 
                 await db.move_email(table, "trash", email_id, deleted_at=datetime.now())
-                print_status(f"Deleted email {email_id} from '{table}'.")
+                await print_status(f"Deleted email {email_id} from '{table}'.")
 
             self.logger.info(f"Deleted email {email_id} from {table}")
+            return True
 
-        except DatabaseError:
-            raise
+        except (DatabaseError, ValidationError) as e:
+            await print_status(f"[red]Error: {e}[/]")
+            self.logger.error(f"Error during email deletion: {e}")
+            return False
 
     async def _delete_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Delete emails by ID from specified table (daemon mode)."""
-
         email_id = args.get("id")
         permanent = args.get("permanent", False)
         table = "trash" if permanent else args.get("folder", "inbox")
@@ -202,11 +203,11 @@ class EmailCommandHandler(BaseCommandHandler):
         except (DatabaseError, ValidationError) as e:
             return self.error_result(str(e))
 
+
     # Flag operations
 
     async def _flag_cli(self, args, config_manager) -> None:
         """Flag an email by ID (CLI mode)."""
-        
         email_id = getattr(args, "id", None)
 
         self.validate_args({"id": email_id}, "id")
@@ -221,15 +222,17 @@ class EmailCommandHandler(BaseCommandHandler):
                 )
             
             await db.update_field("inbox", email_id, "flagged", 1)
-            print_status(f"Flagged email with ID {email_id}.")
+            await print_status(f"Flagged email with ID {email_id}.")
             self.logger.info(f"Flagged email {email_id} in inbox")
+            return True
 
-        except DatabaseError:
-            raise
+        except (DatabaseError, ValidationError) as e:
+            await print_status(f"[red]Error: {e}[/]")
+            self.logger.error(f"Error during email flagging: {e}")
+            return False
 
     async def _flag_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Flag an email by ID (daemon mode)."""
-
         email_id = args.get("id")
 
         self.validate_args({"id": email_id}, "id")
@@ -254,11 +257,11 @@ class EmailCommandHandler(BaseCommandHandler):
         except (DatabaseError, ValidationError) as e:
             return self.error_result(str(e))
 
+
     # Unflag operations
 
     async def _unflag_cli(self, args, config_manager) -> None:
         """Unflag an email by ID (CLI mode)."""
-        
         email_id = getattr(args, "id", None)
 
         self.validate_args({"id": email_id}, "id")
@@ -273,15 +276,17 @@ class EmailCommandHandler(BaseCommandHandler):
                 )
             
             await db.update_field("inbox", email_id, "flagged", 0)
-            print_status(f"Unflagged email with ID {email_id}.")
+            await print_status(f"Unflagged email with ID {email_id}.")
             self.logger.info(f"Unflagged email {email_id} in inbox")
+            return True
 
-        except DatabaseError:
-            raise
+        except (DatabaseError, ValidationError) as e:
+            await print_status(f"[red]Error: {e}[/]")
+            self.logger.error(f"Error during email unflagging: {e}")
+            return False
 
     async def _unflag_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Unflag an email by ID (daemon mode)."""
-
         email_id = args.get("id")
 
         self.validate_args({"id": email_id}, "id")
@@ -306,11 +311,11 @@ class EmailCommandHandler(BaseCommandHandler):
         except (DatabaseError, ValidationError) as e:
             return self.error_result(str(e))
 
+
     # Move operations
 
     async def _move_cli(self, args, config_manager) -> None:
         """Move email from source to destination folder (CLI mode)."""
-        
         email_id = getattr(args, "id", None)
         source_table = getattr(args, "source", "inbox")
         dest_table = getattr(args, "destination", "trash")
@@ -325,7 +330,7 @@ class EmailCommandHandler(BaseCommandHandler):
                 details={"source": source_table, "destination": dest_table}
             )
 
-        print_status(f"Moving email {email_id} from {source_table} to {dest_table}...")
+        await print_status(f"Moving email {email_id} from {source_table} to {dest_table}...")
 
         db = get_database(config_manager)
 
@@ -337,15 +342,17 @@ class EmailCommandHandler(BaseCommandHandler):
                 )
             
             await db.move_email(source_table, dest_table, email_id)
-            print_status(f"Moved email {email_id} from '{source_table}' to '{dest_table}'.")
+            await print_status(f"Moved email {email_id} from '{source_table}' to '{dest_table}'.")
             self.logger.info(f"Moved email {email_id} from {source_table} to {dest_table}")
+            return True
 
-        except DatabaseError:
-            raise
+        except (DatabaseError, ValidationError) as e:
+            await print_status(f"[red]Error: {e}[/]")
+            self.logger.error(f"Error during email moving: {e}")
+            return False
 
     async def _move_daemon(self, daemon, args: Dict[str, Any]) -> CommandResult:
         """Move email from source to destination folder (daemon mode)."""
-
         email_id = args.get("id")
         source_table = args.get("source", "inbox")
         dest_table = args.get("destination", "trash")

@@ -42,7 +42,6 @@ class KernelError(Exception):
 
     def __init__(self, message: str = None, details: Dict[str, Any] = None):
         """Initialize KernelError with optional message and details."""
-
         self.message = message or self.user_message
         self.details = details or {}
         super().__init__(self.message)
@@ -335,7 +334,7 @@ def safe_execute(func: Callable, *args, default=None, context: str = "", **kwarg
     """Execute a function safely with error handling."""
 
     if asyncio.iscoroutinefunction(func):
-        return _safe_execute_async(func, *args, default, context, **kwargs)
+        return _safe_execute_async(func, *args, default=default, context=context, **kwargs)
 
     else:
         try:

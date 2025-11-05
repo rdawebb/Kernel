@@ -1,43 +1,115 @@
 """Email viewer using Rich library for formatted console output"""
 
-from rich.text import Text
+from typing import Any, Dict, List, Optional
 
-from ..utils.log_manager import get_logger, log_call
+from rich.console import Console
+from rich.text import Text
+from rich.panel import Panel
+
+from src.utils.console import get_console
+from src.utils.error_handling import ValidationError
+from src.utils.log_manager import async_log_call, get_logger
 
 logger = get_logger(__name__)
 
-@log_call
-def display_email(email_data, console_obj=None):
-    """Display a formatted email in the console using Rich formatting"""
+
+def _validate_email_data(email_data: Dict[str, Any]) -> None:
+    """Validate email data structure before display"""
+    if not email_data:
+        raise ValidationError(
+            "Email data is empty or None.",
+            details={"email_data": email_data}
+        )
     
-    # Console must be provided by caller
-    if console_obj is None:
-        raise ValueError("console_obj must be provided to display_email")
+    if not isinstance(email_data, dict):
+        raise ValidationError(
+            f"Email data must be a dictionary, got {type(email_data).__name__} instead.",
+            details={"type": type(email_data).__name__}
+        )
     
-    output_console = console_obj
+    required_fields = ["from", "subject"]
+    missing_fields = [field for field in required_fields if field not in email_data]
+
+    if missing_fields:
+        raise ValidationError(
+            f"Email data is missing required fields: {', '.join(missing_fields)}",
+            details={"missing_fields": missing_fields, "available_fields": list(email_data.keys())}
+        )
     
-    details = [
+def _format_email_details(email_data: Dict[str, Any]) -> List[str]:
+    """Format email header details for display"""
+    return [
         f"[bold]From:[/] {email_data.get('from', 'Unknown')}",
+        f"[bold]To:[/] {email_data.get('to', 'Unknown')}",
         f"[bold]Date:[/] {email_data.get('date', 'Unknown Date')}",
-        f"[bold]Time:[/] {email_data.get('time', 'Unknown Time')}",
-        f"[bold]Subject:[/] {email_data.get('subject', 'No Subject')}\n"
+        f"[bold]Time:[/] {email_data.get('time', 'Unknown Time')}\n",
+        f"[bold]Subject:[/] {email_data.get('subject', 'No Subject')}",
     ]
 
-    max_len = max(len(Text.from_markup(line)) for line in details)
-    separator = "-" * max_len
-    
-    output_console.print(separator)
-    output_console.print("\n".join(details))
+def _format_attachments(email_data: Dict[str, Any]) -> Optional[str]:
+    """Format attachment information for display if present"""
+    attachments_raw = email_data.get("attachments", "")
 
-    attachments_raw = email_data.get('attachments', '')
-    if attachments_raw and attachments_raw.strip():
-        attachments_list = [att.strip() for att in attachments_raw.split(',') if att.strip()]
-        if attachments_list:
-            output_console.print(f"[bold]Attachments:[/] {', '.join(attachments_list)}\n")
+    if not attachments_raw or not attachments_raw.strip():
+        return None
     
-    body = email_data.get("body")
-    if not body:
-        output_console.print("[dim]No body available[/]")
+    if isinstance(attachments_raw, list):
+        attachments_list = [att.strip() for att in attachments_raw if att and att.strip()]
     else:
-        output_console.print(body)
-    output_console.print(separator)
+        attachments_list = [att.strip() for att in attachments_raw.split(",") if att.strip()]
+
+    if attachments_list:
+        return f"[bold]Attachments:[/] {', '.join(attachments_list)}\n"
+
+    return None
+    
+@async_log_call
+async def display_email(email_data: Dict[str, Any], 
+                        console: Optional[Console] = None) -> None:
+    """Display formatted email content in the console"""
+    _validate_email_data(email_data)
+
+    output_console = console or get_console()
+
+    try:
+        header = _format_email_details(email_data)
+
+        panel_width = int(output_console.size.width * 0.6)
+
+        output_console.print(Panel(
+            Text.from_markup("\n".join(header)),
+            title=Text.from_markup(f"[bold]Email UID:[/] {email_data.get('uid')}"),
+            border_style="cyan dim",
+            padding=(1, 2),
+            width=panel_width
+        ))
+
+        attachments_str = _format_attachments(email_data).strip()
+        if attachments_str:
+            output_console.print(Panel(
+                Text.from_markup(attachments_str),
+                border_style="magenta dim",
+                padding=(0, 2),
+                width=panel_width
+            ))
+
+        body = email_data.get("body")
+        if not body or not body.strip():
+            body = "[italic dim]No content in email body.[/italic dim]"
+        else:
+            body = Text.from_markup(body)
+
+        output_console.print(Panel(
+            body, border_style="cyan dim", 
+            padding=(1, 2), 
+            width=panel_width
+        ))
+        logger.debug(f"Displayed email ID {email_data.get('uid')} successfully.")
+
+    except Exception as e:
+        logger.error(f"Error displaying email: {e}")
+        raise ValidationError(
+            "Failed to display email content.",
+            details={"error": str(e), "email_id": email_data.get('uid')}
+        ) from e
+        
