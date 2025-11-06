@@ -195,6 +195,17 @@ class DaemonExecutionStrategy:
             raise NetworkError(f"Failed to connect to daemon socket: {str(e)}") from e
         
         try:
+            # Send authentication token first
+            from src.utils.paths import DAEMON_TOKEN_PATH
+            try:
+                token = DAEMON_TOKEN_PATH.read_text().strip()
+                auth_request = json.dumps({'token': token})
+                writer.write(auth_request.encode() + b'\n')
+                await writer.drain()
+            except FileNotFoundError:
+                raise NetworkError("Daemon token not found - daemon may not be running")
+            
+            # Send command
             request = json.dumps({
                 'command': command,
                 'args': args

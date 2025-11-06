@@ -646,7 +646,7 @@ class EmailDaemon:
             async with self._activity_lock:
                 self.last_activity = time.time()
 
-            from src.cli.commands import _registry
+            from src.cli.commands.command_registry import _registry
             
             if not _registry.exists(command):
                 return self._error_response(f"Unknown command: {command}")
