@@ -1,0 +1,1 @@
+"""Connection pool management for the daemon."""

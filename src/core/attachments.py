@@ -9,14 +9,14 @@ from email.message import Message
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from src.utils.error_handling import (
+from src.utils.errors import (
     AttachmentDownloadError,
     AttachmentNotFoundError,
     FileSystemError,
     InvalidPathError,
     KernelError,
 )
-from src.utils.log_manager import get_logger
+from src.utils.logging import get_logger
 from src.utils.paths import ATTACHMENTS_DIR
 from src.utils.security import PathSecurity
 

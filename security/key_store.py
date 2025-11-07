@@ -7,14 +7,14 @@ from contextlib import contextmanager
 from enum import Enum
 from typing import Callable, Dict, Optional
 
-from src.utils.error_handling import (
+from src.utils.errors import (
     CorruptedSecretsError,
     EncryptionError,
     KeyringUnavailableError,
     KeyStoreError,
     safe_execute,
 )
-from src.utils.log_manager import get_logger, log_event
+from src.utils.logging import get_logger, log_event
 from src.utils.paths import CREDENTIALS_PATH, MASTER_KEY_PATH
 
 logger = get_logger(__name__)

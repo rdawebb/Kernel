@@ -8,7 +8,7 @@ Tests cover:
 - Port and SSL settings
 - Database path configuration
 """
-from src.utils.config_manager import ConfigManager
+from src.utils.config import ConfigManager
 
 
 class TestConfigManagerInitialization:

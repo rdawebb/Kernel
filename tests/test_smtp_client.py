@@ -1,7 +1,7 @@
 import smtplib
 from unittest.mock import Mock, patch
 
-from src.core.smtp_client import send_email
+from src.core.email.smtp.client import send_email
 
 
 class TestSendEmail:

@@ -3,16 +3,16 @@
 from datetime import datetime
 
 from src.core.database import get_database
-from src.core.imap_client import IMAPClient, SyncMode
-from src.core.smtp_client import SMTPClient
-from src.utils.config_manager import ConfigManager
-from src.utils.error_handling import (
+from src.core.email.imap.client import IMAPClient, SyncMode
+from src.core.email.smtp.client import SMTPClient
+from src.utils.config import ConfigManager
+from src.utils.errors import (
     DatabaseError,
     KernelError,
     NetworkError,
     ValidationError,
 )
-from src.utils.log_manager import async_log_call, get_logger
+from src.utils.logging import async_log_call, get_logger
 
 DATE_FORMAT = "%Y-%m-%d"
 DATETIME_FORMAT = "%Y-%m-%d %H:%M"

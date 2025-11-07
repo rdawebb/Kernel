@@ -3,13 +3,13 @@
 import subprocess
 import sys
 
-from .config_manager import ConfigManager
-from .error_handling import (
+from .config import ConfigManager
+from .errors import (
     ConfigurationError,
     KernelError,
     ValidationError,
 )
-from .log_manager import get_logger, log_call
+from .logging import get_logger, log_call
 
 logger = get_logger(__name__)
 

@@ -2,14 +2,14 @@
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from .config_manager import ConfigManager
-from .error_handling import (
+from .config import ConfigManager
+from .errors import (
     ConfigurationError,
     KernelError,
     ValidationError,
 )
 from .jobs import automatic_backup, check_for_new_emails
-from .log_manager import get_logger, log_call
+from .logging import get_logger, log_call
 
 # Constants
 VALID_INTERVAL_UNITS = ["seconds", "minutes", "hours", "days", "weeks"]

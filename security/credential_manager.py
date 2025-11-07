@@ -2,12 +2,12 @@
 
 import getpass
 
-from src.utils.config_manager import ConfigManager
-from src.utils.error_handling import (
+from src.utils.config import ConfigManager
+from src.utils.errors import (
     InvalidCredentialsError, 
     MissingCredentialsError
 )
-from src.utils.log_manager import get_logger
+from src.utils.logging import get_logger
 
 from .key_store import get_keystore
 

@@ -14,9 +14,9 @@ import imaplib
 import smtplib
 from unittest.mock import MagicMock, patch
 
-from src.core.imap_client import imap_connection
-from src.core.imap_connection import connect_to_imap
-from src.core.smtp_client import smtp_connection
+from src.core.email.imap.client import imap_connection
+from src.core.email.imap.connection import connect_to_imap
+from src.core.email.smtp.client import smtp_connection
 
 from .test_helpers import ConfigTestHelper, IMAPTestHelper, SMTPTestHelper
 

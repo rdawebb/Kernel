@@ -1,0 +1,1 @@
+"""SMTP connection management"""

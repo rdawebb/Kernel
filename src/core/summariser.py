@@ -1,7 +1,7 @@
 """Summariser module for generating email summaries."""
 
-from ..utils.config_manager import ConfigManager
-from ..utils.log_manager import get_logger, log_call
+from ..utils.config import ConfigManager
+from ..utils.logging import get_logger, log_call
 from ..utils.model_manager import ModelManager
 
 logger = get_logger(__name__)

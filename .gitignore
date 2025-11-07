@@ -72,7 +72,7 @@ Thumbs.db
 # Email client specific
 *.db
 *.sqlite*
-emails.db
+kernel.db
 test_emails.db
 attachments/*
 !attachments/.gitkeep
@@ -82,6 +82,8 @@ exports/*
 !exports/.gitkeep
 logs/*
 !logs/.gitkeep
+~/kernel/*
+backup_*
 
 # Logs
 *.log
