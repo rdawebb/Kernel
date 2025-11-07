@@ -1,6 +1,6 @@
 """Routes CLI commands to feature modules."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from rich.console import Console
 
@@ -29,7 +29,7 @@ class CommandRouter:
         self.console = console
     
     @async_log_call
-    async def route(self, command: str, args: Dict[str, Any]) -> bool:
+    async def route(self, command: str, args: Optional[Dict[str, Any]] = None) -> bool:
         """Route command to feature.
         
         Args:
@@ -42,7 +42,15 @@ class CommandRouter:
         Raises:
             ValueError: If command is unknown
         """
-        handler = self._get_handler(command)
+        if args is None:
+            args = {}
+
+        if not isinstance(command, str):
+            raise TypeError("First argument to route() must be a command string")
+        if not isinstance(args, dict):
+            raise TypeError("Second argument to route() must be a dict")
+    
+        handler = self._get_handler(command, args)
         if not handler:
             raise ValueError(f"Unknown command: {command}")
         
@@ -52,59 +60,119 @@ class CommandRouter:
             logger.error(f"Command '{command}' failed: {e}")
             raise
     
-    def _get_handler(self, command: str):
-        """Get handler function for command."""
-        handlers = {
-            # Compose
-            'compose': self._handle_compose,
+    def _get_handler(self, command: str, args: Dict[str, Any]) -> Optional[Callable]:
+        """Get handler function for command and optional subcommand.
+        
+        Args:
+            command: Main command name
+            args: Parsed arguments dictionary (may contain subcommand keys)
             
-            # View
-            'view': self._handle_view,
+        Returns:
+            Handler function or None if command is unknown
+        """
+        simple_handlers = {
             'inbox': self._handle_inbox,
             'sent': self._handle_sent,
             'drafts': self._handle_drafts,
             'trash': self._handle_trash,
-            
-            # Search
             'search': self._handle_search,
-            
-            # Manage
-            'delete': self._handle_delete,
-            'move': self._handle_move,
-            'flag': self._handle_flag,
-            'unflag': self._handle_unflag,
-            
-            # Attachments
-            'attachments': self._handle_attachments,
-            
-            # Sync
-            'sync': self._handle_sync,
-            'refresh': self._handle_sync,  # Alias
-            
-            # Maintenance
-            'backup': self._handle_backup,
-            'export': self._handle_export,
-            'delete-db': self._handle_delete_db,
+            'compose': self._handle_compose,
+            'refresh': self._handle_refresh,
         }
         
-        return handlers.get(command)
+        if command in simple_handlers:
+            return simple_handlers[command]
+        
+        # Commands with subcommands
+        if command == 'email':
+            return self._get_email_handler(args)
+        elif command == 'attachments':
+            return self._get_attachments_handler(args)
+        elif command == 'database':
+            return self._get_database_handler(args)
+        elif command == 'config':
+            return self._get_config_handler(args)
+        
+        return None
+    
+    def _get_email_handler(self, args: Dict[str, Any]) -> Optional[Callable]:
+        """Get handler for email subcommand."""
+        email_command = args.get('email_command')
+        email_handlers = {
+            'view': self._handle_email_view,
+            'delete': self._handle_email_delete,
+            'flag': self._handle_email_flag,
+            'unflag': self._handle_email_unflag,
+            'move': self._handle_email_move,
+        }
+        return email_handlers.get(email_command)
+    
+    def _get_attachments_handler(self, args: Dict[str, Any]) -> Optional[Callable]:
+        """Get handler for attachments subcommand."""
+        attachment_command = args.get('attachment_command')
+        attachment_handlers = {
+            'list': self._handle_attachments_list,
+            'download': self._handle_attachments_download,
+            'downloads': self._handle_attachments_downloads,
+            'open': self._handle_attachments_open,
+        }
+        return attachment_handlers.get(attachment_command)
+    
+    def _get_database_handler(self, args: Dict[str, Any]) -> Optional[Callable]:
+        """Get handler for database subcommand."""
+        db_command = args.get('db_command')
+        db_handlers = {
+            'backup': self._handle_database_backup,
+            'export': self._handle_database_export,
+            'delete': self._handle_database_delete,
+            'info': self._handle_database_info,
+        }
+        return db_handlers.get(db_command)
+    
+    def _get_config_handler(self, args: Dict[str, Any]) -> Optional[Callable]:
+        """Get handler for config subcommand."""
+        config_command = args.get('config_command')
+        config_handlers = {
+            'list': self._handle_config_list,
+            'get': self._handle_config_get,
+            'set': self._handle_config_set,
+            'reset': self._handle_config_reset,
+        }
+        return config_handlers.get(config_command)
+    
+    def get_available_commands(self) -> Dict[str, str]:
+        """Get all available commands and their descriptions.
+        
+        Returns:
+            Dictionary mapping command names to descriptions
+        """
+        return {
+            # Folder viewing commands
+            'inbox': 'View emails in the inbox',
+            'sent': 'View sent emails',
+            'drafts': 'View draft emails',
+            'trash': 'View deleted emails',
+            # Email operations
+            'email': 'Email operations (view, delete, flag, etc)',
+            # Search
+            'search': 'Search emails by keyword',
+            # Compose
+            'compose': 'Compose a new email',
+            # Attachments
+            'attachments': 'Attachment operations',
+            # Sync
+            'refresh': 'Fetch new emails from server',
+            # Database
+            'database': 'Database operations (backup, export, etc)',
+            # Config
+            'config': 'Configuration management',
+        }
     
 
     # Command Handlers
     
-    async def _handle_compose(self, args: Dict[str, Any]) -> bool:
-        """Route to compose feature."""
-        return await compose_email(console=self.console)
-    
-    async def _handle_view(self, args: Dict[str, Any]) -> bool:
-        """Route to view single email."""
-        email_id = args.get('id')
-        folder = args.get('folder', 'inbox')
-        
-        if not email_id:
-            raise ValueError("Email ID is required")
-        
-        return await view_email(email_id, folder, console=self.console)
+
+    # Folder viewing commands
     
     async def _handle_inbox(self, args: Dict[str, Any]) -> bool:
         """Route to inbox view."""
@@ -124,7 +192,7 @@ class CommandRouter:
     
     async def _handle_folder(self, folder: str, args: Dict[str, Any]) -> bool:
         """Generic folder view handler."""
-        limit = args.get('limit', 50)
+        limit = args.get('limit', 10)
         filters = self._build_filters(args)
         
         return await view_folder(
@@ -133,6 +201,9 @@ class CommandRouter:
             filters=filters,
             console=self.console
         )
+    
+
+    # Search command
     
     async def _handle_search(self, args: Dict[str, Any]) -> bool:
         """Route to search feature."""
@@ -152,7 +223,35 @@ class CommandRouter:
             console=self.console
         )
     
-    async def _handle_delete(self, args: Dict[str, Any]) -> bool:
+
+    # Compose command
+    
+    async def _handle_compose(self, args: Dict[str, Any]) -> bool:
+        """Route to compose feature."""
+        return await compose_email(console=self.console)
+    
+
+    # Refresh/Sync command
+    
+    async def _handle_refresh(self, args: Dict[str, Any]) -> bool:
+        """Route to sync feature."""
+        full = args.get('all', False)
+        return await sync_emails(full=full, console=self.console)
+    
+
+    # Email subcommands
+    
+    async def _handle_email_view(self, args: Dict[str, Any]) -> bool:
+        """Route to view single email."""
+        email_id = args.get('id')
+        folder = args.get('folder', 'inbox')
+        
+        if not email_id:
+            raise ValueError("Email ID is required")
+        
+        return await view_email(email_id, folder, console=self.console)
+    
+    async def _handle_email_delete(self, args: Dict[str, Any]) -> bool:
         """Route to delete operation."""
         email_id = args.get('id')
         folder = args.get('folder', 'inbox')
@@ -168,11 +267,11 @@ class CommandRouter:
             console=self.console
         )
     
-    async def _handle_move(self, args: Dict[str, Any]) -> bool:
+    async def _handle_email_move(self, args: Dict[str, Any]) -> bool:
         """Route to move operation."""
         email_id = args.get('id')
-        from_folder = args.get('from', 'inbox')
-        to_folder = args.get('to')
+        from_folder = args.get('source', 'inbox')
+        to_folder = args.get('destination')
         
         if not email_id or not to_folder:
             raise ValueError("Email ID and destination folder are required")
@@ -184,7 +283,7 @@ class CommandRouter:
             console=self.console
         )
     
-    async def _handle_flag(self, args: Dict[str, Any]) -> bool:
+    async def _handle_email_flag(self, args: Dict[str, Any]) -> bool:
         """Route to flag operation."""
         email_id = args.get('id')
         folder = args.get('folder', 'inbox')
@@ -198,7 +297,7 @@ class CommandRouter:
             console=self.console
         )
     
-    async def _handle_unflag(self, args: Dict[str, Any]) -> bool:
+    async def _handle_email_unflag(self, args: Dict[str, Any]) -> bool:
         """Route to unflag operation."""
         email_id = args.get('id')
         folder = args.get('folder', 'inbox')
@@ -212,45 +311,55 @@ class CommandRouter:
             console=self.console
         )
     
-    async def _handle_attachments(self, args: Dict[str, Any]) -> bool:
-        """Route to attachments operations."""
-        subcommand = args.get('attachment_command', 'list')
+
+    # Attachments subcommands
+    
+    async def _handle_attachments_list(self, args: Dict[str, Any]) -> bool:
+        """Route to list attachments."""
         email_id = args.get('id')
         folder = args.get('folder', 'inbox')
         
-        if subcommand == 'list':
-            if not email_id:
-                raise ValueError("Email ID is required")
-            return await list_attachments(email_id, folder, console=self.console)
-        elif subcommand == 'download':
-            if not email_id:
-                raise ValueError("Email ID is required")
-            
-            index = args.get('index')
-            if index is not None:
-                return await download_attachment(
-                    email_id, index, folder, console=self.console
-                )
-            else:
-                return await download_all_attachments(
-                    email_id, folder, console=self.console
-                )
-        elif subcommand == 'downloads':
-            return await list_downloads(console=self.console)  
-        elif subcommand == 'open':
-            filename = args.get('filename')
-            if not filename:
-                raise ValueError("Filename is required")
-            return await open_attachment(filename, console=self.console)
+        if not email_id:
+            raise ValueError("Email ID is required")
+        
+        return await list_attachments(email_id, folder, console=self.console)
+    
+    async def _handle_attachments_download(self, args: Dict[str, Any]) -> bool:
+        """Route to download attachments."""
+        email_id = args.get('id')
+        folder = args.get('folder', 'inbox')
+        index = args.get('index')
+        download_all = args.get('all', False)
+        
+        if not email_id:
+            raise ValueError("Email ID is required")
+        
+        if download_all or index is None:
+            return await download_all_attachments(
+                email_id, folder, console=self.console
+            )
         else:
-            raise ValueError(f"Unknown attachments subcommand: {subcommand}")
+            return await download_attachment(
+                email_id, index, folder, console=self.console
+            )
     
-    async def _handle_sync(self, args: Dict[str, Any]) -> bool:
-        """Route to sync feature."""
-        full = args.get('all', False)
-        return await sync_emails(full=full, console=self.console)
+    async def _handle_attachments_downloads(self, args: Dict[str, Any]) -> bool:
+        """Route to list downloaded attachments."""
+        return await list_downloads(console=self.console)
     
-    async def _handle_backup(self, args: Dict[str, Any]) -> bool:
+    async def _handle_attachments_open(self, args: Dict[str, Any]) -> bool:
+        """Route to open attachment."""
+        filename = args.get('filename')
+        
+        if not filename:
+            raise ValueError("Filename is required")
+        
+        return await open_attachment(filename, console=self.console)
+    
+
+    # Database subcommands
+    
+    async def _handle_database_backup(self, args: Dict[str, Any]) -> bool:
         """Route to backup operation."""
         from pathlib import Path
         path = args.get('path')
@@ -258,7 +367,7 @@ class CommandRouter:
         
         return await backup_database(path=backup_path, console=self.console)
     
-    async def _handle_export(self, args: Dict[str, Any]) -> bool:
+    async def _handle_database_export(self, args: Dict[str, Any]) -> bool:
         """Route to export operation."""
         from pathlib import Path
         folder = args.get('folder')
@@ -271,10 +380,58 @@ class CommandRouter:
             console=self.console
         )
     
-    async def _handle_delete_db(self, args: Dict[str, Any]) -> bool:
+    async def _handle_database_delete(self, args: Dict[str, Any]) -> bool:
         """Route to delete database operation."""
         confirm = args.get('confirm', False)
         return await delete_database(confirm=confirm, console=self.console)
+    
+    async def _handle_database_info(self, args: Dict[str, Any]) -> bool:
+        """Route to get database info.
+        
+        Note: This is a placeholder. Implement actual database info retrieval
+        in the maintenance module if needed.
+        """
+        # TODO: Implement database info retrieval
+        logger.info("Database info command not yet implemented")
+        return True
+    
+
+    # Config subcommands
+    
+    async def _handle_config_list(self, args: Dict[str, Any]) -> bool:
+        """Route to list config."""
+        # TODO: Implement config list
+        logger.info("Config list command not yet implemented")
+        return True
+    
+    async def _handle_config_get(self, args: Dict[str, Any]) -> bool:
+        """Route to get config value."""
+        key = args.get('key')
+        if not key:
+            raise ValueError("Config key is required")
+        # TODO: Implement config get
+        logger.info(f"Config get command not yet implemented for key: {key}")
+        return True
+    
+    async def _handle_config_set(self, args: Dict[str, Any]) -> bool:
+        """Route to set config value."""
+        key = args.get('key')
+        value = args.get('value')
+        if not key or not value:
+            raise ValueError("Config key and value are required")
+        # TODO: Implement config set
+        logger.info(f"Config set command not yet implemented for {key}={value}")
+        return True
+    
+    async def _handle_config_reset(self, args: Dict[str, Any]) -> bool:
+        """Route to reset config."""
+        key = args.get('key')
+        # TODO: Implement config reset
+        if key:
+            logger.info(f"Config reset command not yet implemented for key: {key}")
+        else:
+            logger.info("Config reset command not yet implemented for all keys")
+        return True
     
 
     # Helper Methods

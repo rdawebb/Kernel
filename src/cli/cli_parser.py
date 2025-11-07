@@ -368,12 +368,13 @@ def setup_config_commands(subparsers) -> None:
 
 ## Main Parser Setup
 
-def setup_argument_parser() -> argparse.ArgumentParser:
+def setup_argument_parser(exit_on_error = True) -> argparse.ArgumentParser:
     """Setup the main argument parser for the Kernel CLI."""
     parser = argparse.ArgumentParser(
         prog="kernel",
         description="Minimal Email Client - fetch, view, send, and manage emails",
-        epilog="Use 'kernel <command> --help' for command-specific help."
+        epilog="Use 'kernel <command> --help' for command-specific help.",
+        exit_on_error=exit_on_error
     )
 
     parser.add_argument(

@@ -8,7 +8,7 @@ from src.utils.errors import EmailNotFoundError, KernelError
 from src.utils.config import ConfigManager
 from src.utils.logging import async_log_call, get_logger
 
-from .display import EmailDisplay, EmailTableDisplay
+from .display import ViewDisplay
 from .filters import EmailFilters
 
 logger = get_logger(__name__)
@@ -23,9 +23,8 @@ class ViewWorkflow:
         console: Optional[Console] = None
     ):
         self.db = database
-        self.email_display = EmailDisplay(console)
-        self.table_display = EmailTableDisplay(console)
-    
+        self.display = ViewDisplay(console)
+
     @async_log_call
     async def view_single(
         self,
@@ -51,9 +50,9 @@ class ViewWorkflow:
                     user_message=f"Email not found in {folder}",
                     details={"email_id": email_id, "folder": folder}
                 )
-            
-            self.email_display.display(email)
-            
+
+            self.display.display_single(email)
+
             if mark_read and not email.get('is_read'):
                 await self.db.update_field(folder, email_id, 'is_read', True)
             
@@ -61,17 +60,17 @@ class ViewWorkflow:
             
         except EmailNotFoundError as e:
             logger.error(f"Email not found: {e.details}")
-            self.email_display.show_error(e.user_message)
+            self.display.show_error(e.user_message)
             return False
 
         except KernelError as e:
             logger.error(f"Kernel error viewing email {email_id}: {e.message}")
-            self.email_display.show_error(e.user_message)
+            self.display.show_error(e.user_message)
             return False
 
         except Exception as e:
             logger.error(f"Failed to view email {email_id}: {e}")
-            self.email_display.show_error("Failed to display email")
+            self.display.show_error("Failed to display email")
             return False
     
     @async_log_call
@@ -108,10 +107,10 @@ class ViewWorkflow:
                 )
             
             show_flagged = (folder == "inbox")
-            
-            self.table_display.display(
+
+            self.display.display_list(
                 emails=emails,
-                title=folder.title(),
+                folder=folder,
                 show_flagged=show_flagged
             )
             
@@ -119,12 +118,12 @@ class ViewWorkflow:
             
         except KernelError as e:
             logger.error(f"Failed to view {folder}: {e.message}")
-            self.email_display.show_error(e.user_message)
+            self.display.show_error(e.user_message)
             return False
 
         except Exception as e:
             logger.error(f"Failed to view {folder}: {e}")
-            self.email_display.show_error(f"Failed to display {folder}")
+            self.display.show_error(f"Failed to display {folder}")
             return False
 
 

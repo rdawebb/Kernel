@@ -81,6 +81,13 @@ class ConnectionManager:
                 timeout=self.DEFAULT_TIMEOUT
             )
 
+            # Mark aiosqlite's worker thread as daemon so it doesn't block exit
+            import threading
+            for thread in threading.enumerate():
+                if thread.name.startswith('aiosqlite'):
+                    thread.daemon = True
+                    logger.debug(f"Marked aiosqlite thread {thread.name} as daemon")
+
             await self._connection.execute("PRAGMA foreign_keys = ON;")
             await self._connection.execute("PRAGMA journal_mode = WAL;")
             await self._connection.execute(
@@ -119,9 +126,14 @@ class ConnectionManager:
     async def close(self) -> None:
         """Close the database connection."""
         if self._connection:
-            await self._connection.close()
-            self._connection = None
-            logger.debug("Database connection closed")
+            try:
+                # Close the connection first
+                await self._connection.close()
+                logger.debug("Database connection closed")
+            except Exception as e:
+                logger.debug(f"Error closing connection: {e}")
+            finally:
+                self._connection = None
 
     @async_log_call
     async def health_check(self, quick: bool = False) -> bool:

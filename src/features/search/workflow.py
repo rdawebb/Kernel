@@ -8,7 +8,7 @@ from src.utils.config import ConfigManager
 from src.utils.logging import async_log_call, get_logger
 
 from .query import SearchQuery
-from .display import SearchResultsDisplay
+from .display import SearchDisplay
 
 logger = get_logger(__name__)
 
@@ -22,8 +22,8 @@ class SearchWorkflow:
         console: Optional[Console] = None
     ):
         self.db = database
-        self.display = SearchResultsDisplay(console)
-    
+        self.display = SearchDisplay.display_results(console)
+
     @async_log_call
     async def search(
         self,
