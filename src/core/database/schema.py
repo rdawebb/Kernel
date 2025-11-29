@@ -12,22 +12,28 @@ class TableSchema:
     additional_columns: List[str] = field(default_factory=list)
 
     BASE_COLUMNS = [
-        "uid", "subject", "sender", "recipient", 
-        "date", "time", "body", "attachments"
+        "uid",
+        "subject",
+        "sender",
+        "recipient",
+        "date",
+        "time",
+        "body",
+        "attachments",
     ]
 
     COLUMN_DEFS = {
         "flagged": "flagged BOOLEAN DEFAULT 0",
         "deleted_at": "deleted_at TEXT",
         "sent_status": "sent_status TEXT DEFAULT 'pending'",
-        "send_at": "send_at TEXT"
+        "send_at": "send_at TEXT",
     }
 
     @property
     def all_columns(self) -> List[str]:
         """Return all columns including additional ones."""
         return self.BASE_COLUMNS + self.additional_columns
-    
+
     def create_table_sql(self) -> str:
         """Generate SQL for creating the table."""
         base = """
@@ -56,7 +62,9 @@ class TableSchema:
         ]
 
         if "flagged" in self.additional_columns:
-            indexes.append(f"CREATE INDEX IF NOT EXISTS idx_{self.name}_flagged ON {self.name}(flagged) WHERE flagged = 1;")
+            indexes.append(
+                f"CREATE INDEX IF NOT EXISTS idx_{self.name}_flagged ON {self.name}(flagged) WHERE flagged = 1;"
+            )
 
         return indexes
 
@@ -74,6 +82,7 @@ FIELD_MAPPING = {
 }
 
 ## Query Building
+
 
 class QueryBuilder:
     """Helper class to build SQL queries dynamically."""
@@ -96,15 +105,15 @@ class QueryBuilder:
         columns.append("attachments")
 
         return ", ".join(columns)
-    
+
     @staticmethod
     def build_where_clause(
-        conditions: Optional[Dict[str, Any]] = None
+        conditions: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, List[Any]]:
         """Build WHERE clause and parameters from conditions."""
         if not conditions:
             return "1=1", []
-        
+
         clauses = []
         params = []
 
@@ -120,7 +129,7 @@ class QueryBuilder:
                 params.append(value)
 
         return " AND ".join(clauses), params
-                
+
     @staticmethod
     def build_placeholders(count: int) -> str:
         """Build a string of placeholders for prepared statements."""

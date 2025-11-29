@@ -1,14 +1,16 @@
 """Database connection management."""
 
 import asyncio
-import aiosqlite
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+import aiosqlite
 
 from src.utils.errors import DatabaseConnectionError
 from src.utils.logging import async_log_call, get_logger
 
 logger = get_logger(__name__)
+
 
 class ConnectionManager:
     """Manages database connection lifecycle and health."""
@@ -39,16 +41,15 @@ class ConnectionManager:
 
             try:
                 await asyncio.wait_for(
-                    self._connection.execute("SELECT 1;"),
-                    timeout=self.DEFAULT_TIMEOUT
+                    self._connection.execute("SELECT 1;"), timeout=self.DEFAULT_TIMEOUT
                 )
-            
+
             except (asyncio.TimeoutError, Exception) as e:
                 logger.warning(f"Connection lost: {e}, reconnecting...")
                 await self._reconnect()
 
         return self._connection
-    
+
     async def _connect_with_retry(self) -> None:
         """Attempt to connect with exponential backoff."""
         last_error = None
@@ -58,7 +59,7 @@ class ConnectionManager:
                 await self._connect()
                 logger.info(f"Database connected (attempt {attempt + 1})")
                 return
-            
+
             except Exception as e:
                 last_error = e
                 logger.warning(f"Database connection attempt {attempt + 1} failed: {e}")
@@ -68,23 +69,23 @@ class ConnectionManager:
 
         raise DatabaseConnectionError(
             f"Failed to connect to database after {self.MAX_RETRIES} attempts",
-            details={"last_error": str(last_error)}
+            details={"last_error": str(last_error)},
         ) from last_error
-            
+
     async def _connect(self) -> None:
         """Establish a new database connection."""
         try:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
             self._connection = await aiosqlite.connect(
-                str(self.db_path),
-                timeout=self.DEFAULT_TIMEOUT
+                str(self.db_path), timeout=self.DEFAULT_TIMEOUT
             )
 
             # Mark aiosqlite's worker thread as daemon so it doesn't block exit
             import threading
+
             for thread in threading.enumerate():
-                if thread.name.startswith('aiosqlite'):
+                if thread.name.startswith("aiosqlite"):
                     thread.daemon = True
                     logger.debug(f"Marked aiosqlite thread {thread.name} as daemon")
 
@@ -100,21 +101,21 @@ class ConnectionManager:
         except asyncio.TimeoutError as e:
             raise DatabaseConnectionError(
                 "Database connection timed out",
-                details={"db_path": str(self.db_path), "timeout": self.DEFAULT_TIMEOUT}
+                details={"db_path": str(self.db_path), "timeout": self.DEFAULT_TIMEOUT},
             ) from e
 
         except Exception as e:
             raise DatabaseConnectionError(
                 "Failed to connect to database",
-                details={"db_path": str(self.db_path), "error": str(e)}
+                details={"db_path": str(self.db_path), "error": str(e)},
             ) from e
-        
+
     async def _reconnect(self) -> None:
         """Reconnect to the database."""
         if self._connection:
             try:
                 await self._connection.close()
-            
+
             except Exception as e:
                 logger.debug(f"Error closing old database connection: {e}")
 
@@ -140,13 +141,12 @@ class ConnectionManager:
         """Perform database health check, quick for connection only"""
         try:
             conn = await asyncio.wait_for(
-                self._get_connection(),
-                timeout=self.HEALTH_CHECK_TIMEOUT
+                self._get_connection(), timeout=self.HEALTH_CHECK_TIMEOUT
             )
 
             if quick:
                 return conn is not None
-            
+
             async with conn.execute("SELECT 1;") as cursor:
                 result = await cursor.fetchone()
                 healthy = result is not None
@@ -160,20 +160,22 @@ class ConnectionManager:
                 logger.warning("Database health check: FAILED")
 
             return healthy
-        
+
         except asyncio.TimeoutError:
             self._is_healthy = False
             logger.error("Database health check timed out")
             return False
-        
+
     async def is_healthy(self) -> bool:
         """Check if the database is healthy, performing health check if needed."""
         current_time = asyncio.get_event_loop().time()
 
-        if (self._last_health_check and
-            current_time - self._last_health_check < self.HEALTH_CHECK_INTERVAL):
+        if (
+            self._last_health_check
+            and current_time - self._last_health_check < self.HEALTH_CHECK_INTERVAL
+        ):
             return self._is_healthy
-        
+
         return await self.health_check(quick=True)
 
     @async_log_call
@@ -186,7 +188,9 @@ class ConnectionManager:
                 "connected": conn is not None,
                 "healthy": await self.is_healthy(),
                 "database_path": str(self.db_path),
-                "database_size": self.db_path.stat().st_size if self.db_path.exists() else 0,
+                "database_size": self.db_path.stat().st_size
+                if self.db_path.exists()
+                else 0,
                 "last_health_check": self.connection_manager._last_health_check,
             }
 
@@ -200,19 +204,17 @@ class ConnectionManager:
                 async with conn.execute("PRAGMA journal_mode;") as cursor:
                     journal_mode = (await cursor.fetchone())[0]
 
-                stats.update({
-                    "page_count": page_count,
-                    "page_size": page_size,
-                    "journal_mode": journal_mode,
-                    "estimated_size": page_count * page_size,
-                })
+                stats.update(
+                    {
+                        "page_count": page_count,
+                        "page_size": page_size,
+                        "journal_mode": journal_mode,
+                        "estimated_size": page_count * page_size,
+                    }
+                )
 
             return stats
-        
+
         except Exception as e:
             logger.error(f"Failed to get connection stats: {e}")
-            return {
-                "connected": False,
-                "healthy": False,
-                "error": str(e)
-            }
+            return {"connected": False, "healthy": False, "error": str(e)}

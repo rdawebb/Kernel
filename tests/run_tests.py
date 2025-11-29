@@ -22,14 +22,14 @@ def run_pytest(args=None):
     """Run tests using pytest"""
     if args is None:
         args = []
-    
+
     # Base pytest command
-    cmd = ['python3', '-m', 'pytest', 'tests/', '-v', '--tb=short']
-    
+    cmd = ["python3", "-m", "pytest", "tests/", "-v", "--tb=short"]
+
     # Add additional arguments
     if args:
         cmd.extend(args)
-    
+
     # Run pytest
     result = subprocess.run(cmd, cwd=str(project_root))
     return result.returncode
@@ -38,19 +38,19 @@ def run_pytest(args=None):
 def main():
     """Main test runner function"""
     args = sys.argv[1:]
-    
+
     if not args:
         print("Running all tests with pytest...")
         print("=" * 70)
         return_code = run_pytest()
-    elif args[0] in ['--help', '-h']:
+    elif args[0] in ["--help", "-h"]:
         print(__doc__)
         return 0
     else:
         # Check if it's a specific test file or pytest argument
         test_file = args[0]
-        
-        if test_file.startswith('-'):
+
+        if test_file.startswith("-"):
             # It's a pytest argument
             print(f"Running pytest with arguments: {args}")
             return_code = run_pytest(args)
@@ -58,11 +58,11 @@ def main():
             # It's a test file
             print(f"Running tests for: {test_file}")
             print("=" * 70)
-            test_path = f'tests/test_{test_file}.py'
+            test_path = f"tests/test_{test_file}.py"
             return_code = run_pytest([test_path] + args[1:])
-    
+
     sys.exit(return_code)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

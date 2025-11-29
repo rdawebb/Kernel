@@ -3,10 +3,7 @@
 import getpass
 
 from src.utils.config import ConfigManager
-from src.utils.errors import (
-    InvalidCredentialsError, 
-    MissingCredentialsError
-)
+from src.utils.errors import InvalidCredentialsError, MissingCredentialsError
 from src.utils.logging import get_logger
 
 from .key_store import get_keystore
@@ -53,40 +50,48 @@ class CredentialManager:
                 if not account_config.email:
                     logger.error("No email address provided.")
                     return False
-                
+
                 self.config_manager.set_config("account.email", account_config.email)
 
             if not account_config.username:
                 default_username = account_config.email
-                username_prompt = f"Enter your username (press Enter to use '{default_username}'): "
+                username_prompt = (
+                    f"Enter your username (press Enter to use '{default_username}'): "
+                )
                 user_input = input(username_prompt).strip()
 
                 account_config.username = user_input if user_input else default_username
-                self.config_manager.set_config("account.username", account_config.username)
+                self.config_manager.set_config(
+                    "account.username", account_config.username
+                )
 
                 if user_input:
                     logger.info(f"Username set to: {account_config.username}")
                 else:
-                    logger.info(f"Username defaulted to email: {account_config.username}")
+                    logger.info(
+                        f"Username defaulted to email: {account_config.username}"
+                    )
 
             logger.info("Account information updated successfully.")
             return True
-        
+
         except KeyboardInterrupt:
             logger.info("User cancelled input.")
             return False
-        
+
         except Exception as e:
             logger.error(f"Error while prompting for account info: {str(e)}")
             return False
-        
+
     async def _prompt_for_password(self) -> bool:
         """Prompt user for password and store in keystore."""
 
         account_config = self.config_manager.config.account
 
         try:
-            password = getpass.getpass(f"Enter password for {account_config.username}: ")
+            password = getpass.getpass(
+                f"Enter password for {account_config.username}: "
+            )
             if not password:
                 logger.error("No password provided.")
                 return False
@@ -94,11 +99,11 @@ class CredentialManager:
             self.keystore.store(account_config.username, password)
             logger.info(f"Password stored securely for {account_config.username}.")
             return True
-        
+
         except KeyboardInterrupt:
             logger.info("User cancelled password input.")
             return False
-        
+
         except Exception as e:
             logger.error(f"Error while prompting for password: {str(e)}")
             return False
@@ -112,12 +117,15 @@ class CredentialManager:
 
         try:
             self.keystore.delete(account_config.username)
-            logger.info(f"Deleted stored password for {account_config.username} due to auth failure.")
+            logger.info(
+                f"Deleted stored password for {account_config.username} due to auth failure."
+            )
 
         except Exception as e:
             logger.debug(f"Error deleting stored password: {str(e)}")
 
         logger.info("Please re-enter your credentials...")
         if not await self._prompt_for_password():
-            raise InvalidCredentialsError("Failed to obtain new password after authentication failure.")
-            
+            raise InvalidCredentialsError(
+                "Failed to obtain new password after authentication failure."
+            )

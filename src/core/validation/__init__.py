@@ -1,6 +1,6 @@
 """Domain validation utilities."""
 
-from .email import EmailValidator
 from .datetime import DateTimeParser
+from .email import EmailValidator
 
-__all__ = ['EmailValidator', 'DateTimeParser']
+__all__ = ["EmailValidator", "DateTimeParser"]

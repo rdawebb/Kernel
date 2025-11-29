@@ -18,22 +18,23 @@ _LOG_DIR: Optional[Path] = None
 
 def _get_log_dir() -> Path:
     """Get log directory, creating it on first access."""
-    
+
     from .errors import FileSystemError
-    
+
     global _LOG_DIR
-    
+
     if _LOG_DIR is None:
         _LOG_DIR = LOGS_DIR
         try:
             _LOG_DIR.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             raise FileSystemError(f"Failed to create log directory: {_LOG_DIR}") from e
-    
+
     return _LOG_DIR
 
 
 ## Custom JSON Formatter
+
 
 class JSONFormatter(logging.Formatter):
     """Custom JSON formatter for log records."""
@@ -66,59 +67,61 @@ class ContextAdapter(logging.LoggerAdapter):
 
         kwargs["extra"].update(self.extra)
         return msg, kwargs
-    
+
 
 ## Log Masking
+
 
 class SensitiveDataMasker:
     """Utility to mask sensitive data in log messages."""
 
     PATTERNS = {
         "password": re.compile(
-            r'(password["\']?\s*[:=]\s*["\']?)([^"\'}\s]+)',
-            re.IGNORECASE
+            r'(password["\']?\s*[:=]\s*["\']?)([^"\'}\s]+)', re.IGNORECASE
         ),
-
         "token": re.compile(
-            r'(token["\']?\s*[:=]\s*["\']?)([^"\'}\s]+)',
-            re.IGNORECASE
+            r'(token["\']?\s*[:=]\s*["\']?)([^"\'}\s]+)', re.IGNORECASE
         ),
-
         "api_key": re.compile(
-            r'(api[_-]?key["\']?\s*[:=]\s*["\']?)([^"\'}\s]+)',
-            re.IGNORECASE
+            r'(api[_-]?key["\']?\s*[:=]\s*["\']?)([^"\'}\s]+)', re.IGNORECASE
         ),
-
         "secret": re.compile(
-            r'(secret["\']?\s*[:=]\s*["\']?)([^"\'}\s]+)',
-            re.IGNORECASE
+            r'(secret["\']?\s*[:=]\s*["\']?)([^"\'}\s]+)', re.IGNORECASE
         ),
-
         "authorization": re.compile(
-            r'(authorization["\']?\s*[:=]\s*["\']?)([^"\'}\s]+)',
-            re.IGNORECASE
+            r'(authorization["\']?\s*[:=]\s*["\']?)([^"\'}\s]+)', re.IGNORECASE
         ),
-
         "email": re.compile(
-            r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})',
-            re.IGNORECASE
+            r"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", re.IGNORECASE
         ),
-
         "credit_card": re.compile(
-            r'(\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b)',
-            re.IGNORECASE
+            r"(\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b)", re.IGNORECASE
         ),
     }
 
     SENSITIVE_FIELDS = {
-        "password", "passwd", "pwd", "secret", "token", "api_key",
-        "apikey", "authorization", "auth", "credential", "private_key",
-        "access_token", "refresh_token", "session_id", "cookie"
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "authorization",
+        "auth",
+        "credential",
+        "private_key",
+        "access_token",
+        "refresh_token",
+        "session_id",
+        "cookie",
     }
 
     MASK_STRATEGIES = {
         "full": lambda x: "[REDACTED]",
-        "partial": lambda x: x[:3] + "*" * (len(x) - 6) + x[-3:] if len(x) > 6 else "[REDACTED]",
+        "partial": lambda x: x[:3] + "*" * (len(x) - 6) + x[-3:]
+        if len(x) > 6
+        else "[REDACTED]",
         "hash": lambda x: f"[HASHED:{hash(x) & 0xFFFFFFFF:08X}]",
     }
 
@@ -136,11 +139,11 @@ class SensitiveDataMasker:
 
         if not digits.isdigit() or len(digits) < 13 or len(digits) > 19:
             return False
-        
+
         total = 0
         for i, digit in enumerate(reversed(digits)):
             n = int(digit)
-            
+
             if i % 2 == 1:
                 n *= 2
                 if n > 9:
@@ -155,7 +158,7 @@ class SensitiveDataMasker:
 
         if not text:
             return text
-        
+
         masked = text
 
         for name, pattern in self.PATTERNS.items():
@@ -163,20 +166,24 @@ class SensitiveDataMasker:
                 masked = pattern.sub(lambda m: self._mask_email(m.group(0)), masked)
             elif name == "credit_card":
                 masked = pattern.sub(
-                    lambda m: self.mask_func(m.group(1)) if self._validate_credit_card(m.group(1)) else m.group(1),
-                    masked
+                    lambda m: self.mask_func(m.group(1))
+                    if self._validate_credit_card(m.group(1))
+                    else m.group(1),
+                    masked,
                 )
             else:
-                masked = pattern.sub(lambda m: m.group(1) + self.mask_func(m.group(2)), masked)
+                masked = pattern.sub(
+                    lambda m: m.group(1) + self.mask_func(m.group(2)), masked
+                )
 
         return masked
-    
+
     def mask_dict(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Mask sensitive data in a dictionary."""
 
         if not isinstance(data, dict):
             return data
-        
+
         masked = {}
 
         for key, value in data.items():
@@ -194,7 +201,7 @@ class SensitiveDataMasker:
                 masked[key] = self.mask_func(str(value))
 
         return masked
-    
+
     def _mask_email(self, email: str) -> str:
         """Mask an email address while preserving domain."""
 
@@ -204,20 +211,20 @@ class SensitiveDataMasker:
             masked_domain = domain[0] + ("***" if len(domain) > 1 else "*")
 
             return f"{masked_username}@{masked_domain}"
-        
+
         except Exception:
             return self.mask_func(email)
 
 
 class SensitiveDataFilter(logging.Filter):
     """Logging filter to mask sensitive data in log records."""
-    
+
     def __init__(self, strategy: str = "full"):
         """Initialize filter with specified masking strategy."""
 
         super().__init__()
         self.masker = SensitiveDataMasker(strategy)
-    
+
     def filter(self, record) -> bool:
         """Filter log record to mask sensitive data."""
 
@@ -234,13 +241,14 @@ class SensitiveDataFilter(logging.Filter):
                     setattr(record, key, self.masker.mask_dict(value))
 
         return True
-                    
+
 
 ## Main Log Manager
 
+
 class LogManager:
     """Manages logging configuration and provides logger instances."""
-    
+
     def __init__(self, log_level: str = "INFO"):
         self.log_level = getattr(logging, log_level.upper())
         self.root_logger = logging.getLogger("kernel")
@@ -265,10 +273,7 @@ class LogManager:
             )
 
             console_handler.setLevel(logging.WARNING)
-            console_formatter = logging.Formatter(
-                "%(message)s",
-                datefmt="[%X]"
-            )
+            console_formatter = logging.Formatter("%(message)s", datefmt="[%X]")
 
             console_handler.setFormatter(console_formatter)
             console_handler.addFilter(sensitive_filter)
@@ -279,11 +284,13 @@ class LogManager:
                     log_dir / "app.log",
                     maxBytes=5_242_880,
                     backupCount=5,
-                    encoding="utf-8"
+                    encoding="utf-8",
                 )
 
             except IOError as e:
-                raise FileSystemError(f"Failed to create app.log handler: {str(e)}") from e
+                raise FileSystemError(
+                    f"Failed to create app.log handler: {str(e)}"
+                ) from e
 
             app_handler.setLevel(logging.DEBUG)
             app_handler.setFormatter(JSONFormatter())
@@ -294,11 +301,13 @@ class LogManager:
                     log_dir / "events.log",
                     maxBytes=2_048_000,
                     backupCount=3,
-                    encoding="utf-8"
+                    encoding="utf-8",
                 )
 
             except IOError as e:
-                raise FileSystemError(f"Failed to create events.log handler: {str(e)}") from e
+                raise FileSystemError(
+                    f"Failed to create events.log handler: {str(e)}"
+                ) from e
 
             event_handler.setLevel(logging.INFO)
             event_handler.setFormatter(JSONFormatter())
@@ -308,7 +317,7 @@ class LogManager:
             self.root_logger.addHandler(console_handler)
             self.root_logger.addHandler(app_handler)
             self.root_logger.addHandler(event_handler)
-        
+
         except KernelError:
             raise
 
@@ -325,7 +334,7 @@ class LogManager:
 
         if context:
             return ContextAdapter(logger, context)
-        
+
         return logger
 
     def set_level(self, level: str):
@@ -338,7 +347,7 @@ class LogManager:
 
             for handler in self.root_logger.handlers:
                 handler.setLevel(self.log_level)
-        
+
         except AttributeError as e:
             raise ValueError(f"Invalid logging level: {level}") from e
         except Exception as e:
@@ -346,24 +355,25 @@ class LogManager:
 
     def log_event(self, event_type: str, message: str, level: str = "INFO", **extra):
         """Log an event with specific type and extra context."""
-        
+
         logger = self.root_logger
         extra_dict = {"event_type": event_type}
         extra_dict.update(extra)
-        
+
         try:
             log_level = getattr(logging, level.upper())
             logger.log(log_level, message, extra=extra_dict)
-        
+
         except AttributeError as e:
             raise ValueError(f"Invalid logging level: {level}") from e
 
 
 ## Decorators for Logging
 
+
 def log_call(func):
     """Decorator to log function calls with arguments and return values."""
-    
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         logger = logging.getLogger("kernel")
@@ -376,13 +386,14 @@ def log_call(func):
             duration = (datetime.now() - start_time).total_seconds()
             logger.debug(f"<- Exiting {func_name} (Duration: {duration:.3f}s)")
             return result
-        
+
         except Exception as e:
             duration = (datetime.now() - start_time).total_seconds()
             logger.exception(f"<- Error in {func_name} after {duration:.3f}s: {e}")
             raise
 
     return wrapper
+
 
 def async_log_call(func):
     """Async decorator to log function calls with arguments and return values."""
@@ -399,7 +410,7 @@ def async_log_call(func):
             duration = (datetime.now() - start_time).total_seconds()
             logger.debug(f"<- Exiting {func_name} (Duration: {duration:.3f}s)")
             return result
-        
+
         except Exception as e:
             duration = (datetime.now() - start_time).total_seconds()
             logger.exception(f"<- Error in {func_name} after {duration:.3f}s: {e}")
@@ -412,15 +423,17 @@ def async_log_call(func):
 
 _log_manager: Optional[LogManager] = None
 
+
 def init_logging(log_level: str = "INFO") -> LogManager:
     """Initialize logging system and return LogManager instance."""
-    
+
     global _log_manager
 
     if _log_manager is None:
         _log_manager = LogManager(log_level)
 
     return _log_manager
+
 
 def get_logger(name: Optional[str] = None, **context) -> logging.Logger:
     """Get a logger instance with optional context."""
@@ -430,16 +443,17 @@ def get_logger(name: Optional[str] = None, **context) -> logging.Logger:
 
     return _log_manager.get_logger(name, **context)
 
+
 def log_event(event_type: str, message, **extra):
     """Log an event with specific type and extra context (module-level wrapper)."""
-    
+
     if _log_manager is None:
         init_logging()
-    
+
     # Handle both string messages and dict-based messages
     if isinstance(message, dict):
         # If message is a dict, merge it with extra and create a string message
         extra.update(message)
         message = f"Event: {event_type}"
-    
+
     return _log_manager.log_event(event_type, message, **extra)

@@ -19,16 +19,7 @@
    - Common issues & solutions
    - Debugging tips
 
-### For Detailed Information
-
-3. **[TESTING_SUMMARY.md](TESTING_SUMMARY.md)** - Refactoring summary
-
-   - Complete architecture breakdown
-   - Statistics and metrics
-   - Before/after analysis
-   - Verification checklist
-
-4. **[TEST_INDEX.md](TEST_INDEX.md)** - This file (navigation)
+3. **[TEST_INDEX.md](TEST_INDEX.md)** - This file (navigation)
 
 ---
 
@@ -36,7 +27,7 @@
 
 ### Core Files
 
-```
+```md
 tests/
 ├── conftest.py              # Pytest fixtures (shared across all tests)
 ├── test_helpers.py          # Reusable helper classes (eliminates duplication)
@@ -294,7 +285,7 @@ pytest tests/test_storage.py::TestDatabaseManagement::test_initialize_db_creates
 
 ## 🎯 Coverage Map
 
-```
+```md
 src/core/
 ├── storage_api.py          ✅ test_storage.py (11 tests)
 ├── db_manager.py           ✅ test_storage.py (11 tests)

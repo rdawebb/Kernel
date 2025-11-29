@@ -17,7 +17,7 @@ class DateTimeParser:
         """Parse date-time string into datetime object"""
         if not dt_str or not dt_str.strip():
             return None, None
-        
+
         dt_str = dt_str.strip()
 
         formats = [
@@ -34,7 +34,7 @@ class DateTimeParser:
 
                 if dt < datetime.now():
                     return None, f"Date-time '{dt_str}' is in the past."
-                
+
                 return dt, None
 
             except ValueError:
@@ -46,12 +46,12 @@ class DateTimeParser:
                 if dt < datetime.now():
                     return None, f"Date-time '{dt_str}' is in the past."
                 return dt, None
-            
+
         except Exception as e:
             logger.warning(f"Failed to parse natural language date-time: {e}")
 
         return None, f"Invalid date-time format: '{dt_str}'."
-    
+
     @staticmethod
     def _parse_natural_language(text: str) -> Optional[datetime]:
         """Parse basic natural language date-time strings"""
@@ -62,7 +62,7 @@ class DateTimeParser:
 
         if "tomorrow" in text:
             base = now + timedelta(days=1)
-            time_match = re.search(r'(\d{1,2}):?(\d{2})?\s*(am|pm)?', text)
+            time_match = re.search(r"(\d{1,2}):?(\d{2})?\s*(am|pm)?", text)
             if time_match:
                 hour = int(time_match.group(1))
                 minute = int(time_match.group(2) or 0)
@@ -74,18 +74,18 @@ class DateTimeParser:
                     hour = 0
 
                 return base.replace(hour=hour, minute=minute, second=0)
-            
+
             else:
                 return base.replace(hour=9, minute=0, second=0)
-            
-        hours_match = re.search(r'in\s+(\d+)\s+hours?', text)
+
+        hours_match = re.search(r"in\s+(\d+)\s+hours?", text)
         if hours_match:
             hours = int(hours_match.group(1))
             return now + timedelta(hours=hours)
-        
-        days_match = re.search(r'in\s+(\d+)\s+days?', text)
+
+        days_match = re.search(r"in\s+(\d+)\s+days?", text)
         if days_match:
             days = int(days_match.group(1))
             return now + timedelta(days=days)
-        
+
         return None

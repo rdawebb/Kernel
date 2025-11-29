@@ -2,190 +2,199 @@
 
 ## TODO: add support for HTML emails and attachments
 
-import smtplib
+import asyncio
 import time
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
-from src.utils.errors import AuthenticationError, NetworkError, SMTPError
+import aiosmtplib
+
+from src.core.email.constants import Timeouts
+from src.utils.errors import NetworkTimeoutError, SMTPError
 from src.utils.logging import get_logger
+
+from .connection import SMTPConnection
 
 logger = get_logger(__name__)
 
 
 TRANSIENT_ERRORS = [
-    421, # Service not available, closing transmission channel
-    450, # Requested mail action not taken: mailbox unavailable
-    451, # Requested action aborted: local error in processing
-    452, # Requested action not taken: insufficient system storage
-    454, # Temporary authentication failure
+    421,  # Service not available, closing transmission channel
+    450,  # Mailbox unavailable (e.g. busy)
+    451,  # Local error in processing
+    452,  # Insufficient system storage
 ]
 
+
 class SMTPClient:
-    """SMTP client with connection pooling and retry logic."""
-    
-    def __init__(self, host: str, port: int, username: str, password: str, 
-                 use_tls: bool = True, max_retries: int = 3, retry_delay: float = 2.0):
-        """Initialize SMTP client."""
+    """Asynchronous SMTP client for email operations."""
 
-        self.host = host
-        self.port = port
-        self.username = username
-        self.password = password
-        self.use_tls = use_tls
+    def __init__(self, config, max_retries: int = 3):
+        """Initialize SMTP client with configuration.
+
+        Args:
+            config: SMTP configuration object
+            max_retries: Maximum number of retry attempts for sending emails
+        """
+        self.config = config
+        self._connection = SMTPConnection(config)
         self.max_retries = max_retries
-        self.retry_delay = retry_delay
-        self.server = None
-        self.last_used = time.time()
-        self.logger = get_logger(__name__)
-    
 
-    def _connect(self) -> bool:
-        """Establish connection to SMTP server."""
+    def get_connection_stats(self) -> dict:
+        """Get current SMTP connection statistics.
 
-        try:
-            if self.use_tls:
-                self.server = smtplib.SMTP_SSL(self.host, self.port)
-            else:
-                self.server = smtplib.SMTP(self.host, self.port)
-                self.server.starttls()
-            
-            self.server.login(self.username, self.password)
-            self.logger.info(f"Connected to SMTP server {self.host}:{self.port}")
-            self.last_used = time.time()
+        Returns:
+            Dictionary of connection statistics
+        """
+        stats = self._connection.get_stats()
+        return {
+            "connections_created": stats.connections_created,
+            "reconnections": stats.reconnections,
+            "emails_sent": stats.emails_sent,
+            "send_failures": stats.send_failures,
+            "avg_send_time": round(stats.total_send_time / stats.emails_sent, 2)
+            if stats.emails_sent > 0
+            else 0,
+        }
+
+    def _is_transient_error(self, error: Exception) -> bool:
+        """Check if an error is transient and worth retrying.
+
+        Args:
+            error: Exception instance to check
+
+        Returns:
+            True if error is transient, False otherwise
+        """
+        if isinstance(error, aiosmtplib.SMTPConnectResponseError):
+            return error.code in TRANSIENT_ERRORS
+
+        if isinstance(error, (aiosmtplib.SMTPServerDisconnected, ConnectionError)):
             return True
-        
-        except smtplib.SMTPAuthenticationError as e:
-            self.logger.error(f"SMTP authentication failed: {e}")
-            raise AuthenticationError(
-                "SMTP authentication failed",
-                details={"host": self.host, "username": self.username, "error": str(e)}
-            ) from e
-        
-        except (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as e:
-            self.logger.error(f"SMTP connection error: {e}")
-            raise NetworkError(
-                "Failed to connect to SMTP server",
-                details={"host": self.host, "port": self.port, "error": str(e)}
-            ) from e
 
-        except Exception as e:
-            self.logger.error(f"Failed to connect to SMTP server: {e}")
-            raise SMTPError(
-                "Failed to connect to SMTP server",
-                details={"host": self.host, "port": self.port, "error": str(e)}
-            ) from e
-        
-    
-    def _ensure_connected(self) -> bool:
-        """Ensure connection is active, reconnect if needed."""
-
-        if self.server is None:
-            return self._connect()
-        
-        try:
-            self.server.noop()
-            return True
-        
-        except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError):
-            self.logger.warning("SMTP connection lost, reconnecting...")
-            self.server = None
-            return self._connect()
-        
-    
-    def _is_transient_error(self, error: smtplib.SMTPException) -> bool:
-        """Check if an SMTP error is transient based on its code."""
-        
-        if isinstance(error, smtplib.SMTPResponseException):
-            return error.smtp_code in TRANSIENT_ERRORS
-
-        if isinstance(error, (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError)):
-            return True
-        
         return False
-    
 
-    def send_email(self, to_email: str, subject: str, body: str, 
-                   cc: Optional[List[str]] = None, 
-                   bcc: Optional[List[str]] = None) -> Tuple[bool, Optional[str]]:
-        """Send an email via SMTP with retry logic for transient errors."""
+    async def send_email(
+        self,
+        to_email: str,
+        subject: str,
+        body: str,
+        cc: Optional[List[str]] = None,
+        bcc: Optional[List[str]] = None,
+    ) -> bool:
+        """Send an email via SMTP with retry logic for transient errors.
 
+        Args:
+            to_email: Recipient email address
+            subject: Email subject line
+            body: Email body content
+            cc: Optional list of CC email addresses
+            bcc: Optional list of BCC email addresses
+
+        Returns:
+            True if email sent successfully, False otherwise
+
+        Raises:
+            NetworkTimeoutError: If sending times out
+            SMTPError: If sending fails after retries
+        """
+        send_start = time.time()
         attempt = 0
         last_error = None
 
+        logger.info(
+            "Sending email", extra={"recipient": to_email, "subject": subject[:50]}
+        )
+
         while attempt <= self.max_retries:
             try:
-                if not self._ensure_connected():
-                    raise SMTPError("Unable to connect to SMTP server")
-                
+                client = await self._connection._ensure_connection()
+
                 msg = MIMEMultipart()
-                msg['From'] = self.username
-                msg['To'] = to_email
-                msg['Subject'] = subject
-                
+                msg["From"] = self.config.config.account.email
+                msg["To"] = to_email
+                msg["Subject"] = subject
+
                 if cc:
-                    msg['Cc'] = ', '.join(cc) if isinstance(cc, list) else cc
+                    msg["Cc"] = ", ".join(cc) if isinstance(cc, list) else cc
                 if bcc:
-                    msg['Bcc'] = ', '.join(bcc) if isinstance(bcc, list) else bcc
-                
-                msg.attach(MIMEText(body, 'plain'))
-                
+                    msg["Bcc"] = ", ".join(bcc) if isinstance(bcc, list) else bcc
+
+                msg.attach(MIMEText(body, "plain"))
+
                 recipients = [to_email]
                 if cc:
                     recipients.extend(cc if isinstance(cc, list) else [cc])
                 if bcc:
                     recipients.extend(bcc if isinstance(bcc, list) else [bcc])
-                
-                self.server.send_message(msg, to_addrs=recipients)
-                self.logger.info(f"Email sent to {to_email}")
-                self.last_used = time.time()
-                return True, None
-            
-            except smtplib.SMTPException as e:
+
+                await asyncio.wait_for(
+                    client.send_message(msg, recipients=recipients),
+                    timeout=Timeouts.SMTP_SEND,
+                )
+                send_duration = time.time() - send_start
+                self._connection._stats.emails_sent += 1
+
+                logger.info(
+                    "Email sent successfully",
+                    extra={
+                        "recipient": to_email,
+                        "duration_seconds": round(send_duration, 2),
+                        "attempts": attempt + 1,
+                    },
+                )
+                return True
+
+            except asyncio.TimeoutError as e:
+                self._connection.get_stats().record_send(time.time() - send_start)
+                raise NetworkTimeoutError(
+                    "SMTP send operation timed out", details={"recipient": to_email}
+                ) from e
+
+            except Exception as e:
                 last_error = e
                 attempt += 1
 
-                if self._is_transient_error(e):
-                    if attempt < self.max_retries:
-                        delay = self.retry_delay * (2 ** (attempt - 1))
-                        self.logger.warning(f"Transient SMTP error occurred: {e}, retrying in {delay} seconds")
-                        time.sleep(delay)
-                        self.close()
-                        continue
-                    else:
-                        self.logger.error(f"Max retries {self.max_retries} exceeded: {e}")
-                
-                else:
-                    self.logger.error(f"Non-transient SMTP error occurred: {e}")
-                    break
-                        
-            except Exception as e:
-                self.logger.error(f"Unexpected error sending email: {e}")
-                last_error = e
-                break
+                if self._is_transient_error(e) and attempt <= self.max_retries:
+                    delay = 2 ** (attempt - 1)
+                    logger.warning(
+                        "Transient SMTP error, retrying",
+                        extra={
+                            "attempt": attempt,
+                            "max_retries": self.max_retries,
+                            "retry_delay": delay,
+                        },
+                    )
 
-        error_msg = f"Failed to send after {attempt} attempt(s): {str(last_error)}"
-        self.logger.error(error_msg)
-        return False, error_msg
-    
+                    await asyncio.sleep(delay)
+                    await self._connection.close_connection()
+                    continue
 
-    def close(self) -> None:
-        """Close SMTP connection."""
+                send_duration = time.time() - send_start
+                self._connection.get_stats().record_send(send_duration, success=False)
 
-        if self.server:
-            try:
-                self.server.quit()
-                self.logger.debug("SMTP connection closed")
+                logger.error(
+                    "Failed to send email",
+                    extra={
+                        "recipient": to_email,
+                        "attempts": attempt,
+                        "duration_seconds": round(send_duration, 2),
+                        "error": str(last_error),
+                    },
+                )
 
-            except Exception:
-                pass
+                error_msg = f"Failed to send email after {attempt} attempt(s): {str(last_error)}"
+                raise SMTPError(
+                    error_msg, details={"recipient": to_email, "attempts": attempt}
+                ) from last_error
 
-            finally:
-                self.server = None
-    
+        return False
 
-    def __del__(self):
-        """Cleanup on deletion."""
 
-        self.close()
+## SMTP Client Factory
+
+
+def get_smtp_client(config) -> SMTPClient:
+    """Factory function to get an SMTPClient instance."""
+    return SMTPClient(config)

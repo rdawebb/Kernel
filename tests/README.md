@@ -557,7 +557,7 @@ class TestComponentFeature:
 
 ## Coverage Map
 
-```
+```md
 src/
 ├── core/
 │   ├── storage_api.py          ✅ test_storage.py (11 tests)
