@@ -22,12 +22,20 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Cache
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.pytest_cache/
+*.ruff_cache/
+
 # PyInstaller
 *.manifest
 *.spec
 
 # Development files
-*.md
+dev/
 
 # Unit test / coverage reports
 htmlcov/
@@ -72,7 +80,7 @@ Thumbs.db
 # Email client specific
 *.db
 *.sqlite*
-emails.db
+kernel.db
 test_emails.db
 attachments/*
 !attachments/.gitkeep
@@ -82,6 +90,8 @@ exports/*
 !exports/.gitkeep
 logs/*
 !logs/.gitkeep
+~/kernel/*
+backup_*
 
 # Logs
 *.log

@@ -2,7 +2,7 @@
 
 ## 📁 File Structure
 
-```
+```md
 tests/
 ├── conftest.py              # Pytest configuration & shared fixtures
 ├── test_helpers.py          # Reusable helper classes for tests

@@ -3,19 +3,20 @@
 import subprocess
 import sys
 
-from .config_manager import ConfigManager
-from .error_handling import (
+from .config import ConfigManager
+from .errors import (
     ConfigurationError,
     KernelError,
     ValidationError,
 )
-from .log_manager import get_logger, log_call
+from .logging import get_logger, log_call
 
 logger = get_logger(__name__)
 
 
 class ModelManager:
     """Manages model installation, selection, and tracking"""
+
     MODEL_MAP = {
         1: "sumy",
         2: "minibart",
@@ -23,7 +24,7 @@ class ModelManager:
         4: "bart",
         5: "openai",
         6: "cohere",
-        7: "ollama"
+        7: "ollama",
     }
 
     def __init__(self):
@@ -35,7 +36,7 @@ class ModelManager:
             "bart": False,
             "openai": False,
             "cohere": False,
-            "ollama": False
+            "ollama": False,
         }
         self.current_model = None
         self.config_manager = ConfigManager()
@@ -44,7 +45,9 @@ class ModelManager:
     @log_call
     def load_config(self):
         """Load configuration from config file"""
-        self.current_model = getattr(self.config_manager.config, "default_summariser", "sumy")
+        self.current_model = getattr(
+            self.config_manager.config, "default_summariser", "sumy"
+        )
 
     @log_call
     def reload_config(self):
@@ -74,14 +77,16 @@ class ModelManager:
     def uninstall(package):
         """Uninstall a package using pip."""
         try:
-            subprocess.check_call([sys.executable, "-m", "pip", "uninstall", "-y", package])
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "uninstall", "-y", package]
+            )
             logger.info(f"Successfully uninstalled {package}")
 
         except subprocess.CalledProcessError as e:
             raise ValidationError(
                 f"Failed to uninstall package {package}: {str(e)}"
             ) from e
-        
+
         except Exception as e:
             raise ValidationError(
                 f"Unexpected error uninstalling {package}: {str(e)}"
@@ -95,7 +100,9 @@ class ModelManager:
         """Mark a model as installed or not."""
         if model_name in self.installed_models:
             self.installed_models[model_name] = installed
-            logger.debug(f"Model {model_name} marked as {'installed' if installed else 'not installed'}")
+            logger.debug(
+                f"Model {model_name} marked as {'installed' if installed else 'not installed'}"
+            )
 
     @log_call
     def choose_model(self, choice):
@@ -104,7 +111,9 @@ class ModelManager:
             selected_model = self.MODEL_MAP.get(choice)
 
             if not selected_model:
-                raise ValidationError(f"Invalid model choice: {choice}. Valid choices are 1-7.")
+                raise ValidationError(
+                    f"Invalid model choice: {choice}. Valid choices are 1-7."
+                )
 
             if selected_model == self.current_model:
                 logger.info(f"Model {selected_model} is already selected.")
@@ -122,7 +131,7 @@ class ModelManager:
             logger.info(f"Selected summarization model: {selected_model}")
 
             return selected_model
-        
+
         except KernelError:
             raise
 
@@ -159,4 +168,6 @@ class ModelManager:
 
     def get_installed_models(self):
         """Get list of installed models."""
-        return [model for model, installed in self.installed_models.items() if installed]
+        return [
+            model for model, installed in self.installed_models.items() if installed
+        ]

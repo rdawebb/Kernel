@@ -1,104 +1,89 @@
-"""Main CLI entrypoint - routes commands via daemon with fallback"""
+"""Main CLI entry point - simplified to use router."""
 
 import asyncio
-import sys
 from typing import Any, Dict
 
-from src.cli.commands.command_registry import get_command_metadata
-from src.daemon.daemon_client import execute_via_daemon
-from src.utils.config_manager import ConfigManager
-from src.utils.log_manager import async_log_call, get_logger, log_call
+from rich.console import Console
+
+from src.utils.config import ConfigManager
+from src.utils.logging import async_log_call, get_logger
+
 from .cli_parser import setup_argument_parser
+from .router import CommandRouter
 
 logger = get_logger(__name__)
 
 
 def _args_to_dict(args) -> Dict[str, Any]:
-    """Convert argparse Namespace to dictionary for daemon."""
-
+    """Convert argparse Namespace to dictionary."""
     result = {}
     for key, value in vars(args).items():
-        if value is not None:
+        if key != "command" and value is not None:
             result[key] = value
-
     return result
 
 
 @async_log_call
-async def dispatch_command(args, cfg_manager) -> None:
-    """Route parsed command via daemon (with fallback) or local handlers."""
-    from rich.console import Console
+async def dispatch_command(args, console: Console) -> int:
+    """Dispatch command via router.
 
-    console = Console()
+    Args:
+        args: Parsed arguments
+        console: Rich console
+
+    Returns:
+        Exit code (0 = success, 1 = error)
+    """
     command = args.command
-    
+
     try:
+        router = CommandRouter(console)
         args_dict = _args_to_dict(args)
-        
-        try:
-            result = await execute_via_daemon(command, args_dict)
-        
-        except Exception as daemon_exc:
-            logger.warning(f"Daemon unavailable or failed: {daemon_exc}")
-            result = {"success": False, "error": str(daemon_exc), "via_daemon": False}
+        success = await router.route(command, args_dict)
 
-        if result['success']:
-            if result.get('data'):
-                console.print(result['data'])
-
-            via_daemon = " (via daemon)" if result.get('via_daemon') else " (direct)"
-            logger.debug(f"Command {command} executed{via_daemon}")
-        else:
-            logger.info(f"Falling back to local handler for command: {command}")
-            meta = get_command_metadata(command)
-
-            if meta and meta.cli_handler:
-                await meta.cli_handler(args, cfg_manager)
-            else:
-                logger.error(f"No local handler found for command: {command}")
-                console.print(f"[red]Error executing command: {result.get('error')}[/]")
+        return 0 if success else 1
 
     except ValueError as e:
-        logger.error(f"Unrecognized command: {e}")
-        console.print(f"[red]{e}[/]")
+        logger.error(f"Invalid command: {e}")
+        console.print(f"[red]Error: {e}[/red]")
+        return 1
 
     except Exception as e:
-        logger.error(f"Error executing command {command}: {e}")
-        console.print(f"[red]Error: {e}[/]")
-    
-    finally:
-        from src.core.database import close_database
-        await close_database()
+        logger.error(f"Command failed: {e}")
+        console.print(f"[red]Unexpected error: {e}[/red]")
+        return 1
 
-@log_call
-def main() -> None:
-    """Main CLI entry point"""
-    from rich.console import Console
-    
+
+def main() -> int:
+    """Main CLI entry point.
+
+    Returns:
+        Exit code
+    """
     console = Console()
-    parser = setup_argument_parser()
-    args = parser.parse_args()
-
-    if not hasattr(args, 'command') or args.command is None:
-        console.print("[yellow]No command provided. Showing help:[/]")
-        parser.print_help()
-        sys.exit(2)
 
     try:
-        cfg_manager = ConfigManager()
+        parser = setup_argument_parser()
+        args = parser.parse_args()
 
-    except Exception as e:
-        logger.error(f"Configuration error: {e}")
-        console.print(f"[red]Configuration error: {e}[/]")
-        sys.exit(1)
+        try:
+            ConfigManager()
+        except Exception as e:
+            logger.error(f"Configuration error: {e}")
+            console.print(f"[red]Configuration error: {e}[/red]")
+            return 1
 
-    try:
-        asyncio.run(dispatch_command(args, cfg_manager))
+        return asyncio.run(dispatch_command(args, console))
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted by user[/yellow]")
+        return 130  # Standard SIGINT exit code
 
     except Exception as e:
         logger.error(f"Fatal error: {e}")
-        console.print(f"[red]Fatal error: {e}[/]")
-        sys.exit(1)
+        console.print(f"[red]Fatal error: {e}[/red]")
+        return 1
+
 
 if __name__ == "__main__":
-    main()
+    exit(main())
