@@ -8,4 +8,4 @@ Public API:
 from .workflow import search_emails, SearchWorkflow
 from .query import SearchQuery, QueryBuilder
 
-__all__ = ['search_emails', 'SearchWorkflow', 'SearchQuery', 'QueryBuilder']
+__all__ = ["search_emails", "SearchWorkflow", "SearchQuery", "QueryBuilder"]

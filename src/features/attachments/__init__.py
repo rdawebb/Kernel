@@ -12,14 +12,14 @@ from .workflow import (
     download_all_attachments,
     list_downloads,
     open_attachment,
-    AttachmentWorkflow
+    AttachmentWorkflow,
 )
 
 __all__ = [
-    'list_attachments',
-    'download_attachment',
-    'download_all_attachments',
-    'list_downloads',
-    'open_attachment',
-    'AttachmentWorkflow',
+    "list_attachments",
+    "download_attachment",
+    "download_all_attachments",
+    "list_downloads",
+    "open_attachment",
+    "AttachmentWorkflow",
 ]

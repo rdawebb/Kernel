@@ -1,56 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "Kernel"
 version = "0.1.0"
-description = "A minimal command-line email client"
+description = "A minimal email client"
 authors = [{ name = "Rob Webb", email = "rdawebb@gmail.com" }]
-requires-python = "~=3.13.0"
+requires-python = ">=3.11"
 readme = "README.md"
 dependencies = [
-    "aioimaplib>=2.0.1",
-    "aiosmtplib>=5.0.0",
-    "aiosqlite>=0.19.0",
-    "apscheduler==3.11.0",
-    "cryptography>=41.0.0",
-    "email_validator==2.1.1",
-    "fast-mail-parser>=0.2.5",
-    "keyring>=24.0.0",
-    "pandas>=2.0.0",
-    "prompt-toolkit>=3.0.0",
-    "pydantic>=2.0.0",
-    "pytest==8.2.0",
-    "pytest-asyncio==1.2.0",
-    "python-dotenv==1.1.1",
-    "rich==14.1.0",
-    "textual==6.2.1"
+    "aiofiles>=25.1.0,<26.0.0",
+    "aioimaplib>=2.0.1,<3.0.0",
+    "aiosmtplib>=5.0.0,<6.0.0",
+    "aiosqlite>=0.22.1,<1.0.0",
+    "alembic>=1.18.0,<2.0.0",
+    "apscheduler>=3.11.2,<4.0.0",
+    "cryptography>=46.0.0,<47.0.0",
+    "email_validator>=2.3.0,<3.0.0",
+    "fast-mail-parser>=0.2.5,<1.0.0",
+    "greenlet>=3.3.0,<4.0.0",
+    "keyring>=25.7.0,<26.0.0",
+    "prompt-toolkit>=3.0.52,<4.0.0",
+    "pydantic>=2.12.0,<3.0.0",
+    "rich>=14.2.0,<15.0.0",
+    "sqlalchemy[asyncio]>=2.0.45,<3.0.0",
+    "textual>=7.2.0,<8.0.0"
 ]
 
-[project.scripts]
-kernel = "src.cli.shell:main"
+[project.optional-dependencies]
+dev = [
+    "prek>=0.2.28,<1.0.0",
+    "pytest>=9.0.0,<10.0.0",
+    "pytest-asyncio>=1.3,<2.0",
+    "pytest-cov>=7.0.0,<8.0.0",
+    "ruff>=0.14.11,<15.0.0",
+    "rust-just>=1.46.0,<2.0.0",
+    "ty>=0.0.11,<0.1.0"
+]
 
-[dependency-groups]
-dev = ["pytest>=8.0.0,<9"]
-
-[tool.hatch.build.targets.sdist]
-include = ["src/"]
-
-[tool.hatch.build.targets.wheel]
-include = ["src/"]
-
-[tool.hatch.build.targets.wheel.sources]
-"src/" = "kernel"
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.isort]
-profile = "black"
-line_length = 100
-multi_line_output = 3
-include_trailing_comma = true
-force_grid_wrap = 0
-use_parentheses = true
-ensure_newline_before_comments = true
-skip_gitignore = true
-known_first_party = ["src"]
-sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+[tool.setuptools.packages.find]
+where = ["src"]

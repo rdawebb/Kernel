@@ -6,11 +6,11 @@ from .prompts import ConfirmPrompt, InputPrompt
 from .messages import StatusMessage
 
 __all__ = [
-    'EmailTable',
-    'EmailPanel',
-    'PreviewPanel',
-    'StatusPanel',
-    'ConfirmPrompt',
-    'InputPrompt',
-    'StatusMessage',
+    "EmailTable",
+    "EmailPanel",
+    "PreviewPanel",
+    "StatusPanel",
+    "ConfirmPrompt",
+    "InputPrompt",
+    "StatusMessage",
 ]

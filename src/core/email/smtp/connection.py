@@ -234,7 +234,9 @@ class SMTPConnection:
         async with self._lock:
             if self._client:
                 try:
-                    await asyncio.wait_for(self._client.quit(), timeout=Timeouts.SMTP_QUIT)
+                    await asyncio.wait_for(
+                        self._client.quit(), timeout=Timeouts.SMTP_QUIT
+                    )
 
                     logger.debug("SMTP connection closed.")
 

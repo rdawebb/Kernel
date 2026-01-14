@@ -16,9 +16,11 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from src.core.database import EngineManager, get_config
 from src.daemon.client import get_daemon_client
 from src.utils.config import ConfigManager
 from src.utils.logging import get_logger
+from src.utils.paths import SHELL_HISTORY_PATH, DATABASE_PATH
 
 from .cli_parser import setup_argument_parser
 from .router import CommandRouter
@@ -70,17 +72,17 @@ class CommandValidator(Validator):
         """Validate command input."""
         text = document.text.strip()
         if not text:
-            raise ValidationError("Command cannot be empty", cursor_position=0)
+            raise ValidationError(cursor_position=0, message="Command cannot be empty")
 
         cmd = text.split()[0]
         if cmd not in self.all_commands:
-            raise ValidationError(f"Unknown command: {cmd}", cursor_position=0)
+            raise ValidationError(0, f"Unknown command: {cmd}")
 
 
 class KernelShell:
     """Interactive REPL shell for Kernel CLI."""
 
-    PROMPT = "Kernel > "
+    PROMPT = "🍿 Kernel > "
 
     def __init__(self, *, console: Optional[Console] = None) -> None:
         """Initialise shell."""
@@ -97,13 +99,14 @@ class KernelShell:
             )
             self.err_console = Console(stderr=True)
             self.timing_enabled = os.getenv("KERNEL_TIMING", "0") == "1"
+            self.engine_manager = EngineManager(DATABASE_PATH, get_config())
 
         if PKT_AVAILABLE:
-            history_file = os.path.expanduser("~/.kernel_cli_shell_history")
+            history_file = SHELL_HISTORY_PATH
             self.session = PromptSession(
                 history=FileHistory(history_file),
                 auto_suggest=AutoSuggestFromHistory(),
-                completer=WordCompleter(self.all_commands),
+                completer=WordCompleter(list(self.all_commands)),
                 validator=CommandValidator(self.all_commands),
                 validate_while_typing=False,
             )
@@ -141,9 +144,7 @@ class KernelShell:
         self.console.print(
             Panel(
                 Align.center(
-                    "Tip: type [bold]<command> --help[/bold] or [bold]<command> -h[/bold] to see command usage"
-                ),
-                Align.center(
+                    "Tip: type [bold]<command> --help[/bold] or [bold]<command> -h[/bold] to see command usage\n"
                     "Tip: type [bold]help[/bold] or [bold]?[/bold] to return to shell help"
                 ),
                 border_style="cyan",
@@ -196,7 +197,7 @@ class KernelShell:
                     self.router.get_available_commands().keys()
                 ).union(self.built_in_commands.keys())
                 if self.session:
-                    self.session.completer = WordCompleter(self.all_commands)
+                    self.session.completer = WordCompleter(list(self.all_commands))
                     self.session.validator = CommandValidator(self.all_commands)
 
             except Exception as e:
@@ -336,11 +337,9 @@ class KernelShell:
             logger.debug(f"Error stopping daemon: {e}")
 
         try:
-            from src.core.database import get_database
-
-            db = get_database(self.config_manager)
-            await db.connection_manager.close()
-            await asyncio.sleep(0.1)
+            if self.engine_manager is not None:
+                await self.engine_manager.close()
+                await asyncio.sleep(0.1)
         except Exception as e:
             logger.debug(f"Error closing database: {e}")
 

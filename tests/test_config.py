@@ -12,8 +12,8 @@ Tests cover:
 from src.utils.config import ConfigManager
 
 
-class TestConfigManagerInitialization:
-    """Tests for ConfigManager initialization"""
+class TestConfigManagerInitialisation:
+    """Tests for ConfigManager initialisation"""
 
     def test_config_manager_load_defaults(self):
         """Test ConfigManager loads with default values"""
@@ -120,7 +120,7 @@ class TestDatabasePathConfiguration:
     def test_database_path_is_string(self):
         """Test that database path is a string"""
         config = ConfigManager()
-        # Verify config is properly initialized
+        # Verify config is properly initialised
         assert hasattr(config, "config")
 
 

@@ -1,16 +1,41 @@
-"""
-Daemon Client - CLI interface to communicate with RendererDaemon
+"""CLI client for daemon communication via Unix socket.
 
-Handles:
-- Daemon lifecycle (start/stop/check)
-- Command communication via Unix socket
-- Circuit breaker pattern for failure management
-- Cached availability status
+Handles daemon lifecycle and command execution with resilience patterns:
+- DaemonClient: Start, stop, and communicate with the daemon
+- CircuitBreaker: Prevent cascading failures when daemon is unavailable
+- DaemonStatus: Cache availability checks to reduce overhead
+
+Features
+--------
+- Automatic daemon startup when not running
+- Circuit breaker opens after 3 consecutive failures
+- Recovery attempts after 30-second timeout
+- Cached availability status (5-second TTL)
+- Graceful fallback when daemon unavailable
+
+Usage Examples
+--------------
+
+Send a command to the daemon:
+    >>> client = DaemonClient()
+    >>> result = await client.send_command("inbox", {"limit": 10})
+    >>> print(result["data"])
+
+Check daemon status:
+    >>> if await client.is_running():
+    ...     print("Daemon is running")
+    ... else:
+    ...     await client.start()
+
+Circuit breaker status:
+    >>> if client.circuit_breaker.can_attempt():
+    ...     result = await client.send_command("search", {"query": "test"})
 """
 
 import asyncio
 import json
 import os
+import pprint
 import subprocess
 import sys
 import time
@@ -248,6 +273,16 @@ class FallbackExecutionStrategy:
 
     def __init__(self, client: "DaemonClient"):
         self.client = client
+        self.router = None
+
+    def get_router(self):
+        """Lazy load CLI CommandRouter."""
+        if self.router is None:
+            from src.cli.router import CommandRouter
+
+            self.router = CommandRouter()
+
+        return self.router
 
     async def execute(self, command: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute command directly."""
@@ -255,29 +290,26 @@ class FallbackExecutionStrategy:
         logger.debug(f"Fallback: executing command '{command}' directly")
 
         try:
-            from src.cli.router import CommandRouter
-
-            if not CommandRouter.exists(command):
-                return {
-                    "success": False,
-                    "data": None,
-                    "error": f"Unknown command: {command}",
-                    "cached": False,
-                    "metadata": {},
-                    "via_daemon": False,
-                }
-
-            handler = CommandRouter.route(command)
-            # For fallback, pass args dict and None for config_manager
-            # The handler (cli_wrapper) expects (args, config_manager)
-            result = await handler(args, None)
+            router = self.get_router()
+            success = await router.route(command, args)
 
             return {
-                "success": result.get("success", True),
-                "data": result.get("data"),
-                "error": result.get("error"),
+                "success": success,
+                "data": None,
+                "error": None,
                 "cached": False,
-                "metadata": result.get("metadata", {}),
+                "metadata": {},
+                "via_daemon": False,
+            }
+
+        except ValueError as e:
+            logger.exception(f"Unknown command error: {str(e)}")
+            return {
+                "success": False,
+                "data": None,
+                "error": str(e),
+                "cached": False,
+                "metadata": {},
                 "via_daemon": False,
             }
 
@@ -308,7 +340,7 @@ class DaemonClient:
 
     SOCKET_PATH = DAEMON_SOCKET_PATH
     PID_FILE = DAEMON_PID_PATH
-    DAEMON_SCRIPT = Path(__file__).parent / "email_daemon.py"
+    DAEMON_SCRIPT = Path(__file__).parent / "daemon.py"
 
     # Timeouts
     CONNECT_TIMEOUT = 5
@@ -537,6 +569,26 @@ class DaemonClient:
                     "metadata": {},
                     "via_daemon": False,
                 }
+
+    async def get_daemon_status(self) -> Dict[str, Any]:
+        """Check and return daemon availability status."""
+        try:
+            result = await self.execute_command("status", {})
+
+            if result["success"] and result["data"]:
+                status_data = json.loads(result["data"])
+                return status_data
+            else:
+                logger.warning(f"Failed to get daemon status: {result.get('error')}")
+                return {"error": result.get("error")}
+
+        except Exception as e:
+            logger.error(f"Error getting daemon status: {e}")
+            return {"error": str(e)}
+
+    def format_status(self, status_data: Dict[str, Any]) -> str:
+        """Format daemon status for display."""
+        return pprint.pformat(status_data, indent=2, width=100)
 
     ## Status & Debug
 

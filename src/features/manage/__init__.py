@@ -7,18 +7,6 @@ Public API:
     unflag_email(email_id, folder)
 """
 
-from .workflow import (
-    delete_email,
-    move_email,
-    flag_email,
-    unflag_email,
-    ManageWorkflow
-)
+from .workflow import delete_email, move_email, flag_email, unflag_email, ManageWorkflow
 
-__all__ = [
-    'delete_email',
-    'move_email',
-    'flag_email',
-    'unflag_email',
-    'ManageWorkflow'
-]
+__all__ = ["delete_email", "move_email", "flag_email", "unflag_email", "ManageWorkflow"]

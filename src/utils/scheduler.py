@@ -1,5 +1,7 @@
 """Scheduler for periodic tasks like backups, email sending, and cleanup"""
 
+from typing import Callable
+
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .config import ConfigManager
@@ -44,7 +46,7 @@ def _validate_interval(job_name: str, interval_tuple: tuple) -> bool:
 
 
 def _add_job_if_enabled(
-    job_func: callable, job_name: str, job_id: str, enabled: bool, interval: tuple
+    job_func: Callable, job_name: str, job_id: str, enabled: bool, interval: tuple
 ) -> bool:
     """Add job to scheduler if enabled and validated."""
 

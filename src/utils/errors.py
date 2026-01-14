@@ -42,8 +42,10 @@ class KernelError(Exception):
     category = ErrorCategory.UNKNOWN
     user_message = "An error occurred"
 
-    def __init__(self, message: str = None, details: Dict[str, Any] = None):
-        """Initialize KernelError with optional message and details."""
+    def __init__(
+        self, message: str | None = None, details: Dict[str, Any] | None = None
+    ):
+        """Initialise KernelError with optional message and details."""
         self.message = message or self.user_message
         self.details = details or {}
         super().__init__(self.message)
@@ -60,7 +62,6 @@ class KernelError(Exception):
 
 ## Database Errors
 
-
 class DatabaseError(KernelError):
     """Base exception for database-related errors."""
 
@@ -68,10 +69,22 @@ class DatabaseError(KernelError):
     user_message = "A database error occurred"
 
 
+class BackupError(DatabaseError):
+    """Base exception for backup-related errors."""
+
+    user_message = "A backup error occurred"
+
+
 class DatabaseConnectionError(DatabaseError):
     """Exception for database connection failures."""
 
     user_message = "Failed to connect to the database"
+
+
+class DatabaseTransactionError(DatabaseError):
+    """Exception for database transaction failures."""
+
+    user_message = "A database transaction error occurred"
 
 
 class EmailNotFoundError(DatabaseError):

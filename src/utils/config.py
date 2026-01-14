@@ -106,7 +106,7 @@ class ConfigManager:
 
     _instance: Optional["ConfigManager"] = None
     _lock = threading.Lock()
-    _initialized = False
+    _initialised = False
 
     CURRENT_VERSION = "0.1.0"
 
@@ -121,13 +121,13 @@ class ConfigManager:
         return cls._instance
 
     def __init__(self, config_path: Optional[Path] = None):
-        """Initialize ConfigManager, loading config from file."""
+        """Initialise ConfigManager, loading config from file."""
 
-        if ConfigManager._initialized:
+        if ConfigManager._initialised:
             return
 
         with self._lock:
-            if ConfigManager._initialized:
+            if ConfigManager._initialised:
                 return
 
             self.path = config_path or CONFIG_PATH
@@ -135,7 +135,7 @@ class ConfigManager:
             self._write_lock = threading.Lock()
 
             logger.info(f"Configuration loaded from {self.path}")
-            ConfigManager._initialized = True
+            ConfigManager._initialised = True
 
     @log_call
     def _load_or_create_config(self) -> AppConfig:

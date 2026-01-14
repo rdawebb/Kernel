@@ -10,9 +10,9 @@ from .workflow import view_email, view_inbox, view_folder, ViewWorkflow
 from .filters import EmailFilters
 
 __all__ = [
-    'view_email',
-    'view_inbox', 
-    'view_folder',
-    'ViewWorkflow',
-    'EmailFilters',
+    "view_email",
+    "view_inbox",
+    "view_folder",
+    "ViewWorkflow",
+    "EmailFilters",
 ]

@@ -7,4 +7,4 @@ Public API:
 
 from .workflow import sync_emails, refresh_folder, SyncWorkflow
 
-__all__ = ['sync_emails', 'refresh_folder', 'SyncWorkflow']
+__all__ = ["sync_emails", "refresh_folder", "SyncWorkflow"]

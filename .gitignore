@@ -22,12 +22,20 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Cache
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.pytest_cache/
+*.ruff_cache/
+
 # PyInstaller
 *.manifest
 *.spec
 
 # Development files
-*.md
+dev/
 
 # Unit test / coverage reports
 htmlcov/

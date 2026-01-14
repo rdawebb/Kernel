@@ -2,7 +2,7 @@
 Comprehensive tests for storage_api database operations
 
 Tests cover:
-- Database initialization and management
+- Database initialisation and management
 - CRUD operations on all email tables
 - Search functionality
 - Email marking (flagged/unflagged)
@@ -18,14 +18,14 @@ from .test_helpers import DatabaseTestHelper
 
 
 class TestDatabaseManagement:
-    """Tests for database initialization and connection management"""
+    """Tests for database initialisation and connection management"""
 
-    def test_initialize_db_creates_tables(self, temp_db, mock_config):
-        """Test that initialize_db creates all required tables"""
+    def test_initialise_db_creates_tables(self, temp_db, mock_config):
+        """Test that initialise_db creates all required tables"""
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
 
             conn = storage_api.get_db_connection()
             cursor = conn.cursor()
@@ -45,7 +45,7 @@ class TestDatabaseManagement:
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
             conn = storage_api.get_db_connection()
 
             assert conn is not None
@@ -61,7 +61,7 @@ class TestEmailCRUDOperations:
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
 
             email = DatabaseTestHelper.create_mock_email(uid="test_uid_1")
             storage_api.save_email_to_table("inbox", email)
@@ -74,7 +74,7 @@ class TestEmailCRUDOperations:
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
 
             email = DatabaseTestHelper.create_mock_email()
             storage_api.save_email_to_table("inbox", email)
@@ -97,7 +97,7 @@ class TestEmailSearch:
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
 
             email = DatabaseTestHelper.create_mock_email(subject="Important Meeting")
             storage_api.save_email_to_table("inbox", email)
@@ -114,7 +114,7 @@ class TestEmailFlagging:
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
 
             email = DatabaseTestHelper.create_mock_email(uid="test_flag", flagged=False)
             storage_api.save_email_to_table("inbox", email)
@@ -129,7 +129,7 @@ class TestEmailFlagging:
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
 
             email = DatabaseTestHelper.create_mock_email(
                 uid="test_unflag", flagged=True
@@ -150,7 +150,7 @@ class TestEmailMovement:
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
 
             email = DatabaseTestHelper.create_mock_email()
             storage_api.save_email_to_table("inbox", email)
@@ -176,7 +176,7 @@ class TestPendingEmailStatus:
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
 
             # Should not crash with empty database
             pending = storage_api.get_pending_emails()
@@ -191,7 +191,7 @@ class TestDatabaseBackupExport:
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
 
             email = DatabaseTestHelper.create_mock_email()
             storage_api.save_email_to_table("inbox", email)
@@ -209,7 +209,7 @@ class TestGetHighestUID:
         with patch(
             "src.core.db_manager.DatabaseManager.get_db_path", return_value=temp_db
         ):
-            storage_api.initialize_db()
+            storage_api.initialise_db()
 
             emails = DatabaseTestHelper.create_mock_emails(3)
             for email in emails:

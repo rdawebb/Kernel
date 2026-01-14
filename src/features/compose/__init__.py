@@ -14,7 +14,7 @@ Public API:
 Example:
     >>> from src.features.compose import compose_email
     >>> success = await compose_email()
-    
+
     >>> # Or with custom console:
     >>> from rich.console import Console
     >>> console = Console()
@@ -25,8 +25,8 @@ from .workflow import compose_email, CompositionWorkflow
 from .input import CompositionInputManager
 
 __all__ = [
-    'compose_email',           # Main entry point
-    'CompositionWorkflow',     # Full workflow class
-    'CompositionDisplay',      # Display components
-    'CompositionInputManager', # Input collection
+    "compose_email",  # Main entry point
+    "CompositionWorkflow",  # Full workflow class
+    "CompositionDisplay",  # Display components
+    "CompositionInputManager",  # Input collection
 ]
