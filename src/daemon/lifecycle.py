@@ -40,12 +40,14 @@ from typing import Any, Dict, Optional
 from rich.console import Console
 
 from security.key_store import KeyStore
+from src.core.database import EngineManager, get_config
 from src.daemon.auth import DaemonAuth, get_auth_metrics
 from src.daemon.cache import CacheManager
 from src.daemon.pools import ConnectionPoolManager, get_pool_metrics
 from src.utils.config import ConfigManager
 from src.utils.errors import DatabaseError, KernelError
 from src.utils.logging import get_logger, log_event
+from src.utils.paths import DATABASE_PATH
 
 logger = get_logger(__name__)
 
@@ -104,9 +106,7 @@ class EmailDaemon:
             self.config = ConfigManager()
             self.keystore = KeyStore()
 
-            from src.core.database import get_database
-
-            self.db = get_database(self.config)
+            self.engine_manager = EngineManager(DATABASE_PATH, get_config())
 
             self.connections = ConnectionPoolManager(self.config, self.keystore)
             self.cache = CacheManager(max_entries=50, ttl_seconds=60)
@@ -129,7 +129,7 @@ class EmailDaemon:
 
             from src.cli.router import CommandRouter
 
-            self.router = CommandRouter(self)
+            self.router = CommandRouter(self.console)
 
             self.logger.info("EmailDaemon initialised successfully")
             log_event(

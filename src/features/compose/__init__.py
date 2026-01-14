@@ -21,6 +21,7 @@ Example:
     >>> success = await compose_email(console=console)
 """
 
+from .display import CompositionDisplay
 from .workflow import compose_email, CompositionWorkflow
 from .input import CompositionInputManager
 

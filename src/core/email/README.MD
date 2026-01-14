@@ -198,7 +198,7 @@ logs sync
 2. Use 'self.\_connection.\_ensure_connection()' for client
 3. Use 'self.\_connection.\_check_response()' for validation
 4. Use constants from 'constants.py' for timeouts
-5. Add stuctured logging with operation context
+5. Add structured logging with operation context
 6. Add to '**all**' exports in 'imap/**init**.py'
 
 ### Adding New SMTP Operations
@@ -207,7 +207,7 @@ logs sync
 2. Use 'self.\_connection.\_ensure_connection()' for client
 3. Implement retry logic for transient errors
 4. Track in connection stats
-5. Add stuctured logging with operation context
+5. Add structured logging with operation context
 6. Add to '**all**' exports in 'imap/**init**.py'
 
 ### Modifying Parser
@@ -216,4 +216,4 @@ logs sync
 2. Add field extraction helper (e.g. '\_extract_new_field()')
 3. Ensure lenient mode returns None on failure
 4. Add unit tests for edge cases
-5. Update doctsrings with new field info
+5. Update docstrings with new field info

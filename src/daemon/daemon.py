@@ -56,8 +56,12 @@ async def run_daemon() -> None:
 
         daemon = EmailDaemon()
         logger.info("Initialising database...")
-        await daemon.db._initialise()
-        logger.info("Database initialised")
+        if daemon.db is not None and hasattr(daemon.db, "_initialise"):
+            await daemon.db._initialise()
+            logger.info("Database initialised")
+        else:
+            logger.error("daemon.db is None or missing _initialise method")
+            raise AttributeError("daemon.db is None or missing _initialise method")
 
         init_duration = time.time() - init_start
         logger.info(f"Daemon initialisation took {init_duration:.2f}s")

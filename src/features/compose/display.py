@@ -6,7 +6,7 @@ from rich.console import Console
 from src.ui.components import PreviewPanel, StatusPanel
 
 
-class ComposeDisplay:
+class CompositionDisplay:
     """Coordinates display for compose feature."""
 
     def __init__(self, console: Optional[Console] = None):

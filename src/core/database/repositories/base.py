@@ -6,7 +6,7 @@ from typing import Callable, Generic, List, Optional, TypeVar
 
 from src.core.models.email import FolderName
 
-from .email import BatchResult
+from .batch_result import BatchResult
 
 T = TypeVar("T")
 ID = TypeVar("ID")

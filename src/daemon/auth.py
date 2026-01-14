@@ -111,14 +111,14 @@ class DaemonAuth:
                 return None
 
     @classmethod
-    async def verify_token(cls, provided_token: str, client_info: dict = None) -> bool:
+    async def verify_token(cls, provided_token: str, client_info: dict | None) -> bool:
         """Verify a provided authentication token against the stored token"""
         if not provided_token:
             _auth_metrics["verifications_failure"] += 1
             logger.warning(
                 "No token provided for verification", extra={"client": client_info}
             )
-            cls._audit_log_failure("no_token", client_info)
+            cls._audit_log_failure("no_token", client_info or {})
             return False
 
         stored_token = await cls.get_token()
@@ -137,7 +137,7 @@ class DaemonAuth:
         else:
             _auth_metrics["verifications_failure"] += 1
             logger.warning("Token verification failed", extra={"client": client_info})
-            cls._audit_log_failure("invalid_token", client_info)
+            cls._audit_log_failure("invalid_token", client_info or {})
 
         return is_valid
 
@@ -160,7 +160,7 @@ class DaemonAuth:
             return token
 
     @classmethod
-    async def rotate_if_expired(cls, max_age_hours: int = None) -> bool:
+    async def rotate_if_expired(cls, max_age_hours: int | None) -> bool:
         """Rotate the token if it is older than max_age_hours"""
         max_age = max_age_hours or cls.MAX_TOKEN_AGE_HOURS
 
@@ -178,13 +178,13 @@ class DaemonAuth:
         return False
 
     @classmethod
-    def _audit_log_failure(cls, reason: str, client_info: dict = None) -> None:
+    def _audit_log_failure(cls, reason: str, client_info: dict) -> None:
         """Log authentication failure for auditing purposes"""
         log_event(
             "daemon_auth_failure",
             {
                 "reason": reason,
-                "client_pid": client_info.get("pid") if client_info else None,
+                "client_pid": client_info.get("pid"),
                 "timestamp": time.time(),
             },
         )

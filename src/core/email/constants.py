@@ -5,7 +5,7 @@ Centralised configuration for:
 - Timeout settings
 - Batch sizes for bulk operations
 
-These contants ensure consistency across email handling modules and
+These constants ensure consistency across email handling modules and
 enable adjustments for performance tuning and reliability.
 
 Customisation:

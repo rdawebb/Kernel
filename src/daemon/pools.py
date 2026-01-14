@@ -217,7 +217,7 @@ class IMAPConnectionPool(EmailConnectionPool):
     DEFAULT_TIMEOUT = 300  # 5 minutes
 
     def __init__(
-        self, config: ConfigManager, key_store: KeyStore, timeout: int = None
+        self, config: ConfigManager, key_store: KeyStore, timeout: int | None
     ) -> None:
         """Initialise the IMAP connection pool"""
         super().__init__(config, key_store, timeout or self.DEFAULT_TIMEOUT)
@@ -257,7 +257,7 @@ class SMTPConnectionPool(EmailConnectionPool):
     DEFAULT_TIMEOUT = 60  # 1 minute
 
     def __init__(
-        self, config: ConfigManager, key_store: KeyStore, timeout: int = None
+        self, config: ConfigManager, key_store: KeyStore, timeout: int | None
     ) -> None:
         """Initialise the SMTP connection pool"""
         super().__init__(config, key_store, timeout or self.DEFAULT_TIMEOUT)
