@@ -5,16 +5,56 @@ from typing import Any, Dict, Optional
 
 from rich.console import Console
 
-from src.core.database import Database, get_database
-from src.core.validation import DateTimeParser, EmailValidator
+from src.core.database import EngineManager, EmailRepository
+from src.core.models.email import Email, EmailId, EmailAddress, FolderName
+from src.utils.paths import DATABASE_PATH
+from src.core.validation import EmailValidator, DateTimeParser
 from src.utils.config import ConfigManager
-from src.utils.errors import DatabaseError, KernelError, ValidationError
+from src.utils.errors import KernelError, ValidationError
 from src.utils.logging import async_log_call, get_logger
 
-from .display import ComposeDisplay
+from .display import CompositionDisplay
 from .input import CompositionInputManager
 
 logger = get_logger(__name__)
+
+
+def _create_email_from_dict(email_data: Dict[str, Any], folder: FolderName) -> Email:
+    """Convert email data dictionary to Email domain object.
+
+    Args:
+        email_data: Dictionary with email data
+        folder: Target folder for the email
+
+    Returns:
+        Email domain object
+    """
+    from datetime import datetime
+
+    # Parse datetime from date and time strings
+    date_str = email_data.get("date", datetime.now().strftime("%Y-%m-%d"))
+    time_str = email_data.get("time", datetime.now().strftime("%H:%M"))
+    received_at = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+
+    # Create email address objects
+    sender = EmailAddress(email_data["sender"])
+    recipients = [EmailAddress(email_data["recipient"])]
+
+    # For now, no attachments in composed emails
+    attachments = []
+
+    return Email(
+        id=EmailId(email_data["uid"]),
+        subject=email_data["subject"],
+        sender=sender,
+        recipients=recipients,
+        body=email_data["body"],
+        received_at=received_at,
+        attachments=attachments,
+        folder=folder,
+        is_read=False,
+        is_flagged=False,
+    )
 
 
 class EmailComposer:
@@ -66,24 +106,6 @@ class EmailComposer:
 
         return await smtp.send_email(to_email, subject, body, cc, bcc)
 
-    async def schedule_email(self, email_dict: Dict[str, Any], send_at: str) -> bool:
-        """Schedule an email to be sent at a later time"""
-        parsed_dt, error = DateTimeParser.parse_datetime(send_at)
-        if error:
-            raise ValidationError(error)
-
-        email_dict["send_at"] = parsed_dt
-        email_dict["send_status"] = "pending"
-
-        try:
-            await self.db.save_email("sent", email_dict)
-
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to schedule email: {e}")
-            raise DatabaseError("Failed to schedule email") from e
-
     def _generate_uid(self) -> str:
         """Generate a unique identifier for the email"""
         import uuid
@@ -106,7 +128,7 @@ class CompositionWorkflow:
     def __init__(
         self,
         config: ConfigManager,
-        database: Database,
+        repository: EmailRepository,
         composer: EmailComposer,
         console: Optional[Console] = None,
     ):
@@ -114,17 +136,17 @@ class CompositionWorkflow:
 
         Args:
             config: Configuration manager
-            database: Database instance
+            repository: Email repository instance
             composer: Email composer for sending
             console: Optional console for output
         """
         self.config = config
-        self.db = database
+        self.repo: EmailRepository = repository
         self.composer = composer
 
         # Initialize UI components
         self.input_manager = CompositionInputManager()
-        self.display = ComposeDisplay(console)
+        self.display = CompositionDisplay(console)
 
     async def _create_email_data(self, details: dict) -> dict:
         """Create email data structure from input details.
@@ -170,7 +192,8 @@ class CompositionWorkflow:
             True if saved successfully
         """
         try:
-            await self.db.save_email("drafts", email_data)
+            email = _create_email_from_dict(email_data, FolderName.DRAFTS)
+            await self.repo.save(email)
             logger.info(f"Draft saved: {email_data.get('uid')}")
             return True
         except Exception as e:
@@ -189,8 +212,8 @@ class CompositionWorkflow:
             True if saved successfully
         """
         try:
-            email_data["sent_status"] = status
-            await self.db.save_email("sent", email_data)
+            email = _create_email_from_dict(email_data, FolderName.SENT)
+            await self.repo.save(email)
             logger.info(f"Email saved to sent folder: {email_data.get('uid')}")
             return True
         except Exception as e:
@@ -239,12 +262,30 @@ class CompositionWorkflow:
             True if scheduled successfully
         """
         try:
-            await self.composer.schedule_email(email_data, send_time)
+            # Validate the send time format
+            parsed_dt, error = DateTimeParser.parse_datetime(send_time)
+            if error:
+                raise ValidationError(error)
+
+            # Mark email as pending with send_at timestamp
+            email_data["send_at"] = parsed_dt
+            email_data["send_status"] = "pending"
+
+            # Convert to Email object and save to sent folder
+            email = _create_email_from_dict(email_data, FolderName.SENT)
+            await self.repo.save(email)
 
             self.display.show_scheduled(send_time)
+            logger.info(
+                f"Email scheduled for sending at {send_time}: {email_data.get('uid')}"
+            )
 
             return True
 
+        except ValidationError as e:
+            logger.error(f"Schedule validation failed: {e.message}")
+            self.display.show_error(e.message)
+            return False
         except KernelError as e:
             logger.error(f"Schedule failed: {e.message}")
             self.display.show_error(e.message)
@@ -312,18 +353,21 @@ async def compose_email(console: Optional[Console] = None) -> bool:
     Returns:
         True if email was sent/scheduled successfully
     """
+    engine_mgr = EngineManager(DATABASE_PATH)
     try:
         config = ConfigManager()
-        db = get_database(config)
+        repo = EmailRepository(engine_mgr)
         composer = EmailComposer(config)
-        workflow = CompositionWorkflow(config, db, composer, console)
+        workflow = CompositionWorkflow(config, repo, composer, console)
         return await workflow.execute()
 
     except Exception as e:
         logger.error(f"Failed to initialize composition: {e}")
-        display = ComposeDisplay(console)
+        display = CompositionDisplay(console)
         display.show_error("Failed to initialize email composer")
         return False
+    finally:
+        await engine_mgr.close()
 
 
 ## Test Helper
@@ -336,7 +380,8 @@ def create_test_email(
     body: str = "This is a test email.",
 ) -> Dict[str, Any]:
     """Create a test email dictionary"""
-    composer = EmailComposer()
+    config = ConfigManager()
+    composer = EmailComposer(config)
 
     return composer.create_email_dict(
         recipient=recipient, subject=subject, body=body, sender=sender

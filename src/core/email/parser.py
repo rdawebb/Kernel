@@ -86,7 +86,21 @@ class EmailParser:
                 return None
 
             parsed_email = parse_email(raw_email)
-            return EmailParser._to_dict(parsed_email, uid)
+            result = EmailParser._to_dict(parsed_email, uid)
+
+            # If sender or recipient is empty, try to extract from raw email using email module
+            if not result.get("sender") or not result.get("recipient"):
+                logger.debug(
+                    f"Attempting to extract missing headers from raw email for UID {uid}"
+                )
+                backup_result = EmailParser._parse_raw_headers(raw_email, uid)
+                if backup_result:
+                    if not result.get("sender") and backup_result.get("sender"):
+                        result["sender"] = backup_result["sender"]
+                    if not result.get("recipient") and backup_result.get("recipient"):
+                        result["recipient"] = backup_result["recipient"]
+
+            return result
 
         except KernelError:
             raise
@@ -105,6 +119,34 @@ class EmailParser:
             if strict:
                 raise ValidationError(error_msg) from e
 
+            return None
+
+    @staticmethod
+    def _parse_raw_headers(raw_email: bytes, uid: str) -> Optional[Dict[str, str]]:
+        """Extract headers from raw email bytes using email module as fallback.
+
+        Args:
+            raw_email: Raw email bytes (RFC822 format)
+            uid: Unique identifier for the email
+
+        Returns:
+            Dictionary with 'sender' and 'recipient' keys, or None if parsing fails
+        """
+        try:
+            msg = email.message_from_bytes(raw_email)
+
+            sender = msg.get("From", "").strip()
+            recipient = msg.get("To", "").strip()
+
+            if sender or recipient:
+                logger.debug(
+                    f"Extracted from raw headers for UID {uid}: from='{sender}', to='{recipient}'"
+                )
+                return {"sender": sender, "recipient": recipient}
+
+            return None
+        except Exception as e:
+            logger.debug(f"Failed to extract raw headers for UID {uid}: {e}")
             return None
 
     @staticmethod
@@ -152,23 +194,69 @@ class EmailParser:
         Returns:
             Dictionary with structured email data
         """
-        sender = EmailParser._extract_address_field(parsed_email.from_)
-        recipient = EmailParser._extract_address_field(parsed_email.to)
+        # Extract email addresses from headers
+        # fast_mail_parser stores headers in a dict with capitalized keys (From, To, etc)
+        headers = EmailParser._extract_headers(parsed_email)
+
+        # Try various header key formats (case-insensitive lookup)
+        sender = ""
+        for key in headers:
+            if key.lower() == "from":
+                sender = EmailParser._extract_address_field(headers[key])
+                break
+
+        recipient = ""
+        for key in headers:
+            if key.lower() == "to":
+                recipient = EmailParser._extract_address_field(headers[key])
+                break
+
         attachments = EmailParser._extract_attachments(parsed_email.attachments)
-        date_str, time_str = EmailParser._extract_datetime(parsed_email.date)
+
+        # Use date from parsed_email, fall back to headers if empty
+        date_obj = parsed_email.date
+        if not date_obj:
+            for key in headers:
+                if key.lower() == "date":
+                    date_obj = headers[key]
+                    break
+
+        received_at = EmailParser._extract_datetime(date_obj)
         body = EmailParser._extract_body(parsed_email)
+
+        # Debug: log if sender is empty
+        if not sender:
+            logger.warning(f"UID {uid}: No sender extracted. Headers: {headers}")
 
         return {
             "uid": uid,
             "subject": parsed_email.subject or "",
             "sender": sender,
             "recipient": recipient,
-            "date": date_str,
-            "time": time_str,
+            "received_at": received_at,
             "body": body,
             "attachments": attachments,
-            "flagged": 0,
         }
+
+    @staticmethod
+    def _extract_headers(parsed_email: Any) -> Dict[str, str]:
+        """Safely extract headers from parsed email
+
+        Args:
+            parsed_email: Parsed email object from fast_mail_parser
+
+        Returns:
+            Dictionary of headers with lowercase keys for From/To/Subject
+        """
+        try:
+            if hasattr(parsed_email, "headers") and parsed_email.headers:
+                headers = parsed_email.headers
+                # Normalise keys to lowercase
+                return {k.lower(): v for k, v in headers.items()}
+            return {}
+        except Exception as e:
+            logger.warning(f"Failed to extract headers: {e}")
+            return {}
 
     @staticmethod
     def _extract_address_field(field: Any) -> str:
@@ -219,41 +307,50 @@ class EmailParser:
             return ""
 
     @staticmethod
-    def _extract_datetime(date_obj: Any) -> tuple[str, str]:
-        """Safely extract date and time strings from date object
+    def _extract_datetime(date_obj: Any) -> datetime:
+        """Safely extract datetime object from date object
 
         Args:
-            date_obj: Parsed date object
+            date_obj: Parsed date object (can be string or datetime)
 
         Returns:
-            Tuple of (date_str, time_str) in format ("YYYY-MM-DD", "HH:MM")
+            datetime object, or current time if parsing fails
         """
-        if date_obj and hasattr(date_obj, "strftime"):
-            try:
-                return (date_obj.strftime("%Y-%m-%d"), date_obj.strftime("%H:%M"))
+        try:
+            # If it's a non-empty string, try to parse it as an email date
+            if isinstance(date_obj, str) and date_obj.strip():
+                from email.utils import parsedate_to_datetime
 
-            except Exception as e:
-                logger.warning(f"Failed to format date object: {e}")
+                return parsedate_to_datetime(date_obj)
 
-        now = datetime.now()
-        return (now.strftime("%Y-%m-%d"), now.strftime("%H:%M"))
+            if hasattr(date_obj, "year") and hasattr(date_obj, "month"):
+                # Already a datetime-like object
+                return date_obj
+
+        except Exception as e:
+            logger.debug(f"Failed to parse date object: {e}")
+
+        # Fallback to current time
+        return datetime.now()
 
     @staticmethod
     def _extract_body(parsed_email: Any) -> str:
         """Safely extract email body text
 
         Args:
-            parsed_email: Parsed email object
+            parsed_email: Parsed email object from fast_mail_parser
 
         Returns:
             Email body as text, or empty string if not available
         """
         try:
-            if hasattr(parsed_email, "text") and parsed_email.text:
-                return parsed_email.text
+            if hasattr(parsed_email, "text_plain") and parsed_email.text_plain:
+                # Join all text_plain parts
+                return "".join(parsed_email.text_plain)
 
-            if hasattr(parsed_email, "html") and parsed_email.html:
-                return parsed_email.html
+            if hasattr(parsed_email, "text_html") and parsed_email.text_html:
+                # Join all text_html parts as fallback
+                return "".join(parsed_email.text_html)
 
             return ""
 

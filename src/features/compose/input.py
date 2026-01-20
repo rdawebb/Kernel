@@ -72,7 +72,6 @@ class CompositionInputManager:
 
     def __init__(self):
         """Initialize input manager with prompt-toolkit session."""
-        self.session = PromptSession()
         self.style = Style.from_dict(
             {
                 "prompt": "cyan bold",
@@ -80,6 +79,10 @@ class CompositionInputManager:
                 "validation-toolbar": "bg:#aa0000 #ffffff",
             }
         )
+
+    def _get_session(self):
+        """Create a new PromptSession for each prompt to avoid state issues."""
+        return PromptSession(style=self.style)
 
     def _create_body_key_bindings(self) -> KeyBindings:
         """Create key bindings for body input (Ctrl+D to finish)."""
@@ -100,11 +103,11 @@ class CompositionInputManager:
             Email address or None if cancelled
         """
         try:
-            result = await self.session.prompt_async(
+            session = self._get_session()
+            result = await session.prompt_async(
                 "To: ",
                 validator=EmailAddressValidator(),
                 validate_while_typing=False,
-                style=self.style,
                 bottom_toolbar="Enter recipient email address (or Ctrl+C to cancel)",
             )
             return result.strip() if result else None
@@ -124,16 +127,17 @@ class CompositionInputManager:
             Subject string or None if cancelled
         """
         try:
-            result = await self.session.prompt_async(
+            session = self._get_session()
+            result = await session.prompt_async(
                 "Subject: ",
-                style=self.style,
                 bottom_toolbar="Enter email subject (or Ctrl+C to cancel)",
             )
 
             # Allow empty subject with confirmation
             if not result or not result.strip():
-                confirm = await self.session.prompt_async(
-                    "Subject is empty. Continue anyway? (y/n): ", style=self.style
+                session = self._get_session()
+                confirm = await session.prompt_async(
+                    "Subject is empty. Continue anyway? (y/n): "
                 )
                 if confirm.lower() not in ("y", "yes"):
                     return None
@@ -160,11 +164,11 @@ class CompositionInputManager:
         try:
             print("\n[Body - Press Ctrl+D when finished, Ctrl+C to cancel]\n")
 
-            result = await self.session.prompt_async(
+            session = self._get_session()
+            result = await session.prompt_async(
                 "",  # No prompt prefix for body
                 multiline=True,
                 key_bindings=self._create_body_key_bindings(),
-                style=self.style,
                 bottom_toolbar="Press Ctrl+D to finish, Ctrl+C to cancel",
             )
 
@@ -173,8 +177,9 @@ class CompositionInputManager:
             # Allow empty body with confirmation
             if not body:
                 print()  # Newline for better formatting
-                confirm = await self.session.prompt_async(
-                    "Body is empty. Continue anyway? (y/n): ", style=self.style
+                session = self._get_session()
+                confirm = await session.prompt_async(
+                    "Body is empty. Continue anyway? (y/n): "
                 )
                 if confirm.lower() not in ("y", "yes"):
                     return None
@@ -200,9 +205,9 @@ class CompositionInputManager:
             ISO format datetime string, empty string for immediate, or None if cancelled
         """
         try:
-            result = await self.session.prompt_async(
+            session = self._get_session()
+            result = await session.prompt_async(
                 "\nSchedule send time (or press Enter to send now): ",
-                style=self.style,
                 bottom_toolbar="Format: YYYY-MM-DD HH:MM, 'tomorrow 9am', 'in 2 hours', etc.",
             )
 
@@ -210,20 +215,22 @@ class CompositionInputManager:
                 return ""  # Send immediately
 
             # Parse and validate datetime
-            from src.core.email_handling import DateTimeParser
+            from src.core.validation import DateTimeParser
 
             parsed_dt, error = DateTimeParser.parse_datetime(result.strip())
             if error:
                 print(f"\nError: {error}")
 
-                retry = await self.session.prompt_async(
-                    "Try again? (y/n): ", style=self.style
-                )
+                session = self._get_session()
+                retry = await session.prompt_async("Try again? (y/n): ")
                 if retry.lower() in ("y", "yes"):
                     return await self.prompt_send_time()  # Recursive retry
                 return ""  # Send immediately on decline
 
-            return parsed_dt.strftime("%Y-%m-%d %H:%M")
+            if parsed_dt is not None:
+                return parsed_dt.strftime("%Y-%m-%d %H:%M")
+            else:
+                return ""  # Return empty string if parsing failed
 
         except KeyboardInterrupt:
             logger.info("Send time input cancelled - will send immediately")
@@ -243,9 +250,8 @@ class CompositionInputManager:
             True if confirmed, False otherwise
         """
         try:
-            result = await self.session.prompt_async(
-                f"{message} (y/n): ", style=self.style
-            )
+            session = self._get_session()
+            result = await session.prompt_async(f"{message} (y/n): ")
             return result.strip().lower() in ("y", "yes")
 
         except KeyboardInterrupt:

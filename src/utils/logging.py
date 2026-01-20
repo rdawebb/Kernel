@@ -61,7 +61,11 @@ class JSONFormatter(logging.Formatter):
 class ContextAdapter(logging.LoggerAdapter):
     """Logger adapter to add contextual information."""
 
-    def process(self, msg: str, kwargs: dict) -> tuple[str, dict]:
+    from typing import Any, MutableMapping
+
+    def process(
+        self, msg: Any, kwargs: MutableMapping[str, Any]
+    ) -> tuple[Any, MutableMapping[str, Any]]:
         if "extra" not in kwargs:
             kwargs["extra"] = {}
 
@@ -324,8 +328,14 @@ class LogManager:
         except Exception as e:
             raise FileSystemError(f"Failed to setup logging handlers: {str(e)}") from e
 
-    def get_logger(self, name: Optional[str] = None, **context) -> logging.Logger:
-        """Get a logger with optional context."""
+    def get_logger(
+        self, name: Optional[str] = None, **context
+    ) -> logging.Logger | ContextAdapter:
+        """Get a logger with optional context.
+
+        Returns:
+            logging.Logger or ContextAdapter: Logger instance, possibly wrapped with context.
+        """
 
         if _log_manager is None:
             init_logging()
@@ -435,20 +445,25 @@ def init_logging(log_level: str = "INFO") -> LogManager:
     return _log_manager
 
 
-def get_logger(name: Optional[str] = None, **context) -> logging.Logger:
+def get_logger(
+    name: Optional[str] = None, **context
+) -> logging.Logger | ContextAdapter:
     """Get a logger instance with optional context."""
 
+    global _log_manager
     if _log_manager is None:
-        init_logging()
+        _log_manager = init_logging()
 
+    # _log_manager is guaranteed to be LogManager here
     return _log_manager.get_logger(name, **context)
 
 
 def log_event(event_type: str, message, **extra):
     """Log an event with specific type and extra context (module-level wrapper)."""
 
+    global _log_manager
     if _log_manager is None:
-        init_logging()
+        _log_manager = init_logging()
 
     # Handle both string messages and dict-based messages
     if isinstance(message, dict):

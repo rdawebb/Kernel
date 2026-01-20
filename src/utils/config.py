@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -38,7 +39,7 @@ class AccountConfig(BaseModel):
     imap_server: str = ""
     imap_port: int = 993
     smtp_server: str = ""
-    smtp_port: int = 587
+    smtp_port: int = 465
     username: str = ""
     email: str = ""
     use_tls: bool = True
@@ -158,6 +159,10 @@ class ConfigManager:
                 data = self._migrate_config(data, config_version)
 
             config = AppConfig(**data)
+
+            # Override with environment variables if present
+            config = self._load_env_overrides(config)
+
             logger.debug("Configuration successfully loaded and validated.")
             return config
 
@@ -182,6 +187,46 @@ class ConfigManager:
         except Exception as e:
             logger.exception(f"Unexpected error loading config: {e}")
             raise ConfigurationError(f"Failed to load configuration: {str(e)}") from e
+
+    @log_call
+    def _load_env_overrides(self, config: AppConfig) -> AppConfig:
+        """Load configuration overrides from environment variables.
+
+        Supports the following environment variables:
+        - IMAP_SERVER, IMAP_PORT
+        - SMTP_SERVER, SMTP_PORT
+        - EMAIL, USERNAME
+        - USE_TLS
+        """
+        # Account settings
+        if smtp_server := os.environ.get("SMTP_SERVER"):
+            config.account.smtp_server = smtp_server
+
+        if imap_server := os.environ.get("IMAP_SERVER"):
+            config.account.imap_server = imap_server
+
+        if smtp_port := os.environ.get("SMTP_PORT"):
+            try:
+                config.account.smtp_port = int(smtp_port)
+            except ValueError:
+                logger.warning(f"Invalid SMTP_PORT value: {smtp_port}, using default")
+
+        if imap_port := os.environ.get("IMAP_PORT"):
+            try:
+                config.account.imap_port = int(imap_port)
+            except ValueError:
+                logger.warning(f"Invalid IMAP_PORT value: {imap_port}, using default")
+
+        if email := os.environ.get("EMAIL"):
+            config.account.email = email
+
+        if username := os.environ.get("USERNAME"):
+            config.account.username = username
+
+        if use_tls := os.environ.get("USE_TLS"):
+            config.account.use_tls = use_tls.lower() in ("true", "1", "yes")
+
+        return config
 
     def _migrate_config(self, data: dict, from_version: str) -> dict:
         """Migrate configuration data from an older version to the current version."""

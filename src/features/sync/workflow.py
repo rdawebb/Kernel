@@ -4,8 +4,8 @@ from typing import Optional
 from rich.console import Console
 
 from src.core.email.imap.client import IMAPClient, SyncMode
-from src.core.database import Database, get_database
-from src.utils.config import ConfigManager
+from src.core.database import EngineManager, EmailRepository
+from src.utils.paths import DATABASE_PATH
 from src.utils.logging import async_log_call, get_logger
 
 from .display import SyncDisplay
@@ -18,11 +18,11 @@ class SyncWorkflow:
 
     def __init__(
         self,
-        database: Database,
+        repository: EmailRepository,
         imap_client: IMAPClient,
         console: Optional[Console] = None,
     ):
-        self.db = database
+        self.repo = repository
         self.imap = imap_client
         self.display = SyncDisplay(console)
 
@@ -59,13 +59,19 @@ class SyncWorkflow:
 # Factory functions
 async def sync_emails(full: bool = False, console: Optional[Console] = None) -> bool:
     """Sync emails from server."""
-    config = ConfigManager()
-    db = get_database(config)
-    imap = IMAPClient(config)
-    workflow = SyncWorkflow(db, imap, console)
+    from src.utils.config import ConfigManager
 
-    mode = SyncMode.FULL if full else SyncMode.INCREMENTAL
-    return await workflow.sync(mode)
+    config = ConfigManager()
+    engine_mgr = EngineManager(DATABASE_PATH)
+    try:
+        repo = EmailRepository(engine_mgr)
+        imap = IMAPClient(config)
+        workflow = SyncWorkflow(repo, imap, console)
+
+        mode = SyncMode.FULL if full else SyncMode.INCREMENTAL
+        return await workflow.sync(mode)
+    finally:
+        await engine_mgr.close()
 
 
 async def refresh_folder(

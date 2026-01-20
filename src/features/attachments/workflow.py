@@ -4,8 +4,8 @@ from typing import Optional
 from rich.console import Console
 
 from src.core.attachments import AttachmentManager
-from src.core.database import Database, get_database
-from src.utils.config import ConfigManager
+from src.core.database import EngineManager, EmailRepository
+from src.utils.paths import DATABASE_PATH
 from src.utils.logging import async_log_call, get_logger
 
 from .display import AttachmentDisplay
@@ -18,11 +18,11 @@ class AttachmentWorkflow:
 
     def __init__(
         self,
-        database: Database,
+        repository: EmailRepository,
         attachment_manager: AttachmentManager,
         console: Optional[Console] = None,
     ):
-        self.db = database
+        self.repo = repository
         self.manager = attachment_manager
         self.display = AttachmentDisplay(console)
 
@@ -40,23 +40,27 @@ class AttachmentWorkflow:
             True if displayed successfully
         """
         try:
+            from src.core.models.email import EmailId, FolderName
+
             # Get email
-            email = await self.db.get_email(folder, email_id, include_body=True)
+            email_obj_id = EmailId(email_id)
+            folder_name = FolderName(folder)
+            email = await self.repo.find_by_id(email_obj_id, folder_name)
+
             if not email:
                 self.display.show_error(f"Email {email_id} not found")
                 return False
 
-            # Get attachments
-            attachments = self.manager.get_attachment_list_from_email(
-                email.get("raw_email") if "raw_email" in email else None
-            )
+            # Get attachments from email data
+            attachments = email.attachments if email.attachments else []
 
             if not attachments:
                 self.display.show_no_attachments(email_id)
                 return True
 
             # Display
-            self.display.display_list(attachments, email_id)
+            attachment_names = [a.filename for a in attachments]
+            self.display.display_list(attachment_names, email_id)
             return True
 
         except Exception as e:
@@ -79,8 +83,13 @@ class AttachmentWorkflow:
             True if downloaded successfully
         """
         try:
+            from src.core.models.email import EmailId, FolderName
+
             # Get email
-            email = await self.db.get_email(folder, email_id, include_body=True)
+            email_obj_id = EmailId(email_id)
+            folder_name = FolderName(folder)
+            email = await self.repo.find_by_id(email_obj_id, folder_name)
+
             if not email:
                 self.display.show_error(f"Email {email_id} not found")
                 return False
@@ -89,7 +98,7 @@ class AttachmentWorkflow:
             self.display.show_downloading()
 
             downloaded = self.manager.download_from_email_data(
-                email, attachment_index=index
+                email.to_dict(), attachment_index=index
             )
 
             if not downloaded:
@@ -153,48 +162,63 @@ async def list_attachments(
     email_id: str, folder: str = "inbox", console: Optional[Console] = None
 ) -> bool:
     """List attachments in an email."""
-    config = ConfigManager()
-    db = get_database(config)
-    manager = AttachmentManager(config)
-    workflow = AttachmentWorkflow(db, manager, console)
-    return await workflow.list_email_attachments(email_id, folder)
+    engine_mgr = EngineManager(DATABASE_PATH)
+    try:
+        repo = EmailRepository(engine_mgr)
+        manager = AttachmentManager()
+        workflow = AttachmentWorkflow(repo, manager, console)
+        return await workflow.list_email_attachments(email_id, folder)
+    finally:
+        await engine_mgr.close()
 
 
 async def download_attachment(
     email_id: str, index: int, folder: str = "inbox", console: Optional[Console] = None
 ) -> bool:
     """Download specific attachment."""
-    config = ConfigManager()
-    db = get_database(config)
-    manager = AttachmentManager(config)
-    workflow = AttachmentWorkflow(db, manager, console)
-    return await workflow.download(email_id, folder, index)
+    engine_mgr = EngineManager(DATABASE_PATH)
+    try:
+        repo = EmailRepository(engine_mgr)
+        manager = AttachmentManager()
+        workflow = AttachmentWorkflow(repo, manager, console)
+        return await workflow.download(email_id, folder, index)
+    finally:
+        await engine_mgr.close()
 
 
 async def download_all_attachments(
     email_id: str, folder: str = "inbox", console: Optional[Console] = None
 ) -> bool:
     """Download all attachments from email."""
-    config = ConfigManager()
-    db = get_database(config)
-    manager = AttachmentManager(config)
-    workflow = AttachmentWorkflow(db, manager, console)
-    return await workflow.download(email_id, folder, None)
+    engine_mgr = EngineManager(DATABASE_PATH)
+    try:
+        repo = EmailRepository(engine_mgr)
+        manager = AttachmentManager()
+        workflow = AttachmentWorkflow(repo, manager, console)
+        return await workflow.download(email_id, folder, None)
+    finally:
+        await engine_mgr.close()
 
 
 async def list_downloads(console: Optional[Console] = None) -> bool:
     """List all downloaded attachments."""
-    config = ConfigManager()
-    db = get_database(config)
-    manager = AttachmentManager(config)
-    workflow = AttachmentWorkflow(db, manager, console)
-    return await workflow.list_all_downloads()
+    engine_mgr = EngineManager(DATABASE_PATH)
+    try:
+        repo = EmailRepository(engine_mgr)
+        manager = AttachmentManager()
+        workflow = AttachmentWorkflow(repo, manager, console)
+        return await workflow.list_all_downloads()
+    finally:
+        await engine_mgr.close()
 
 
 async def open_attachment(filename: str, console: Optional[Console] = None) -> bool:
     """Open a downloaded attachment."""
-    config = ConfigManager()
-    db = get_database(config)
-    manager = AttachmentManager(config)
-    workflow = AttachmentWorkflow(db, manager, console)
-    return await workflow.open(filename)
+    engine_mgr = EngineManager(DATABASE_PATH)
+    try:
+        repo = EmailRepository(engine_mgr)
+        manager = AttachmentManager()
+        workflow = AttachmentWorkflow(repo, manager, console)
+        return await workflow.open(filename)
+    finally:
+        await engine_mgr.close()

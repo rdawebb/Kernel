@@ -10,7 +10,7 @@ from src.core.models.email import FolderName
 
 
 class QueryBuilder:
-    """Type-safe query builder using SQLAlchemy Core. """
+    """Type-safe query builder using SQLAlchemy Core."""
 
     @staticmethod
     def select_emails(
@@ -42,8 +42,8 @@ class QueryBuilder:
                 table.c.id,
                 table.c.uid,
                 table.c.subject,
-                table.c.sender.label("from"),
-                table.c.recipient.label("to"),
+                table.c.sender,
+                table.c.recipient,
                 table.c.date,
                 table.c.time,
                 table.c.body,
@@ -55,8 +55,8 @@ class QueryBuilder:
                 table.c.id,
                 table.c.uid,
                 table.c.subject,
-                table.c.sender.label("from"),
-                table.c.recipient.label("to"),
+                table.c.sender,
+                table.c.recipient,
                 table.c.date,
                 table.c.time,
                 table.c.attachments,
@@ -102,13 +102,10 @@ class QueryBuilder:
             SQLAlchemy Insert statement
         """
         table = get_table(folder.value)
-        
+
         query = insert(table).values(**values)
-        query = query.on_conflict_do_update(
-            constraint=table.primary_key,
-            set_=values
-        )
-        
+        query = query.on_conflict_do_update(constraint=table.primary_key, set_=values)
+
         return query
 
     @staticmethod
@@ -172,9 +169,9 @@ class QueryBuilder:
             raise ValueError("limit must be 1-10000")
         if offset < 0:
             raise ValueError("offset must be >= 0")
-    
+
         valid_fields = {"subject", "sender", "recipient", "body"}
-        
+
         if not fields.issubset(valid_fields):
             raise ValueError(f"Invalid search fields: {fields - valid_fields}")
 
@@ -196,8 +193,8 @@ class QueryBuilder:
                 table.c.id,
                 table.c.uid,
                 table.c.subject,
-                table.c.sender.label("from"),
-                table.c.recipient.label("to"),
+                table.c.sender,
+                table.c.recipient,
                 table.c.date,
                 table.c.time,
                 table.c.body,
@@ -218,7 +215,13 @@ class QueryBuilder:
             combined = union_queries[0].union_all(*union_queries[1:])
 
         # ORDER BY, LIMIT, OFFSET
-        final = combined.order_by("date DESC", "time DESC").limit(limit).offset(offset)
+        from sqlalchemy import desc, text
+
+        final = (
+            combined.order_by(desc(text("date")), desc(text("time")))
+            .limit(limit)
+            .offset(offset)
+        )
 
         return final
 
@@ -254,6 +257,7 @@ class QueryBuilder:
                 clauses.append(column == value)
 
         from sqlalchemy import true
+
         return and_(*clauses) if clauses else true()
 
     @staticmethod

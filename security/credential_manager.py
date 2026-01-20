@@ -58,13 +58,21 @@ class CredentialManager:
         """
         account_config = self.config_manager.config.account
 
-        if not account_config.email or not account_config.username:
-            logger.warning("Email or username not configured, prompting user...")
+        if (
+            not account_config.email
+            or not account_config.username
+            or not account_config.smtp_server
+            or not account_config.imap_server
+        ):
+            logger.warning("Account configuration incomplete, prompting user...")
 
             if not await self._prompt_for_account_info():
-                raise MissingCredentialsError("Email or username are required.")
+                raise MissingCredentialsError("Account configuration is required.")
 
-        password = self.keystore.retrieve(account_config.username)
+        # Initialize keystore before use
+        await self.keystore.initialise()
+
+        password = await self.keystore.retrieve(account_config.username)
         if not password:
             logger.warning("Password not found in key store, prompting user...")
             if not await self._prompt_for_password():
@@ -73,7 +81,7 @@ class CredentialManager:
         return True
 
     async def _prompt_for_account_info(self) -> bool:
-        """Prompt user for email and username if missing.
+        """Prompt user for email, username, and mail server settings if missing.
 
         Returns:
             bool: True if account information was provided, False otherwise.
@@ -114,6 +122,67 @@ class CredentialManager:
                 else:
                     logger.info("Username defaulted to email")
 
+            # Try auto-discovery for email servers
+            if not account_config.imap_server or not account_config.smtp_server:
+                from src.utils.email_autodiscover import autodiscover_email_config
+
+                discovered = autodiscover_email_config(account_config.email)
+
+                if discovered:
+                    if not account_config.imap_server:
+                        account_config.imap_server = discovered.imap_server
+                        account_config.imap_port = discovered.imap_port
+                        self.config_manager.set_config(
+                            "account.imap_server", discovered.imap_server
+                        )
+                        self.config_manager.set_config(
+                            "account.imap_port", discovered.imap_port
+                        )
+                        logger.info(
+                            f"Auto-discovered IMAP server: {discovered.imap_server}"
+                        )
+
+                    if not account_config.smtp_server:
+                        account_config.smtp_server = discovered.smtp_server
+                        account_config.smtp_port = discovered.smtp_port
+                        self.config_manager.set_config(
+                            "account.smtp_server", discovered.smtp_server
+                        )
+                        self.config_manager.set_config(
+                            "account.smtp_port", discovered.smtp_port
+                        )
+                        logger.info(
+                            f"Auto-discovered SMTP server: {discovered.smtp_server}"
+                        )
+
+            if not account_config.imap_server:
+                with patch_stdout():
+                    account_config.imap_server = await session.prompt_async(
+                        "Enter your IMAP server (e.g., imap.gmail.com): "
+                    )
+
+                if not account_config.imap_server:
+                    logger.error("No IMAP server provided.")
+                    return False
+
+                self.config_manager.set_config(
+                    "account.imap_server", account_config.imap_server
+                )
+
+            if not account_config.smtp_server:
+                with patch_stdout():
+                    account_config.smtp_server = await session.prompt_async(
+                        "Enter your SMTP server (e.g., smtp.gmail.com): "
+                    )
+
+                if not account_config.smtp_server:
+                    logger.error("No SMTP server provided.")
+                    return False
+
+                self.config_manager.set_config(
+                    "account.smtp_server", account_config.smtp_server
+                )
+
             logger.info("Account information updated successfully.")
             return True
 
@@ -146,7 +215,7 @@ class CredentialManager:
                 logger.error("No password provided.")
                 return False
 
-            self.keystore.store(account_config.username, password)
+            await self.keystore.store(account_config.username, password)
             logger.info("Password stored securely.")
             return True
 
@@ -165,7 +234,7 @@ class CredentialManager:
         logger.warning("Authentication failed, prompting user to re-enter credentials.")
 
         try:
-            self.keystore.delete(account_config.username)
+            await self.keystore.delete(account_config.username)
             logger.info("Deleted stored password due to auth failure.")
 
         except Exception as e:

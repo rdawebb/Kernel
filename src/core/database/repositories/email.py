@@ -1,7 +1,7 @@
 """Email repository with SQLAlchemy Core queries."""
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, List, Optional
 
@@ -24,11 +24,9 @@ logger = get_logger(__name__)
 
 
 @dataclass
-
-
 class EmailRepository(Repository[Email, EmailId, FolderName]):
     """Repository for Email entities using SQLAlchemy Core.
-    
+
     Provides CRUD operations with:
     - Type-safe queries (no SQL injection)
     - Batch operations with progress callbacks
@@ -113,7 +111,9 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
             for i in range(0, len(folder_entities), batch_size):
                 # Check cancellation
                 if cancel_token and cancel_token.is_set():
-                    logger.info(f"Batch operation cancelled at {result.succeeded}/{result.total}")
+                    logger.info(
+                        f"Batch operation cancelled at {result.succeeded}/{result.total}"
+                    )
                     break
 
                 batch = folder_entities[i : i + batch_size]
@@ -256,6 +256,32 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
 
             return count > 0
 
+    async def exists_batch(self, ids: List[str], context: FolderName) -> dict:
+        """Check which UIDs exist in folder (batch operation).
+
+        Args:
+            ids: List of email UIDs to check
+            context: Folder to check
+
+        Returns:
+            Dictionary mapping UID -> bool (True if exists)
+        """
+        if not ids:
+            return {}
+
+        engine = await self.engine_mgr.get_engine()
+        table = get_table(context.value)
+
+        # Single query to get all existing UIDs
+        query = select(table.c.uid).select_from(table).where(table.c.uid.in_(ids))
+
+        async with engine.connect() as conn:
+            result = await conn.execute(query)
+            existing_uids = {row.uid for row in result}
+
+        # Return dict mapping each ID to whether it exists
+        return {uid: uid in existing_uids for uid in ids}
+
     async def move(
         self, id: EmailId, from_folder: FolderName, to_folder: FolderName
     ) -> None:
@@ -299,7 +325,9 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
             delete_query = delete(src_table).where(src_table.c.uid == id.value)
             await tx.connection.execute(delete_query)
 
-        logger.info(f"Moved email {id.value} from {from_folder.value} to {to_folder.value}")
+        logger.info(
+            f"Moved email {id.value} from {from_folder.value} to {to_folder.value}"
+        )
 
     async def count(self, folder: FolderName) -> int:
         """Count total emails in folder.
@@ -351,6 +379,40 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
                 )
 
         logger.debug(f"Set flagged={flagged} for {id.value} in {folder.value}")
+
+    async def get_highest_uid(self, folder: FolderName) -> int:
+        """Get the highest UID in a folder for incremental sync.
+
+        Args:
+            folder: Folder to check
+
+        Returns:
+            Highest UID as integer, or 0 if no emails in folder
+
+        Raises:
+            DatabaseError: If query fails
+        """
+        try:
+            from sqlalchemy import cast, Integer
+
+            engine = await self.engine_mgr.get_engine()
+            table = get_table(folder.value)
+
+            # Cast UID to integer for proper numeric comparison
+            query = select(func.max(cast(table.c.uid, Integer))).select_from(table)
+
+            async with engine.connect() as conn:
+                result = await conn.execute(query)
+                max_uid = result.scalar()
+
+                if max_uid is None:
+                    return 0
+
+                return int(max_uid)
+
+        except Exception as e:
+            logger.error(f"Failed to get highest UID from {folder.value}: {e}")
+            return 0
 
     # Helper methods for domain model <-> database row conversion
 

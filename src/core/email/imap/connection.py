@@ -122,7 +122,9 @@ class IMAPConnection:
                     logger.info(
                         "IMAP connection expired, reconnecting",
                         extra={
-                            "age_seconds": time.time() - self._connection_created_at,
+                            "age_seconds": (time.time() - self._connection_created_at)
+                            if self._connection_created_at is not None
+                            else None,
                             "ttl": self._connection_ttl,
                             "operations": self._stats.operations_count,
                         },
@@ -148,7 +150,9 @@ class IMAPConnection:
                     logger.debug(
                         "IMAP connection health check passed",
                         extra={
-                            "age_seconds": time.time() - self._connection_created_at,
+                            "age_seconds": (time.time() - self._connection_created_at)
+                            if self._connection_created_at is not None
+                            else None,
                             "health_checks": self._stats.health_checks_passed,
                         },
                     )
@@ -160,7 +164,9 @@ class IMAPConnection:
                         "IMAP connection lost, reconnecting",
                         extra={
                             "error": str(e),
-                            "age_seconds": time.time() - self._connection_created_at,
+                            "age_seconds": (time.time() - self._connection_created_at)
+                            if self._connection_created_at is not None
+                            else None,
                             "failed_health_checks": self._stats.health_checks_failed,
                         },
                     )
@@ -201,8 +207,9 @@ class IMAPConnection:
 
         try:
             await self.credential_manager.validate_and_prompt()
+            await self.keystore.initialise()
 
-            password = self.keystore.retrieve(config.username)
+            password = await self.keystore.retrieve(config.username)
             if not password:
                 raise MissingCredentialsError("Password not found after validation")
 
@@ -250,10 +257,12 @@ class IMAPConnection:
                 "IMAP authentication failed",
                 extra={"server": config.imap_server, "username": config.username},
             )
-
-            await self.credential_manager.handle_auth_failure()
-            logger.info("Retrying connection with new credentials")
-            return await self._connect()
+            # Clear the cached password so user gets prompted for the new one
+            await self.keystore.delete(config.username)
+            raise InvalidCredentialsError(
+                "Authentication failed. Please try again with the correct password.",
+                details={"server": config.imap_server, "username": config.username},
+            )
 
         except aioimaplib.AioImapException as e:
             error_msg = str(e).lower()
@@ -268,6 +277,19 @@ class IMAPConnection:
                     f"IMAP connection error: {str(e)}",
                     details={"server": config.imap_server},
                 ) from e
+
+        except IMAPError as e:
+            # Check if this is an authentication error from _check_response
+            error_msg = str(e).lower()
+            if "login" in error_msg or "authentication" in error_msg:
+                # Clear the cached password so user gets prompted for the new one
+                await self.keystore.delete(config.username)
+                raise InvalidCredentialsError(
+                    "IMAP authentication failed. Password may be incorrect.",
+                    details={"server": config.imap_server, "username": config.username},
+                ) from e
+            else:
+                raise
 
         except (MissingCredentialsError, InvalidCredentialsError):
             raise

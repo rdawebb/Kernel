@@ -106,7 +106,9 @@ class SMTPConnection:
                     logger.info(
                         "SMTP connection expired, reconnecting",
                         extra={
-                            "age_seconds": time.time() - self._connection_created_at,
+                            "age_seconds": (time.time() - self._connection_created_at)
+                            if self._connection_created_at is not None
+                            else None,
                             "ttl": self._connection_ttl,
                             "emails_sent": self._stats.emails_sent,
                         },
@@ -168,8 +170,9 @@ class SMTPConnection:
 
         try:
             await self.auth.validate_and_prompt()
+            await self.keystore.initialise()
 
-            password = self.keystore.retrieve(config.username)
+            password = await self.keystore.retrieve(config.username)
             if not password:
                 raise MissingCredentialsError("No SMTP password found in keystore.")
 
@@ -178,14 +181,28 @@ class SMTPConnection:
                 extra={"server": config.smtp_server, "port": config.smtp_port},
             )
 
-            client = aiosmtplib.SMTP(
-                hostname=config.smtp_server,
-                port=config.smtp_port,
-                timeout=30,
-                use_tls=True,
-            )
+            if config.smtp_port == 465:
+                # Implicit SSL
+                client = aiosmtplib.SMTP(
+                    hostname=config.smtp_server,
+                    port=config.smtp_port,
+                    timeout=30,
+                    use_tls=True,
+                )
+            else:
+                # STARTTLS on port 587 - explicitly disable use_tls
+                client = aiosmtplib.SMTP(
+                    hostname=config.smtp_server,
+                    port=config.smtp_port,
+                    timeout=30,
+                    use_tls=False,
+                )
 
             await asyncio.wait_for(client.connect(), timeout=Timeouts.SMTP_CONNECT)
+
+            # If not using implicit SSL, perform STARTTLS handshake
+            if config.smtp_port != 465:
+                await asyncio.wait_for(client.starttls(), timeout=Timeouts.SMTP_CONNECT)
 
             await asyncio.wait_for(
                 client.login(config.username, password), timeout=Timeouts.SMTP_LOGIN
@@ -251,7 +268,7 @@ class SMTPConnection:
 
     async def __aenter__(self):
         """Enter async context manager."""
-        await self.connect()
+        await self._ensure_connection()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

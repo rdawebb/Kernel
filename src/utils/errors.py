@@ -11,7 +11,7 @@ _logger = None
 
 
 def _get_logger():
-    """Get logger with lazy initialization."""
+    """Get logger with lazy initialisation."""
     global _logger
     if _logger is None:
         _logger = get_logger(__name__)
@@ -61,6 +61,7 @@ class KernelError(Exception):
 
 
 ## Database Errors
+
 
 class DatabaseError(KernelError):
     """Base exception for database-related errors."""
