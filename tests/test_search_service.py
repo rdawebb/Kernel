@@ -26,14 +26,14 @@ async def test_db():
     """Create temporary test database."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = Path(f.name)
-    
+
     # Create engine and tables
     engine = create_engine(db_path, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(metadata.create_all)
-    
+
     yield db_path
-    
+
     # Cleanup
     await engine.dispose()
     db_path.unlink(missing_ok=True)
@@ -44,9 +44,9 @@ async def search_service(test_db):
     """Create SearchService with test database."""
     engine_mgr = EngineManager(test_db)
     service = SearchService(engine_mgr)
-    
+
     yield service
-    
+
     await engine_mgr.close()
 
 
@@ -55,7 +55,7 @@ async def populated_db(test_db):
     """Create database with sample emails."""
     engine_mgr = EngineManager(test_db)
     repo = EmailRepository(engine_mgr)
-    
+
     # Create sample emails
     emails = [
         Email(
@@ -106,12 +106,12 @@ async def populated_db(test_db):
             is_read=True,
         ),
     ]
-    
+
     for email in emails:
         await repo.save(email)
-    
+
     await engine_mgr.close()
-    
+
     return test_db
 
 
@@ -120,16 +120,16 @@ async def test_basic_keyword_search(populated_db):
     """Test basic keyword search."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     # Search for "meeting"
     result = await service.search_in_folder(
         FolderName.INBOX,
         "meeting",
     )
-    
+
     assert len(result) == 1
     assert result[0].subject == "Important meeting"
-    
+
     await engine_mgr.close()
 
 
@@ -138,12 +138,12 @@ async def test_multi_folder_search(populated_db):
     """Test searching across multiple folders."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     # Search for "meeting" in all folders
     result = await service.search_all_folders("meeting")
-    
+
     assert len(result) == 2  # One in inbox, one in sent
-    
+
     await engine_mgr.close()
 
 
@@ -152,17 +152,17 @@ async def test_field_specific_search(populated_db):
     """Test searching in specific fields."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     # Search for "boss" in sender field only
     result = await service.search_in_folder(
         FolderName.INBOX,
         "boss",
         fields={"sender"},
     )
-    
+
     assert len(result) == 1
     assert "boss@company.com" in str(result[0].sender)
-    
+
     await engine_mgr.close()
 
 
@@ -171,22 +171,22 @@ async def test_advanced_search_with_filters(populated_db):
     """Test advanced search with multiple filters."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     # Search for flagged emails from boss
     filters = [
         SearchFilter("sender", SearchOperator.CONTAINS, "boss"),
         SearchFilter("flagged", SearchOperator.EQUALS, True),
     ]
-    
+
     result = await service.advanced_search(
         filters=filters,
         folders=[FolderName.INBOX],
     )
-    
+
     assert len(result.emails) == 1
     assert result.emails[0].subject == "Important meeting"
     assert result.emails[0].is_flagged is True
-    
+
     await engine_mgr.close()
 
 
@@ -195,20 +195,20 @@ async def test_date_range_search(populated_db):
     """Test searching with date filters."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     # Search for emails on or after 2024-01-15
     filters = [
         SearchFilter("date", SearchOperator.GREATER_EQUAL, "2024-01-15"),
     ]
-    
+
     result = await service.advanced_search(
         filters=filters,
         folders=[FolderName.INBOX],
     )
-    
+
     assert len(result.emails) == 1
     assert result.emails[0].received_at.date() >= datetime(2024, 1, 15).date()
-    
+
     await engine_mgr.close()
 
 
@@ -217,22 +217,22 @@ async def test_search_with_operators(populated_db):
     """Test different search operators."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     # Test STARTS_WITH
     filters = [SearchFilter("subject", SearchOperator.STARTS_WITH, "Project")]
     result = await service.advanced_search(filters, folders=[FolderName.INBOX])
     assert len(result.emails) == 1
-    
+
     # Test CONTAINS
     filters = [SearchFilter("subject", SearchOperator.CONTAINS, "update")]
     result = await service.advanced_search(filters, folders=[FolderName.INBOX])
     assert len(result.emails) == 1
-    
+
     # Test NOT_EQUALS
     filters = [SearchFilter("is_read", SearchOperator.NOT_EQUALS, True)]
     result = await service.advanced_search(filters, folders=[FolderName.INBOX])
     assert len(result.emails) == 2  # Two unread emails
-    
+
     await engine_mgr.close()
 
 
@@ -241,7 +241,7 @@ async def test_search_query_builder(populated_db):
     """Test fluent query builder API."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     # Build query using fluent API
     query = (
         SearchQueryBuilder()
@@ -251,13 +251,13 @@ async def test_search_query_builder(populated_db):
         .limit(10)
         .build()
     )
-    
+
     result = await service.search(query)
-    
+
     assert len(result.emails) == 1
     assert result.emails[0].subject == "Important meeting"
     assert result.total_count == 1
-    
+
     await engine_mgr.close()
 
 
@@ -266,7 +266,7 @@ async def test_search_pagination(populated_db):
     """Test search with pagination."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     # Get first 2 results
     query = SearchQuery(
         keyword="",  # Match all
@@ -276,17 +276,17 @@ async def test_search_pagination(populated_db):
     )
     result1 = await service.search(query)
     assert len(result1.emails) == 2
-    
+
     # Get next result
     query.offset = 2
     result2 = await service.search(query)
     assert len(result2.emails) == 1
-    
+
     # Verify no overlap
     ids1 = {e.id for e in result1.emails}
     ids2 = {e.id for e in result2.emails}
     assert len(ids1 & ids2) == 0
-    
+
     await engine_mgr.close()
 
 
@@ -295,7 +295,7 @@ async def test_search_ordering(populated_db):
     """Test search result ordering."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     # Order by date descending (newest first)
     query = SearchQuery(
         folders=[FolderName.INBOX],
@@ -303,11 +303,11 @@ async def test_search_ordering(populated_db):
         order_desc=True,
     )
     result = await service.search(query)
-    
+
     # Verify order
     dates = [e.received_at for e in result.emails]
     assert dates == sorted(dates, reverse=True)
-    
+
     await engine_mgr.close()
 
 
@@ -319,7 +319,7 @@ async def test_empty_search(search_service):
         FolderName.INBOX,
         "nonexistent",
     )
-    
+
     assert len(result) == 0
 
 
@@ -335,13 +335,13 @@ async def test_search_performance_logging(populated_db, caplog):
     """Test that slow queries are logged."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     # Search (should be fast, but we're testing the logging mechanism)
     result = await service.search_all_folders("meeting")
-    
+
     # Query time should be recorded
     assert result.query_time_ms >= 0
-    
+
     await engine_mgr.close()
 
 
@@ -350,16 +350,16 @@ async def test_search_result_metadata(populated_db):
     """Test search result metadata."""
     engine_mgr = EngineManager(populated_db)
     service = SearchService(engine_mgr)
-    
+
     query = SearchQuery(
         keyword="meeting",
         folders=[FolderName.INBOX, FolderName.SENT],
     )
-    
+
     result = await service.search(query)
-    
+
     assert result.total_count == len(result.emails)
     assert result.query_time_ms > 0
     assert set(result.folders_searched) == {"inbox", "sent"}
-    
+
     await engine_mgr.close()

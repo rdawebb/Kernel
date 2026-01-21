@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 class TransactionManager:
     """Manages database transactions with timeout and savepoint support.
-    
+
     Provides explicit transaction control with:
     - Automatic commit/rollback
     - Timeout enforcement
@@ -40,7 +40,7 @@ class TransactionManager:
         self.config = get_config()
         self.timeout = timeout or self.config.transaction_timeout
         self.isolation_level = isolation_level or "SERIALIZABLE"
-        
+
         self._connection: Optional[AsyncConnection] = None
         self._transaction = None
         self._start_time: Optional[float] = None
@@ -53,20 +53,20 @@ class TransactionManager:
             TransactionManager instance
         """
         self._start_time = time.time()
-        
+
         try:
             self._connection = await self.engine.connect()
-            
+
             # Begin transaction with isolation level
             self._transaction = await self._connection.begin()
-            
+
             logger.debug(
                 f"Transaction started (isolation={self.isolation_level}, "
                 f"timeout={self.timeout}s)"
             )
-            
+
             return self
-            
+
         except Exception as e:
             if self._connection:
                 await self._connection.close()
@@ -78,7 +78,7 @@ class TransactionManager:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Commit or rollback transaction."""
         duration = time.time() - self._start_time if self._start_time else 0
-        
+
         try:
             # Check timeout
             if duration > self.timeout:
@@ -91,7 +91,7 @@ class TransactionManager:
                     f"Transaction timeout after {duration:.2f}s",
                     details={"timeout": self.timeout, "duration": duration},
                 )
-            
+
             if exc_type is not None:
                 if self._transaction:
                     await self._transaction.rollback()
@@ -104,14 +104,17 @@ class TransactionManager:
                 if self._transaction:
                     await self._transaction.commit()
                 logger.debug(f"Transaction committed (duration={duration:.2f}s)")
-                
+
                 # Log slow transactions
-                if self.config.log_slow_queries and duration > self.config.slow_query_threshold:
+                if (
+                    self.config.log_slow_queries
+                    and duration > self.config.slow_query_threshold
+                ):
                     logger.warning(
                         f"Slow transaction: {duration:.2f}s "
                         f"(threshold={self.config.slow_query_threshold}s)"
                     )
-        
+
         finally:
             if self._connection:
                 await self._connection.close()
@@ -119,28 +122,28 @@ class TransactionManager:
     @property
     def connection(self) -> AsyncConnection:
         """Get the transaction's connection.
-        
+
         Returns:
             Active connection for executing queries
-            
+
         Raises:
             RuntimeError: If accessed outside transaction context
         """
         if not self._connection:
             raise RuntimeError("Connection only available within transaction context")
-        
+
         return self._connection
 
     @asynccontextmanager
     async def savepoint(self, name: Optional[str] = None):
         """Create a savepoint for nested transaction.
-        
+
         Args:
             name: Optional savepoint name (auto-generated if None)
-            
+
         Yields:
             Savepoint context manager
-            
+
         Usage:
             async with tx.savepoint() as sp:
                 await conn.execute(query)
@@ -148,14 +151,14 @@ class TransactionManager:
         """
         if not self._connection:
             raise RuntimeError("Savepoint requires active transaction")
-        
+
         self._savepoint_depth += 1
         savepoint_name = name or f"sp_{self._savepoint_depth}"
-        
+
         nested_tx = await self._connection.begin_nested()
-        
+
         logger.debug(f"Savepoint created: {savepoint_name}")
-        
+
         try:
             yield nested_tx
             await nested_tx.commit()
@@ -170,7 +173,7 @@ class TransactionManager:
 
 
 class ReadOnlyTransactionManager(TransactionManager):
-    """Read-only transaction manager that prevents writes. """
+    """Read-only transaction manager that prevents writes."""
 
     async def __aenter__(self) -> "ReadOnlyTransactionManager":
         """Start read-only transaction."""
@@ -185,19 +188,20 @@ class ReadOnlyTransactionManager(TransactionManager):
         if self._transaction:
             await self._transaction.rollback()
             logger.debug("Read-only transaction rolled back")
-        
+
         if self._connection:
             await self._connection.close()
 
 
 # Convenience factory functions
 
+
 async def transaction(
     engine: AsyncEngine,
     timeout: Optional[float] = None,
 ) -> TransactionManager:
     """Create a transaction manager (convenience function).
-    
+
     Usage:
         async with transaction(engine) as tx:
             await tx.connection.execute(query)
@@ -210,7 +214,7 @@ async def readonly_transaction(
     timeout: Optional[float] = None,
 ) -> ReadOnlyTransactionManager:
     """Create a read-only transaction manager (convenience function).
-    
+
     Usage:
         async with readonly_transaction(engine) as tx:
             result = await tx.connection.execute(select_query)

@@ -68,16 +68,12 @@ class SystemHealth:
         Returns:
             List[HealthCheckResult]: List of failed health checks
         """
-        return [
-            check
-            for check in self.checks
-            if check.status != HealthStatus.HEALTHY
-        ]
+        return [check for check in self.checks if check.status != HealthStatus.HEALTHY]
 
 
 class HealthChecker:
     """Performs comprehensive health checks on database system.
-    
+
     Checks:
     - Database connectivity
     - Connection pool health
@@ -214,7 +210,9 @@ class HealthChecker:
                     "checked_out": checked_out,
                     "pool_size": pool_size,
                     "overflow": overflow,
-                    "usage_pct": (checked_out / pool_size * 100) if pool_size > 0 else 0,
+                    "usage_pct": (checked_out / pool_size * 100)
+                    if pool_size > 0
+                    else 0,
                 },
             )
 
@@ -409,13 +407,14 @@ class HealthChecker:
 
 # Periodic health check monitor
 
+
 class HealthMonitor:
     """Periodically monitors database health in background.
-    
+
     Usage:
         monitor = HealthMonitor(engine_mgr, repo, interval=60)
         await monitor.start()
-        
+
         # Later...
         health = monitor.last_health
         await monitor.stop()

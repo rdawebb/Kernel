@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Optional
 
@@ -9,7 +10,6 @@ import aioimaplib
 
 from security.credential_manager import CredentialManager
 from security.key_store import get_keystore
-from src.core.email.constants import IMAPResponse, Timeouts
 from src.utils.config import ConfigManager
 from src.utils.errors import (
     IMAPError,
@@ -19,6 +19,8 @@ from src.utils.errors import (
     NetworkTimeoutError,
 )
 from src.utils.logging import async_log_call, get_logger
+
+from .constants import IMAPResponse, Timeouts
 
 logger = get_logger(__name__)
 
@@ -67,6 +69,33 @@ class IMAPConnection:
             3600,  # 1 hour
         )
         self._stats = ConnectionStats()
+
+    async def get_client(self) -> aioimaplib.IMAP4_SSL:
+        """Get active IMAP client instance.
+
+        Returns:
+            Active aioimaplib.IMAP4_SSL client instance
+
+        Raises:
+            asyncio.TimeoutError: If connection times out
+            InvalidCredentialsError: If credentials are invalid
+            NetworkError: If there is a network issue
+            IMAPError: If other IMAP errors occur
+        """
+        return await self._ensure_connection()
+
+    @asynccontextmanager
+    async def with_connection(self):
+        """Context manager for IMAP connection lifecycle.
+
+        Yields:
+            Active aioimaplib.IMAP4_SSL client instance
+        """
+        client = await self.get_client()
+        try:
+            yield client
+        finally:
+            pass
 
     def _check_response(self, response, operation: str) -> None:
         """Check IMAP response and raise error if not OK.

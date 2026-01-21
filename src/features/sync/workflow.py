@@ -1,11 +1,12 @@
-"""Sync workflow orchestration."""
+"""Sync workflow orchestration - CLI entry point for email synchronization."""
 
 from typing import Optional
+
 from rich.console import Console
 
-from src.core.email.imap.client import IMAPClient, SyncMode
-from src.core.database import EngineManager, EmailRepository
-from src.utils.paths import DATABASE_PATH
+from src.core.email.services.fetch import SyncMode
+from src.core.email.services.fetch_factory import EmailFetchServiceFactory
+from src.core.models.email import FolderName
 from src.utils.logging import async_log_call, get_logger
 
 from .display import SyncDisplay
@@ -13,69 +14,131 @@ from .display import SyncDisplay
 logger = get_logger(__name__)
 
 
-class SyncWorkflow:
-    """Orchestrates email synchronization."""
+@async_log_call
+async def sync_emails(
+    full: bool = False,
+    folder: str = "inbox",
+    console: Optional[Console] = None,
+) -> bool:
+    """Sync emails from server (primary CLI entry point).
 
-    def __init__(
-        self,
-        repository: EmailRepository,
-        imap_client: IMAPClient,
-        console: Optional[Console] = None,
-    ):
-        self.repo = repository
-        self.imap = imap_client
-        self.display = SyncDisplay(console)
+    Args:
+        full: If True, perform full sync; otherwise incremental
+        folder: Folder to sync (default: "inbox")
+        console: Optional Rich console for display
 
-    @async_log_call
-    async def sync(self, mode: SyncMode = SyncMode.INCREMENTAL) -> bool:
-        """Sync emails from server.
+    Returns:
+        True if sync succeeded, False otherwise
+    """
+    display = SyncDisplay(console)
+    mode = SyncMode.FULL if full else SyncMode.INCREMENTAL
 
-        Args:
-            mode: Sync mode (INCREMENTAL or FULL)
+    try:
+        folder_enum = FolderName.from_string(folder)
+    except ValueError:
+        logger.error(f"Invalid folder name: {folder}")
+        display.show_error(f"Invalid folder: {folder}")
+        return False
 
-        Returns:
-            True if synced successfully
-        """
-        try:
-            self.display.show_syncing(mode)
+    try:
+        async with EmailFetchServiceFactory.create() as service:
+            display.show_syncing(mode)
 
-            # Fetch emails
-            count = await self.imap.fetch_new_emails(mode)
+            stats = await service.fetch_new_emails(folder_enum, mode)
 
-            # Display result
-            if count > 0:
-                self.display.show_synced(count)
+            if stats.saved_count > 0:
+                display.show_synced(stats.saved_count)
             else:
-                self.display.show_no_new_emails()
+                display.show_no_new_emails()
 
             return True
 
-        except Exception as e:
-            logger.error(f"Sync failed: {e}")
-            self.display.show_error("Sync failed")
-            return False
+    except Exception as e:
+        logger.error(f"Sync failed: {e}")
+        display.show_error(f"Sync failed: {str(e)}")
+        return False
 
 
-# Factory functions
-async def sync_emails(full: bool = False, console: Optional[Console] = None) -> bool:
-    """Sync emails from server."""
-    from src.utils.config import ConfigManager
-
-    config = ConfigManager()
-    engine_mgr = EngineManager(DATABASE_PATH)
-    try:
-        repo = EmailRepository(engine_mgr)
-        imap = IMAPClient(config)
-        workflow = SyncWorkflow(repo, imap, console)
-
-        mode = SyncMode.FULL if full else SyncMode.INCREMENTAL
-        return await workflow.sync(mode)
-    finally:
-        await engine_mgr.close()
-
-
-async def refresh_folder(
-    folder: str = "inbox", console: Optional[Console] = None
+@async_log_call
+async def sync_all_folders(
+    full: bool = False,
+    console: Optional[Console] = None,
 ) -> bool:
-    """Refresh specific folder (alias for sync)."""
-    return await sync_emails(full=False, console=console)
+    """Sync all folders.
+
+    Args:
+        full: If True, perform full sync; otherwise incremental
+        console: Optional Rich console for display
+
+    Returns:
+        True if all syncs succeeded, False if any failed
+    """
+    display = SyncDisplay(console)
+    mode = SyncMode.FULL if full else SyncMode.INCREMENTAL
+    all_success = True
+
+    try:
+        async with EmailFetchServiceFactory.create() as service:
+            for folder in FolderName:
+                try:
+                    logger.info(f"Syncing folder: {folder.value}")
+                    display.show_syncing(mode)
+
+                    stats = await service.fetch_new_emails(folder, mode)
+
+                    if stats.saved_count > 0:
+                        display.show_synced(stats.saved_count)
+                    else:
+                        display.show_no_new_emails()
+
+                except Exception as e:
+                    logger.error(f"Error syncing folder {folder.value}: {e}")
+                    display.show_error(f"Failed to sync {folder.value}")
+                    all_success = False
+
+        return all_success
+
+    except Exception as e:
+        logger.error(f"Sync all folders failed: {e}")
+        display.show_error(f"Sync failed: {str(e)}")
+        return False
+
+
+@async_log_call
+async def get_sync_status(
+    console: Optional[Console] = None,
+) -> dict:
+    """Get sync status for all folders.
+
+    Args:
+        console: Optional Rich console for display
+
+    Returns:
+        Dictionary mapping folder names to status info
+    """
+    display = SyncDisplay(console)
+
+    try:
+        async with EmailFetchServiceFactory.create() as service:
+            status = {}
+
+            for folder in FolderName:
+                try:
+                    # Service does the work
+                    info = await service.get_folder_stats(folder)
+                    status[folder.value] = info
+
+                except Exception as e:
+                    logger.error(f"Failed to get status for {folder.value}: {e}")
+                    status[folder.value] = {"error": str(e)}
+
+            # Display if console provided
+            if console:
+                display.show_stats(status)
+
+            return status
+
+    except Exception as e:
+        logger.error(f"Failed to get sync status: {e}")
+        display.show_error(f"Failed to get status: {str(e)}")
+        return {}

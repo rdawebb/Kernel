@@ -5,6 +5,6 @@ Public API:
     refresh_folder(folder) -> Refresh specific folder
 """
 
-from .workflow import sync_emails, refresh_folder, SyncWorkflow
+from .workflow import sync_emails
 
-__all__ = ["sync_emails", "refresh_folder", "SyncWorkflow"]
+__all__ = ["sync_emails"]

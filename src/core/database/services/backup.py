@@ -51,7 +51,7 @@ class ExportResult:
 
 class BackupService:
     """Service for database backup and export operations.
-    
+
     Features:
     - Full database file backup with compression
     - CSV export with progress tracking
@@ -241,6 +241,7 @@ class BackupService:
 
             # Try to read file
             if is_compressed:
+
                 async def test_read():
                     with gzip.open(backup_path, "rb") as f:
                         # Read first 1KB to verify

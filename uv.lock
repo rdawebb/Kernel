@@ -338,12 +338,6 @@ wheels = [
 ]
 
 [[package]]
-name = "fast-mail-parser"
-version = "0.2.5"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/dd/b1/af43ef34a7c2560d38ec7949b190744025d3c5f2c4d3e8c657185563e1e3/fast_mail_parser-0.2.5.tar.gz", hash = "sha256:d4959d09e598e52885bed2b07ae8eeb148b89943ca4d220c11a6dc1ec5d84633", size = 413825, upload-time = "2022-06-01T09:52:58.99Z" }
-
-[[package]]
 name = "greenlet"
 version = "3.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -478,7 +472,6 @@ dependencies = [
     { name = "apscheduler" },
     { name = "cryptography" },
     { name = "email-validator" },
-    { name = "fast-mail-parser" },
     { name = "greenlet" },
     { name = "keyring" },
     { name = "prompt-toolkit" },
@@ -509,7 +502,6 @@ requires-dist = [
     { name = "apscheduler", specifier = ">=3.11.2,<4.0.0" },
     { name = "cryptography", specifier = ">=46.0.0,<47.0.0" },
     { name = "email-validator", specifier = ">=2.3.0,<3.0.0" },
-    { name = "fast-mail-parser", specifier = ">=0.2.5,<1.0.0" },
     { name = "greenlet", specifier = ">=3.3.0,<4.0.0" },
     { name = "keyring", specifier = ">=25.7.0,<26.0.0" },
     { name = "prek", marker = "extra == 'dev'", specifier = ">=0.2.30,<1.0.0" },

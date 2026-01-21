@@ -42,7 +42,16 @@ class SearchFilter:
 
     def __post_init__(self):
         """Validate field name."""
-        valid_fields = {"subject", "sender", "recipient", "body", "date", "time", "flagged", "is_read"}
+        valid_fields = {
+            "subject",
+            "sender",
+            "recipient",
+            "body",
+            "date",
+            "time",
+            "flagged",
+            "is_read",
+        }
         if self.field not in valid_fields:
             raise ValueError(
                 f"Invalid search field: {self.field}. "
@@ -77,7 +86,9 @@ class SearchQuery:
         # Validate order_by
         valid_order = {"date", "time", "subject", "sender"}
         if self.order_by not in valid_order:
-            raise ValueError(f"Invalid order_by: {self.order_by}. Must be one of: {valid_order}")
+            raise ValueError(
+                f"Invalid order_by: {self.order_by}. Must be one of: {valid_order}"
+            )
 
         # Validate limit
         if self.limit <= 0:
@@ -103,7 +114,7 @@ class SearchResult:
 
 class SearchService:
     """Type-safe search service with operator support.
-    
+
     Provides:
     - Field validation (whitelist approach)
     - Multiple operators (=, contains, >, <, etc.)
@@ -165,7 +176,7 @@ class SearchService:
             # Execute both queries concurrently for efficiency
             result = await conn.execute(sql_query)
             rows = result.fetchall()
-            
+
             count_result = await conn.execute(count_query)
             total_count = count_result.scalar() or 0
 
@@ -186,7 +197,10 @@ class SearchService:
 
         # Log slow queries
         config = get_config()
-        if config.log_slow_queries and query_time_ms > config.slow_query_threshold * 1000:
+        if (
+            config.log_slow_queries
+            and query_time_ms > config.slow_query_threshold * 1000
+        ):
             logger.warning(
                 f"Slow search query: {query_time_ms:.1f}ms "
                 f"(keyword={query.keyword}, folders={len(query.folders)}, "
@@ -286,7 +300,6 @@ class SearchService:
 
         return await self.search(query)
 
-
     def _build_search_query(self, query: SearchQuery) -> Select:
         """Build SQLAlchemy SELECT query from search specification.
 
@@ -307,7 +320,12 @@ class SearchService:
             # Keyword search across specified fields
             if query.keyword and query.keyword.strip():
                 keyword_conditions = []
-                search_fields = query.search_fields or {"subject", "sender", "recipient", "body"}
+                search_fields = query.search_fields or {
+                    "subject",
+                    "sender",
+                    "recipient",
+                    "body",
+                }
                 for field in search_fields:
                     column = getattr(table.c, self.FIELD_MAP[field])
                     keyword_conditions.append(column.like(f"%{query.keyword}%"))
@@ -367,7 +385,9 @@ class SearchService:
         # Add secondary sort by time if ordering by date
         if query.order_by == "date":
             time_order = "time DESC" if query.order_desc else "time ASC"
-            combined = combined.order_by(f"{order_col} DESC" if query.order_desc else order_col, time_order)
+            combined = combined.order_by(
+                f"{order_col} DESC" if query.order_desc else order_col, time_order
+            )
 
         # Add LIMIT and OFFSET
         combined = combined.limit(query.limit).offset(query.offset)
@@ -396,7 +416,12 @@ class SearchService:
             # Keyword search across specified fields
             if query.keyword and query.keyword.strip():
                 keyword_conditions = []
-                search_fields = query.search_fields or {"subject", "sender", "recipient", "body"}
+                search_fields = query.search_fields or {
+                    "subject",
+                    "sender",
+                    "recipient",
+                    "body",
+                }
                 for field in search_fields:
                     column = getattr(table.c, self.FIELD_MAP[field])
                     keyword_conditions.append(column.like(f"%{query.keyword}%"))
@@ -475,7 +500,7 @@ class SearchService:
 
 class SearchQueryBuilder:
     """Fluent builder for SearchQuery (convenience API).
-    
+
     Example:
         query = (SearchQueryBuilder()
             .keyword("important")
@@ -484,7 +509,7 @@ class SearchQueryBuilder:
             .filter("flagged", SearchOperator.EQUALS, True)
             .limit(20)
             .build())
-        
+
         result = await search_service.search(query)
     """
 

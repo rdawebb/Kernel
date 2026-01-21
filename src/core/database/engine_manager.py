@@ -112,6 +112,7 @@ class EngineManager:
             # Full health check: execute simple query
             async with engine.connect() as conn:
                 from sqlalchemy import text
+
                 result = await conn.execute(text("SELECT 1"))
                 row = result.fetchone()
                 healthy = row is not None and row[0] == 1
@@ -137,13 +138,17 @@ class EngineManager:
         Returns:
             True if healthy, False otherwise
         """
-        if not force_refresh and self._last_health_check:
-            current_time = time.time()
-            
-            if current_time - self._last_health_check < self.config.health_check_interval:
-                return self._is_healthy
+        async with self._lock:
+            if not force_refresh and self._last_health_check:
+                current_time = time.time()
 
-        return await self.health_check(quick=True)
+                if (
+                    current_time - self._last_health_check
+                    < self.config.health_check_interval
+                ):
+                    return self._is_healthy
+
+            return await self.health_check(quick=True)
 
     async def get_pool_stats(self) -> Dict[str, Any]:
         """Get connection pool statistics.
@@ -194,7 +199,7 @@ class EngineManager:
     async def __aenter__(self):
         """Context manager entry."""
         await self.get_engine()
-        
+
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:

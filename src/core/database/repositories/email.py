@@ -1,11 +1,13 @@
 """Email repository with SQLAlchemy Core queries."""
 
+from sqlalchemy.ext.asyncio import AsyncConnection
+
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Set
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, Table, update
 from sqlalchemy.dialects.sqlite import insert
 
 from src.core.database.engine_manager import EngineManager
@@ -16,9 +18,9 @@ from src.core.models.email import Email, EmailId, FolderName
 from src.utils.errors import EmailNotFoundError
 from src.utils.logging import get_logger
 
+from ..utils import row_to_email
 from .base import Repository
 from .batch_result import BatchResult
-from ..utils import row_to_email
 
 logger = get_logger(__name__)
 
@@ -94,7 +96,6 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
         start_time = asyncio.get_event_loop().time()
         result = BatchResult(total=len(entities), succeeded=0, failed=0)
 
-        # Group by folder for efficiency
         by_folder: dict[FolderName, List[Email]] = {}
         for entity in entities:
             if entity.folder not in by_folder:
@@ -103,7 +104,7 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
 
         engine = await self.engine_mgr.get_engine()
 
-        # Process each folder's emails
+        # Process each folder
         for folder, folder_entities in by_folder.items():
             table = get_table(folder.value)
 
@@ -122,13 +123,24 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
                 try:
                     # Use transaction for atomic batch insert
                     async with TransactionManager(engine) as tx:
-                        for values in batch_values:
-                            query = insert(table).values(**values)
-                            query = query.on_conflict_do_update(
-                                index_elements=["uid"],
-                                set_=values,
-                            )
-                            await tx.connection.execute(query)
+                        # Separate new vs existing emails
+                        uids = [v["uid"] for v in batch_values]
+                        existing_uids = await self._get_existing_uids(
+                            tx.connection, table, uids
+                        )
+
+                        new_values = [
+                            v for v in batch_values if v["uid"] not in existing_uids
+                        ]
+                        update_values = [
+                            v for v in batch_values if v["uid"] in existing_uids
+                        ]
+
+                        if new_values:
+                            await tx.connection.execute(insert(table), new_values)
+
+                        if update_values:
+                            await tx.connection.execute(update(table), update_values)
 
                     result.succeeded += len(batch)
 
@@ -138,7 +150,6 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
                         result.errors.append((email.id, str(e)))
                     logger.error(f"Batch insert failed for {len(batch)} emails: {e}")
 
-                # Report progress
                 if progress:
                     progress(result.succeeded + result.failed, result.total)
 
@@ -149,6 +160,24 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
         )
 
         return result
+
+    async def _get_existing_uids(
+        self, conn: AsyncConnection, table: Table, uids: List[str]
+    ) -> Set[str]:
+        """Get existing email UIDs in the database.
+
+        Args:
+            conn: Active database connection
+            table: Table to query
+            uids: List of UIDs to check
+
+        Returns:
+            Set of existing UIDs
+        """
+        stmt = select(table.c.uid).where(table.c.uid.in_(uids))
+        result = await conn.execute(stmt)
+
+        return {row.uid for row in result}
 
     async def find_by_id(self, id: EmailId, context: FolderName) -> Optional[Email]:
         """Find email by ID in specific folder.
@@ -279,7 +308,6 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
             result = await conn.execute(query)
             existing_uids = {row.uid for row in result}
 
-        # Return dict mapping each ID to whether it exists
         return {uid: uid in existing_uids for uid in ids}
 
     async def move(
@@ -329,18 +357,22 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
             f"Moved email {id.value} from {from_folder.value} to {to_folder.value}"
         )
 
-    async def count(self, folder: FolderName) -> int:
+    async def count(self, folder: FolderName, conditions: Optional[dict] = None) -> int:
         """Count total emails in folder.
 
         Args:
             folder: Folder to count
+            conditions: Optional filtering conditions
 
         Returns:
             Number of emails
         """
         engine = await self.engine_mgr.get_engine()
 
-        query = self._query_builder.count_emails(folder)
+        if conditions:
+            query = self._query_builder.count_emails(folder, conditions)
+        else:
+            query = self._query_builder.count_emails(folder)
 
         async with engine.connect() as conn:
             result = await conn.execute(query)
@@ -362,7 +394,6 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
             raise ValueError(f"Folder {folder.value} does not support flagging")
 
         engine = await self.engine_mgr.get_engine()
-        table = get_table(folder.value)
 
         query = self._query_builder.update_email(
             folder=folder,
@@ -393,7 +424,7 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
             DatabaseError: If query fails
         """
         try:
-            from sqlalchemy import cast, Integer
+            from sqlalchemy import Integer, cast
 
             engine = await self.engine_mgr.get_engine()
             table = get_table(folder.value)
@@ -413,8 +444,6 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
         except Exception as e:
             logger.error(f"Failed to get highest UID from {folder.value}: {e}")
             return 0
-
-    # Helper methods for domain model <-> database row conversion
 
     def _email_to_row(self, email: Email) -> dict:
         """Convert Email domain object to database row dict.

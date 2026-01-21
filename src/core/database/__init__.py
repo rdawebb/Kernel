@@ -7,7 +7,14 @@ from .models import ALL_TABLES, get_table, inbox, sent, drafts, trash
 from .query import QueryBuilder
 from .repositories.email import BatchResult, EmailRepository
 from .services.backup import BackupService, BackupResult, ExportResult
-from .services.search import SearchService, SearchQuery, SearchFilter, SearchOperator, SearchQueryBuilder, SearchResult
+from .services.search import (
+    SearchService,
+    SearchQuery,
+    SearchFilter,
+    SearchOperator,
+    SearchQueryBuilder,
+    SearchResult,
+)
 from .transaction import TransactionManager, transaction, readonly_transaction
 
 __all__ = [
@@ -38,5 +45,5 @@ __all__ = [
     "SearchResult",
     "TransactionManager",
     "transaction",
-    "readonly_transaction"
+    "readonly_transaction",
 ]

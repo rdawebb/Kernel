@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import List
 from src.core.models.email import EmailId
 
+
 @dataclass
 class BatchResult:
     """Result of batch operation."""

@@ -76,7 +76,7 @@ class MetricStats:
 
 class MetricsCollector:
     """Collects and aggregates database metrics.
-    
+
     Thread-safe metrics collection with:
     - Counter metrics (increments only)
     - Gauge metrics (current value)
@@ -100,14 +100,14 @@ class MetricsCollector:
         self._histograms: Dict[str, Deque[MetricPoint]] = defaultdict(
             lambda: deque(maxlen=10000)
         )
-        self._timers: Dict[str, Deque[float]] = defaultdict(
-            lambda: deque(maxlen=10000)
-        )
+        self._timers: Dict[str, Deque[float]] = defaultdict(lambda: deque(maxlen=10000))
 
         # Labels for metrics
         self._labels: Dict[str, Dict[str, str]] = {}
 
-    def increment(self, name: str, value: float = 1.0, labels: Optional[Dict[str, str]] = None) -> None:
+    def increment(
+        self, name: str, value: float = 1.0, labels: Optional[Dict[str, str]] = None
+    ) -> None:
         """Increment a counter metric.
 
         Args:
@@ -122,7 +122,9 @@ class MetricsCollector:
             if labels:
                 self._labels[key] = labels
 
-    def set_gauge(self, name: str, value: float, labels: Optional[Dict[str, str]] = None) -> None:
+    def set_gauge(
+        self, name: str, value: float, labels: Optional[Dict[str, str]] = None
+    ) -> None:
         """Set a gauge metric to specific value.
 
         Args:
@@ -137,7 +139,9 @@ class MetricsCollector:
             if labels:
                 self._labels[key] = labels
 
-    def observe(self, name: str, value: float, labels: Optional[Dict[str, str]] = None) -> None:
+    def observe(
+        self, name: str, value: float, labels: Optional[Dict[str, str]] = None
+    ) -> None:
         """Observe a value for histogram metric.
 
         Args:
@@ -157,7 +161,9 @@ class MetricsCollector:
             if labels:
                 self._labels[key] = labels
 
-    def record_time(self, name: str, duration: float, labels: Optional[Dict[str, str]] = None) -> None:
+    def record_time(
+        self, name: str, duration: float, labels: Optional[Dict[str, str]] = None
+    ) -> None:
         """Record duration for timer metric.
 
         Args:
@@ -178,7 +184,9 @@ class MetricsCollector:
             key = self._make_key(name, labels)
             return self._counters.get(key, 0.0)
 
-    def get_gauge(self, name: str, labels: Optional[Dict[str, str]] = None) -> Optional[float]:
+    def get_gauge(
+        self, name: str, labels: Optional[Dict[str, str]] = None
+    ) -> Optional[float]:
         """Get current gauge value."""
         with self._lock:
             key = self._make_key(name, labels)
@@ -278,6 +286,7 @@ def reset_metrics_collector() -> None:
 
 # Convenience functions
 
+
 def increment_counter(name: str, value: float = 1.0, **labels) -> None:
     """Increment a counter metric."""
     get_metrics_collector().increment(name, value, labels or None)
@@ -300,9 +309,10 @@ def record_duration(name: str, duration: float, **labels) -> None:
 
 # Context manager for timing operations
 
+
 class Timer:
     """Context manager for timing operations.
-    
+
     Usage:
         with Timer("query_execution", operation="select"):
             await conn.execute(query)
@@ -319,7 +329,7 @@ class Timer:
         self.labels = labels
         self.start_time = None
 
-    def __enter__(self) -> 'Timer':
+    def __enter__(self) -> "Timer":
         """Start timing."""
         self.start_time = time.time()
 
@@ -334,26 +344,36 @@ class Timer:
 
 # Decorator for automatic timing
 
+
 def timed(metric_name: Optional[str] = None, **labels) -> Callable:
     """Decorator to automatically time function execution.
-    
+
     Usage:
         @timed("repository_save", operation="insert")
         async def save(self, email):
             ...
     """
+
     def decorator(func) -> Callable:
-        local_metric_name = metric_name if metric_name is not None else f"{func.__module__}.{func.__name__}"
+        local_metric_name = (
+            metric_name
+            if metric_name is not None
+            else f"{func.__module__}.{func.__name__}"
+        )
 
         if asyncio.iscoroutinefunction(func):
+
             async def async_wrapper(*args, **kwargs):
                 with Timer(local_metric_name, **labels):
                     return await func(*args, **kwargs)
+
             return async_wrapper
         else:
+
             def sync_wrapper(*args, **kwargs):
                 with Timer(local_metric_name, **labels):
                     return func(*args, **kwargs)
+
             return sync_wrapper
 
     return decorator

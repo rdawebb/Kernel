@@ -46,10 +46,10 @@ Connection statistics:
     # {'connections_created': 2, 'reconnections': 1, 'operations_count': 150, ...}
 """
 
-from .client import IMAPClient, SyncMode
+from .client import IMAPClient
 from .connection import IMAPConnection
 
-__all__ = ["IMAPClient", "SyncMode", "IMAPConnection"]
+__all__ = ["IMAPClient", "IMAPConnection"]
 
 
 def get_imap_client(config) -> IMAPClient:
