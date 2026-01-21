@@ -3,7 +3,7 @@
 import re
 from typing import Dict, List, Optional
 
-from src.core.email.constants import IMAPResponse
+from src.core.email.imap.constants import IMAPResponse
 from src.core.email.imap.connection import IMAPConnection
 from src.utils.errors import IMAPError
 from src.utils.logging import async_log_call, get_logger
@@ -130,15 +130,37 @@ class IMAPProtocol:
                     details={"uids": uid_set, "response": response.result},
                 )
 
-            # Parse response to extract UID -> message mapping
             messages = {}
-            for line in response.lines:
+            i = 0
+            while i < len(response.lines):
+                line = response.lines[i]
                 if isinstance(line, (bytes, bytearray)):
-                    raw_bytes = bytes(line) if isinstance(line, bytearray) else line
+                    try:
+                        line_str = (
+                            line.decode("utf-8", errors="ignore")
+                            if isinstance(line, bytes)
+                            else str(line)
+                        )
+                    except Exception:
+                        line_str = str(line)
 
-                    uid = self.parse_uid_from_response(raw_bytes)
-                    if uid is not None and raw_bytes:
-                        messages[uid] = raw_bytes
+                    if "FETCH" in line_str and "RFC822" in line_str:
+                        uid = self.parse_uid_from_response(line)
+                        if uid is not None:
+                            if i + 1 < len(response.lines):
+                                next_line = response.lines[i + 1]
+                                if isinstance(next_line, (bytes, bytearray)):
+                                    message_bytes = (
+                                        bytes(next_line)
+                                        if isinstance(next_line, bytearray)
+                                        else next_line
+                                    )
+                                    if (
+                                        not message_bytes.startswith(b")")
+                                        and message_bytes.strip() != b")"
+                                    ):
+                                        messages[uid] = message_bytes
+                i += 1
 
             logger.debug(
                 "Fetched messages",

@@ -48,7 +48,7 @@ class BaseCommand(ABC):
     """Base implementation for commands with common utilities."""
 
     def __init__(self, console: Optional[Console] = None):
-        """Initialize base command.
+        """initialise base command.
 
         Args:
             console: Rich Console instance (creates new if None)

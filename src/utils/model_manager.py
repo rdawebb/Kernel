@@ -28,7 +28,7 @@ class ModelManager:
     }
 
     def __init__(self):
-        """Initialize model manager with installed models state"""
+        """Initialise model manager with installed models state"""
         self.installed_models = {
             "sumy": False,
             "minibart": False,

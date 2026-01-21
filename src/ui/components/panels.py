@@ -169,9 +169,21 @@ class StatusPanel:
         self.console.print()
         self.console.print(
             Panel.fit(
-                f"[cyan]{message}[/cyan]",
+                f"[cyan]ℹ {message}[/cyan]",
                 title=title,
                 border_style="cyan",
+                padding=(1, 2),
+            )
+        )
+
+    def show_status(self, message: str, title: Optional[str] = None) -> None:
+        """Display status message in dim blue panel."""
+        self.console.print()
+        self.console.print(
+            Panel.fit(
+                f"[dim blue]{message}[/dim blue]",
+                title=title,
+                border_style="dim blue",
                 padding=(1, 2),
             )
         )

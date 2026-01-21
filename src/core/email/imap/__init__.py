@@ -1,72 +1,53 @@
-"""IMAP client module for email operations.
+"""IMAP protocol implementation.
 
-Provides asynchronous IMAP operations with:
-- Automatic connection management (health checks, TTL, reconnections)
-- Batch email fetching with configurable sizes and delays
-- Email operations: delete, move, flag, mark as read/unread
-- Folder management: list folders, get folder status
-- Connection health statistics
+Low-level IMAP components for building services:
+- IMAPProtocol: IMAP protocol operations
+- IMAPConnection: Connection lifecycle management
+- IMAPClient: High-level IMAP operations
+
+For email fetching, use EmailFetchService from services layer.
 
 Architecture
 ------------
-- IMAPClient: High-level operations (fetch, delete, move, etc.)
-- IMAPConnection: Low-level connection handling and lifecycle management
-- Shared connection state
+- IMAPConnection: Connection management (health checks, TTL, reconnections)
+- IMAPProtocol: Low-level IMAP commands (SELECT, SEARCH, FETCH, etc.)
+- IMAPClient: High-level operations (delete, move, flag, etc.)
 
-Usage Examples
-----------------
+Direct Usage (Advanced)
+-----------------------
+Most users should use EmailFetchService instead. Direct usage:
 
-Fetch new emails:
-    >>> from src.core.email.imap import get_imap_client, SyncMode
+    >>> from src.core.email.imap import IMAPConnection, IMAPProtocol, IMAPClient
+    >>> from src.utils.config import ConfigManager
     >>>
-    >>> imap = get_imap_client(config)
+    >>> config = ConfigManager()
+    >>> connection = IMAPConnection(config)
+    >>> protocol = IMAPProtocol(connection)
+    >>> client = IMAPClient(protocol)
     >>>
-    >>> # Fetch new emails only (incremental sync)
-    >>> count = await imap.fetch_new_emails(SyncMode.INCREMENTAL)
+    >>> # Use client for operations
+    >>> await client.delete_email("12345")
     >>>
-    >>> # Fetch all emails (full sync)
-    >>> count = await imap.fetch_new_emails(SyncMode.FULL)
+    >>> # Clean up
+    >>> await connection.close_connection()
 
-Email operations:
-    >>> # Delete email
-    >>> success = await imap.delete_email(uid="12345")
-    >>>
-    >>> # Move email
-    >>> success = await imap.move_email("12345", "Archive")
-    >>>
-    >>> # Mark as read
-    >>> success = await imap.update_read_status("12345", read=True)
-    >>>
-    >>> # Flag email
-    >>> success = await imap.update_flag_status("12345", flagged=True)
+Recommended Usage
+-----------------
+Use the service layer for complete workflows:
 
-Connection statistics:
-    >>> stats = imap.get_connection_stats()
-    >>> print(stats)
-    # {'connections_created': 2, 'reconnections': 1, 'operations_count': 150, ...}
+    >>> from src.core.email.services.fetch import EmailFetchServiceFactory
+    >>>
+    >>> async with EmailFetchServiceFactory.create() as fetch_service:
+    ...     stats = await fetch_service.fetch_new_emails()
+    ...     print(f"Fetched {stats.saved_count} emails")
 """
 
 from .client import IMAPClient
 from .connection import IMAPConnection
+from .protocol import IMAPProtocol
 
-__all__ = ["IMAPClient", "IMAPConnection"]
-
-
-def get_imap_client(config) -> IMAPClient:
-    """Factory function to create an IMAPClient instance.
-
-    Args:
-        config: Configuration object with IMAP settings
-
-    Returns:
-        IMAPClient instance
-
-    Example:
-        >>> from src.utils.config import ConfigManager
-        >>> from src.core.email.imap import get_imap_client
-        >>>
-        >>> config = ConfigManager()
-        >>> imap = get_imap_client(config)
-        >>> count = await imap.fetch_new_emails()
-    """
-    return IMAPClient(config)
+__all__ = [
+    "IMAPClient",
+    "IMAPConnection",
+    "IMAPProtocol",
+]

@@ -348,7 +348,7 @@ class DaemonClient:
     DAEMON_START_TIMEOUT = 5
 
     def __init__(self, fallback_mode: bool = True, disable_daemon: bool = False):
-        """Initialize daemon client."""
+        """initialise daemon client."""
 
         self.fallback_mode = fallback_mode
         self.disable_daemon = disable_daemon

@@ -136,7 +136,7 @@ class SearchService:
     }
 
     def __init__(self, engine_manager: EngineManager):
-        """Initialize search service.
+        """initialise search service.
 
         Args:
             engine_manager: Engine manager for database access

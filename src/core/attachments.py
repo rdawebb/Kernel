@@ -29,7 +29,7 @@ class AttachmentManager:
     """Manage all email attachment operations."""
 
     def __init__(self, config_manager=None):
-        """Initialize attachment manager with config."""
+        """initialise attachment manager with config."""
 
         self.config_manager = config_manager
         self._attachments_dir = None
@@ -294,7 +294,7 @@ class AttachmentManager:
             if platform.system() == "Darwin":
                 subprocess.run(["open", str(file_path)], check=True)
             elif platform.system() == "Windows":
-                os.startfile(str(file_path))
+                subprocess.run(["start", str(file_path)], shell=True, check=True)
             else:
                 subprocess.run(["xdg-open", str(file_path)], check=True)
 
@@ -321,7 +321,7 @@ class AttachmentManager:
     def _sanitize_filename(self, filename: str) -> str:
         """Sanitize filename to prevent directory traversal."""
 
-        return PathSecurity.sanitize_filename(filename)
+        return PathSecurity.sanitise_filename(filename)
 
     def _is_safe_filename(self, filename: str) -> bool:
         """Check if the filename is safe (no directory traversal)."""

@@ -25,15 +25,15 @@ class SyncDisplay:
 
     def show_no_new_emails(self) -> None:
         """Show no new emails message."""
-        self.message.info("No new emails")
+        self.panel.show_info("No new emails")
 
     def show_error(self, message: str) -> None:
         """Show error message."""
-        self.message.error(message)
+        self.panel.show_error(message)
 
     def show_stats(self, stats: dict) -> None:
         """Show folder statistics."""
-        self.message.info("Folder Statistics")
+        self.panel.show_info("Folder Statistics")
         for folder, info in stats.items():
             if "error" in info:
                 self.panel.show_error(f"{folder}: Error - {info['error']}")

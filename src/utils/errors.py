@@ -330,7 +330,7 @@ class error_context:
         user_message: Optional[str] = None,
         reraise: bool = True,
     ):
-        """Initialize error context manager."""
+        """initialise error context manager."""
 
         self.context = context
         self.user_message = user_message

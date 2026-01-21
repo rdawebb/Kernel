@@ -16,7 +16,7 @@ class EmailAddressValidator(Validator):
     """Validator for email addresses using email-validator library."""
 
     def __init__(self):
-        """Initialize validator with lazy-loaded email-validator."""
+        """initialise validator with lazy-loaded email-validator."""
         self._validator = None
         self._error_class = None
 
@@ -71,7 +71,7 @@ class CompositionInputManager:
     """Manages input collection for email composition."""
 
     def __init__(self):
-        """Initialize input manager with prompt-toolkit session."""
+        """Initialise input manager with prompt-toolkit session."""
         self.style = Style.from_dict(
             {
                 "prompt": "cyan bold",

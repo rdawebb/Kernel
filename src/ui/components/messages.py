@@ -34,4 +34,4 @@ class StatusMessage:
 
     def status(self, message: str) -> None:
         """Print status message."""
-        self.console.print(f"[dim]{message}[/dim]")
+        self.console.print(f"[dim blue]{message}[/dim blue]")

@@ -52,7 +52,7 @@ class IMAPConnection:
     """Manages an IMAP connection lifecycle."""
 
     def __init__(self, config_manager: ConfigManager):
-        """Initialize IMAP connection with config manager.
+        """initialise IMAP connection with config manager.
 
         Args:
             config_manager: Configuration manager instance

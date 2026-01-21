@@ -1,63 +1,61 @@
-"""SMTP client for sending emails.
+"""SMTP protocol implementation.
 
-Provides asynchronous SMTP operations with:
-- Automatic connection management (health checks, TTL)
-- Retry logic for transient failures
-- Multiple recipient support (To, CC, BCC)
-- Connection health statistics and monitoring
+Low-level SMTP components for building services:
+- SMTPProtocol: SMTP protocol operations
+- SMTPConnection: Connection lifecycle management
+- SMTPClient: High-level SMTP operations
+
+For email sending, use EmailSendService from services layer.
 
 Architecture
 ------------
-- SMTPClient: High-level email sending operations
-- SMTPConnection: Low-level SMTP connection handling and lifecycle management
-- Shared connection state
+- SMTPConnection: Connection management (health checks, TTL, reconnections)
+- SMTPProtocol: Low-level SMTP commands (send, verify, noop)
+- SMTPClient: High-level operations (send text/HTML, attachments)
 
-Usage Examples
-----------------
+Direct Usage (Advanced)
+-----------------------
+Most users should use EmailSendService instead. Direct usage:
 
-Send basic email:
-    >>> from src.core.email.smtp import get_smtp_client
+    >>> from src.core.email.smtp import SMTPConnection, SMTPProtocol, SMTPClient
+    >>> from src.utils.config import ConfigManager
     >>>
-    >>> smtp = get_smtp_client(config)
+    >>> config = ConfigManager()
+    >>> connection = SMTPConnection(config)
+    >>> protocol = SMTPProtocol(connection)
+    >>> client = SMTPClient(protocol, "sender@example.com")
     >>>
-    >>> await smtp.send_email(
+    >>> # Send email
+    >>> await client.send_text_email(
     ...     to_email="recipient@example.com",
-    ...     subject="Test Email",
-    ...     body="This is a test email."
+    ...     subject="Test",
+    ...     body="Hello"
     ... )
+    >>>
+    >>> # Clean up
+    >>> await connection.close_connection()
 
-Send email with CC and BCC:
-    >>> await smtp.send_email(
-    ...     to_email="recipient@example.com",
-    ...     subject="Test Email",
-    ...     body="This is a test email.",
-    ...     cc=["recipient2@example.com"],
-    ...     bcc=["recipient3@example.com"]
-    ... )
+Recommended Usage
+-----------------
+Use the service layer for complete workflows:
 
-Connection statistics:
-    >>> stats = smtp.get_connection_stats()
-    >>> print(stats)
-    # {
-    #   'connections_created': 1,
-    #   'emails_sent': 15,
-    #   'send_failures': 2,
-    #   "avg_send_time": 1.35
-    # }
-
-Error Handling
---------------
-Transient errors (e.g., network issues) are retried automatically with
-exponential backoff. Non-transient errors (e.g., authentication failures)
-raise SMTPError immediately.
-
-All operations raise exceptions on failure:
-- SMTPError: Send operation failed
-- NetworkTimeoutError: Operation timeout occurred
-- AuthenticationError: Invalid credentials
+    >>> from src.core.email.services.send import EmailSendServiceFactory
+    >>>
+    >>> async with EmailSendServiceFactory.create() as send_service:
+    ...     stats = await send_service.send_email(
+    ...         to_email="recipient@example.com",
+    ...         subject="Test",
+    ...         body="Hello"
+    ...     )
+    ...     print(f"Success: {stats.success}")
 """
 
-from .client import SMTPClient, get_smtp_client
+from .client import SMTPClient
 from .connection import SMTPConnection
+from .protocol import SMTPProtocol
 
-__all__ = ["SMTPClient", "SMTPConnection", "get_smtp_client"]
+__all__ = [
+    "SMTPClient",
+    "SMTPConnection",
+    "SMTPProtocol",
+]

@@ -38,7 +38,7 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
     """
 
     def __init__(self, engine_manager: EngineManager):
-        """Initialize repository.
+        """initialise repository.
 
         Args:
             engine_manager: Engine manager for database access

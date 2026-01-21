@@ -5,9 +5,7 @@ They are not currently used by the CLI and require migration to the new
 EngineManager/EmailRepository architecture.
 """
 
-from src.core.email.imap.client import IMAPClient, SyncMode
 from src.utils.config import ConfigManager
-from src.utils.errors import KernelError, NetworkError
 from src.utils.logging import async_log_call, get_logger
 
 DATE_FORMAT = "%Y-%m-%d"
@@ -57,31 +55,11 @@ async def send_scheduled_emails() -> None:
 
 @async_log_call
 async def check_for_new_emails() -> None:
-    """Check for new emails from server."""
+    """Check for new emails from server.
 
-    logger.info("Checking for new emails from server...")
-
-    try:
-        account_config = config_manager.get_account_config()
-        imap_client = IMAPClient(account_config)
-
-        new_count = await imap_client.fetch_new_emails(
-            account_config, SyncMode.INCREMENTAL
-        )
-
-        if new_count > 0:
-            msg = f"Downloaded {new_count} new email(s) from the server."
-            logger.info(msg)
-            print(msg)
-        else:
-            logger.info("No new emails found on server.")
-            print("No new emails found on server.")
-
-    except NetworkError:
-        raise
-
-    except KernelError:
-        raise
-
-    except Exception as e:
-        raise NetworkError("Unexpected error while checking for new emails") from e
+    NOTE: Requires refactoring to use new EmailRepository and IMAPClient APIs.
+    """
+    logger.warning(
+        "check_for_new_emails() is not yet refactored for new database architecture"
+    )
+    pass

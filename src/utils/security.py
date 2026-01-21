@@ -22,7 +22,6 @@ class PathSecurity:
         r"|[<>]"  # Redirection
         r"|[*?]"  # Wildcards
         r'|["\']'  # Quotes
-        r"|\s"  # Whitespace
     )
 
     SAFE_FILENAME_PATTERN = re.compile(r"^[a-zA-Z0-9._-]+$")
@@ -70,6 +69,9 @@ class PathSecurity:
 
         # Collapse multiple underscores/spaces into single underscore
         sanitised = re.sub(r"_+", "_", sanitised)
+
+        # Replace whitespace with underscores
+        sanitised = re.sub(r"\s+", "_", sanitised)
 
         # Remove leading/trailing underscores and dots
         sanitised = sanitised.strip("_.")

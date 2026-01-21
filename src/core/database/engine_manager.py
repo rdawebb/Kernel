@@ -25,7 +25,7 @@ class EngineManager:
         config: Optional[DatabaseConfig] = None,
         echo: Optional[bool] = None,
     ) -> None:
-        """Initialize engine manager.
+        """initialise engine manager.
 
         Args:
             db_path: Path to SQLite database file
@@ -61,7 +61,7 @@ class EngineManager:
                         config=self.config,
                         echo=self.config.log_slow_queries,
                     )
-                    logger.info(f"Engine initialized: {self.db_path}")
+                    logger.info(f"Engine initialised: {self.db_path}")
                 except Exception as e:
                     raise DatabaseConnectionError(
                         "Failed to create database engine",

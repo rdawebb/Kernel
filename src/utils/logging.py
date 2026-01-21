@@ -130,7 +130,7 @@ class SensitiveDataMasker:
     }
 
     def __init__(self, strategy: str = "full"):
-        """Initialize masker with specified strategy."""
+        """Initialise masker with specified strategy."""
 
         self.strategy = strategy
         self.mask_func = self.MASK_STRATEGIES[strategy]
@@ -224,7 +224,7 @@ class SensitiveDataFilter(logging.Filter):
     """Logging filter to mask sensitive data in log records."""
 
     def __init__(self, strategy: str = "full"):
-        """Initialize filter with specified masking strategy."""
+        """Initialise filter with specified masking strategy."""
 
         super().__init__()
         self.masker = SensitiveDataMasker(strategy)
@@ -435,7 +435,7 @@ _log_manager: Optional[LogManager] = None
 
 
 def init_logging(log_level: str = "INFO") -> LogManager:
-    """Initialize logging system and return LogManager instance."""
+    """initialise logging system and return LogManager instance."""
 
     global _log_manager
 

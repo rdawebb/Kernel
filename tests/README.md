@@ -212,7 +212,7 @@ Tests are organized into logical classes grouping related functionality:
 
 ```python
 class TestDatabaseManagement:
-    def test_initialize_db_creates_tables(self): ...
+    def test_initialise_db_creates_tables(self): ...
     def test_get_db_connection(self): ...
 
 class TestEmailCRUDOperations:
@@ -235,7 +235,7 @@ def test_save_email(self, temp_db, mock_config):
     """Fixtures automatically inject dependencies"""
     with patch('src.core.db_manager.DatabaseManager.get_db_path',
                return_value=temp_db):
-        storage_api.initialize_db()
+        storage_api.initialise_db()
         email = DatabaseTestHelper.create_mock_email()
         storage_api.save_email_to_table('inbox', email)
 ```
@@ -479,7 +479,7 @@ python tests/run_tests.py -vv         # Very verbose with prints
 
 ```bash
 pytest tests/test_storage.py::TestDatabaseManagement
-pytest tests/test_storage.py::TestDatabaseManagement::test_initialize_db_creates_tables
+pytest tests/test_storage.py::TestDatabaseManagement::test_initialise_db_creates_tables
 ```
 
 ### Stop on First Failure

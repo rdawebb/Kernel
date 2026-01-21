@@ -1,81 +1,96 @@
-"""SMTP client for sending emails via an SMTP server"""
+"""SMTP client for high-level email operations."""
 
-## TODO: add support for HTML emails and attachments
-
-import asyncio
-import time
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import List, Optional
 
-import aiosmtplib
+from src.utils.logging import async_log_call, get_logger
 
-from src.core.email.constants import Timeouts
-from src.utils.errors import NetworkTimeoutError, SMTPError
-from src.utils.logging import get_logger
-
-from .connection import SMTPConnection
+from .protocol import SMTPProtocol
 
 logger = get_logger(__name__)
 
 
-TRANSIENT_ERRORS = [
-    421,  # Service not available, closing transmission channel
-    450,  # Mailbox unavailable (e.g. busy)
-    451,  # Local error in processing
-    452,  # Insufficient system storage
-]
-
-
 class SMTPClient:
-    """Asynchronous SMTP client for email operations."""
+    """High-level SMTP email operations."""
 
-    def __init__(self, config, max_retries: int = 3):
-        """Initialize SMTP client with configuration.
-
-        Args:
-            config: SMTP configuration object
-            max_retries: Maximum number of retry attempts for sending emails
-        """
-        self.config = config
-        self._connection = SMTPConnection(config)
-        self.max_retries = max_retries
-
-    def get_connection_stats(self) -> dict:
-        """Get current SMTP connection statistics.
-
-        Returns:
-            Dictionary of connection statistics
-        """
-        stats = self._connection.get_stats()
-        return {
-            "connections_created": stats.connections_created,
-            "reconnections": stats.reconnections,
-            "emails_sent": stats.emails_sent,
-            "send_failures": stats.send_failures,
-            "avg_send_time": round(stats.total_send_time / stats.emails_sent, 2)
-            if stats.emails_sent > 0
-            else 0,
-        }
-
-    def _is_transient_error(self, error: Exception) -> bool:
-        """Check if an error is transient and worth retrying.
+    def __init__(self, protocol: SMTPProtocol, sender_email: str):
+        """Initialise SMTP client.
 
         Args:
-            error: Exception instance to check
+            protocol: SMTPProtocol instance for low-level operations
+            sender_email: Default sender email address
+        """
+        self.protocol = protocol
+        self.sender_email = sender_email
+
+    def _create_message(
+        self,
+        to_email: str,
+        subject: str,
+        body: str,
+        cc: Optional[List[str]] = None,
+        bcc: Optional[List[str]] = None,
+        html_body: Optional[str] = None,
+    ) -> MIMEMultipart:
+        """Create MIME message from components.
+
+        Args:
+            to_email: Primary recipient
+            subject: Email subject
+            body: Plain text body
+            cc: Optional CC recipients
+            bcc: Optional BCC recipients
+            html_body: Optional HTML body
 
         Returns:
-            True if error is transient, False otherwise
+            Constructed MIME message
         """
-        if isinstance(error, aiosmtplib.SMTPConnectResponseError):
-            return error.code in TRANSIENT_ERRORS
+        msg = MIMEMultipart("alternative" if html_body else "mixed")
+        msg["From"] = self.sender_email
+        msg["To"] = to_email
+        msg["Subject"] = subject
 
-        if isinstance(error, (aiosmtplib.SMTPServerDisconnected, ConnectionError)):
-            return True
+        if cc:
+            msg["Cc"] = ", ".join(cc)
+        if bcc:
+            msg["Bcc"] = ", ".join(bcc)
 
-        return False
+        msg.attach(MIMEText(body, "plain"))
 
-    async def send_email(
+        if html_body:
+            msg.attach(MIMEText(html_body, "html"))
+
+        return msg
+
+    def _get_all_recipients(
+        self,
+        to_email: str,
+        cc: Optional[List[str]] = None,
+        bcc: Optional[List[str]] = None,
+    ) -> List[str]:
+        """Get complete list of recipients.
+
+        Args:
+            to_email: Primary recipient
+            cc: Optional CC recipients
+            bcc: Optional BCC recipients
+
+        Returns:
+            List of all recipient email addresses
+        """
+        recipients = [to_email]
+        if cc:
+            recipients.extend(cc if isinstance(cc, list) else [cc])
+        if bcc:
+            recipients.extend(bcc if isinstance(bcc, list) else [bcc])
+        return recipients
+
+    @async_log_call
+    async def send_text_email(
         self,
         to_email: str,
         subject: str,
@@ -83,118 +98,124 @@ class SMTPClient:
         cc: Optional[List[str]] = None,
         bcc: Optional[List[str]] = None,
     ) -> bool:
-        """Send an email via SMTP with retry logic for transient errors.
+        """Send a plain text email.
 
         Args:
             to_email: Recipient email address
-            subject: Email subject line
-            body: Email body content
-            cc: Optional list of CC email addresses
-            bcc: Optional list of BCC email addresses
+            subject: Email subject
+            body: Email body text
+            cc: Optional CC recipients
+            bcc: Optional BCC recipients
 
         Returns:
-            True if email sent successfully, False otherwise
-
-        Raises:
-            NetworkTimeoutError: If sending times out
-            SMTPError: If sending fails after retries
+            True if sent successfully, False otherwise
         """
-        send_start = time.time()
-        attempt = 0
-        last_error = None
+        try:
+            message = self._create_message(to_email, subject, body, cc, bcc)
+            recipients = self._get_all_recipients(to_email, cc, bcc)
 
-        logger.info(
-            "Sending email", extra={"recipient": to_email, "subject": subject[:50]}
-        )
+            result = await self.protocol.send_message(message, recipients)
 
-        while attempt <= self.max_retries:
-            try:
-                client = await self._connection._ensure_connection()
+            if result:
+                logger.info(f"Email sent to {to_email}")
 
-                msg = MIMEMultipart()
-                msg["From"] = self.config.config.account.email
-                msg["To"] = to_email
-                msg["Subject"] = subject
+            return result
 
-                if cc:
-                    msg["Cc"] = ", ".join(cc) if isinstance(cc, list) else cc
-                if bcc:
-                    msg["Bcc"] = ", ".join(bcc) if isinstance(bcc, list) else bcc
+        except Exception as e:
+            logger.error(f"Failed to send email to {to_email}: {e}")
+            return False
 
-                msg.attach(MIMEText(body, "plain"))
+    @async_log_call
+    async def send_html_email(
+        self,
+        to_email: str,
+        subject: str,
+        text_body: str,
+        html_body: str,
+        cc: Optional[List[str]] = None,
+        bcc: Optional[List[str]] = None,
+    ) -> bool:
+        """Send an HTML email with plain text fallback.
 
-                recipients = [to_email]
-                if cc:
-                    recipients.extend(cc if isinstance(cc, list) else [cc])
-                if bcc:
-                    recipients.extend(bcc if isinstance(bcc, list) else [bcc])
+        Args:
+            to_email: Recipient email address
+            subject: Email subject
+            text_body: Plain text body (fallback)
+            html_body: HTML body
+            cc: Optional CC recipients
+            bcc: Optional BCC recipients
 
-                await asyncio.wait_for(
-                    client.send_message(msg, recipients=recipients),
-                    timeout=Timeouts.SMTP_SEND,
-                )
-                send_duration = time.time() - send_start
-                self._connection._stats.emails_sent += 1
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        try:
+            message = self._create_message(
+                to_email, subject, text_body, cc, bcc, html_body
+            )
+            recipients = self._get_all_recipients(to_email, cc, bcc)
 
-                logger.info(
-                    "Email sent successfully",
-                    extra={
-                        "recipient": to_email,
-                        "duration_seconds": round(send_duration, 2),
-                        "attempts": attempt + 1,
-                    },
-                )
-                return True
+            result = await self.protocol.send_message(message, recipients)
 
-            except asyncio.TimeoutError as e:
-                self._connection.get_stats().record_send(time.time() - send_start)
-                raise NetworkTimeoutError(
-                    "SMTP send operation timed out", details={"recipient": to_email}
-                ) from e
+            if result:
+                logger.info(f"HTML email sent to {to_email}")
 
-            except Exception as e:
-                last_error = e
-                attempt += 1
+            return result
 
-                if self._is_transient_error(e) and attempt <= self.max_retries:
-                    delay = 2 ** (attempt - 1)
-                    logger.warning(
-                        "Transient SMTP error, retrying",
-                        extra={
-                            "attempt": attempt,
-                            "max_retries": self.max_retries,
-                            "retry_delay": delay,
-                        },
-                    )
+        except Exception as e:
+            logger.error(f"Failed to send HTML email to {to_email}: {e}")
+            return False
 
-                    await asyncio.sleep(delay)
-                    await self._connection.close_connection()
+    @async_log_call
+    async def send_email_with_attachments(
+        self,
+        to_email: str,
+        subject: str,
+        body: str,
+        attachments: List[Path],
+        cc: Optional[List[str]] = None,
+        bcc: Optional[List[str]] = None,
+    ) -> bool:
+        """Send email with file attachments.
+
+        Args:
+            to_email: Recipient email address
+            subject: Email subject
+            body: Email body text
+            attachments: List of file paths to attach
+            cc: Optional CC recipients
+            bcc: Optional BCC recipients
+
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        try:
+            message = self._create_message(to_email, subject, body, cc, bcc)
+
+            for file_path in attachments:
+                if not file_path.exists():
+                    logger.warning(f"Attachment not found: {file_path}")
                     continue
 
-                send_duration = time.time() - send_start
-                self._connection.get_stats().record_send(send_duration, success=False)
+                with open(file_path, "rb") as f:
+                    part = MIMEBase("application", "octet-stream")
+                    part.set_payload(f.read())
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        "Content-Disposition",
+                        f"attachment; filename= {file_path.name}",
+                    )
+                    message.attach(part)
 
-                logger.error(
-                    "Failed to send email",
-                    extra={
-                        "recipient": to_email,
-                        "attempts": attempt,
-                        "duration_seconds": round(send_duration, 2),
-                        "error": str(last_error),
-                    },
+            recipients = self._get_all_recipients(to_email, cc, bcc)
+            result = await self.protocol.send_message(message, recipients)
+
+            if result:
+                logger.info(
+                    f"Email with {len(attachments)} attachments sent to {to_email}"
                 )
 
-                error_msg = f"Failed to send email after {attempt} attempt(s): {str(last_error)}"
-                raise SMTPError(
-                    error_msg, details={"recipient": to_email, "attempts": attempt}
-                ) from last_error
+            return result
 
-        return False
-
-
-## SMTP Client Factory
-
-
-def get_smtp_client(config) -> SMTPClient:
-    """Factory function to get an SMTPClient instance."""
-    return SMTPClient(config)
+        except Exception as e:
+            logger.error(f"Failed to send email with attachments to {to_email}: {e}")
+            return False

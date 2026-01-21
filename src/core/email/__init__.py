@@ -1,72 +1,124 @@
-"""Email protocol handling for IMAP, SMTP, and parsing.
+"""Email handling - IMAP fetching, SMTP sending, and parsing.
 
-This module provides clients for email operations:
-- IMAP: Fetch, search, delete, move, flag emails
-- SMTP: Send emails with retry logic
-- Parser: Parse RFC822 email messages into structured data
+This module provides service-layer APIs for email operations:
+- EmailFetchService: Fetch emails from IMAP with retry and persistence
+- EmailSendService: Send emails via SMTP with retry logic
+- EmailParser: Parse RFC822 messages into structured data
 
-All clients are asynchronous, use automatic reconnection,
-and credential management.
+All services use automatic connection management, retry logic,
+and persistence.
 
-Usage Examples
-----------------
+Recommended Imports (for internal code)
+---------------------------------------
+Import services directly from their modules for clarity:
 
-Fetch emails via IMAP:
-    >>> from src.core.email.imap import get_imap_client, SyncMode
+    >>> from src.core.email.services.fetch import EmailFetchServiceFactory, SyncMode
+    >>> from src.core.email.services.send import EmailSendServiceFactory
+    >>> from src.core.email.parser import EmailParser
+
+This makes the architecture explicit and improves IDE support.
+
+Quick Start Examples
+--------------------
+
+Fetch emails:
+    >>> from src.core.email.services.fetch import EmailFetchServiceFactory, SyncMode
+    >>> from src.core.models.email import FolderName
     >>>
-    >>> imap = get_imap_client(config)
-    >>> count = await imap.fetch_new_emails(SyncMode.INCREMENTAL)
-    >>> print(f"Fetched {count} new emails")
+    >>> async with EmailFetchServiceFactory.create() as service:
+    ...     stats = await service.fetch_new_emails(
+    ...         folder=FolderName.INBOX,
+    ...         sync_mode=SyncMode.INCREMENTAL
+    ...     )
+    ...     print(f"Fetched {stats.saved_count} new emails")
 
-Send email via SMTP:
-    >>> from src.core.email.smtp import get_smtp_client
+Send emails:
+    >>> from src.core.email.services.send import EmailSendServiceFactory
     >>>
-    >>> smtp = get_smtp_client(config)
-    >>> await smtp.send_email(
-    ...     to_email="user@example.com",
-    ...     subject="Test Email",
-    ...     body="This is a test email."
-    ... )
+    >>> async with EmailSendServiceFactory.create() as service:
+    ...     stats = await service.send_email(
+    ...         to_email="user@example.com",
+    ...         subject="Test Email",
+    ...         body="Hello from the service layer!"
+    ...     )
+    ...     print(f"Sent: {stats.success}")
 
-Parse email message:
+Parse email:
     >>> from src.core.email.parser import EmailParser
     >>>
-    >>> email_dict = EmailParser.parse_from_bytes(raw_bytes, uid="123")
-    >>> print(email_dict['subject'])
+    >>> email = EmailParser.parse_from_bytes(raw_bytes, uid="123")
+    >>> print(email.subject)
 
-Connection statistics:
-    >>> imap_stats = imap.get_connection_stats()
-    >>> print(f"Operations: {imap_stats['operations_count']}")
-    >>> print(f"Reconnections: {imap_stats['reconnections']}")
+Direct Access to Components
+----------------------------
+For advanced usage or testing, you can access lower-level components:
 
-Notes
------
-- All operations are asynchronous and require 'await'
-- Connections are managed automatically (health checks, TTL, reconnections)
-- Credentials are loaded from keystore via CredentialManager
-- Malformed emails are logged and skipped
-- All clients support structured logging for observability
+    >>> from src.core.email.imap import IMAPClient, IMAPProtocol, IMAPConnection
+    >>> from src.core.email.smtp import SMTPClient, SMTPProtocol, SMTPConnection
+
+Convenience Re-exports
+----------------------
+This module re-exports common components for external packages.
+Internal code should prefer direct imports from service modules.
+
+Architecture
+------------
+```
+Services Layer (High-level - USE THIS)
+├── EmailFetchService (fetch emails + persistence)
+├── EmailSendService (send emails + retry + persistence)
+└── Factories (resource management)
+
+Protocol Layer (Low-level - for advanced use)
+├── IMAP (IMAPClient, IMAPProtocol, IMAPConnection)
+├── SMTP (SMTPClient, SMTPProtocol, SMTPConnection)
+└── Parser (EmailParser)
+```
 
 See Also
 --------
-- IMAPClient: Full IMAP operations documentation
-- SMTPClient: Full SMTP operations documentation
-- EmailParser: Full email parsing documentation
-- constants: Timeout and batch size configurations
+- EmailFetchService: Full fetch service documentation
+- EmailSendService: Full send service documentation
+- EmailParser: Full parser documentation
 """
 
-from .imap import IMAPClient
+# Service layer - RECOMMENDED
+from .services.fetch import (
+    EmailFetchService,
+    FetchStats,
+    SyncMode,
+)
+from .services.fetch_factory import EmailFetchServiceFactory
+from .services.send import EmailSendService, SendStats
+from .services.send_factory import EmailSendServiceFactory
+
+# Parser
 from .parser import EmailParser
-from .smtp import SMTPClient
+
+# Low-level components - for advanced usage
+from .imap import IMAPClient, IMAPProtocol, IMAPConnection
+from .smtp import SMTPClient, SMTPProtocol, SMTPConnection
 
 __all__ = [
-    # Parser
+    # ===== Service Layer (Recommended) =====
+    # Fetch service
+    "EmailFetchService",
+    "EmailFetchServiceFactory",
+    "FetchStats",
+    "SyncMode",
+    # Send service
+    "EmailSendService",
+    "EmailSendServiceFactory",
+    "SendStats",
+    # ===== Parser =====
     "EmailParser",
+    # ===== Low-level Components =====
     # IMAP
     "IMAPClient",
-    "SyncMode",
-    "get_imap_client",
+    "IMAPProtocol",
+    "IMAPConnection",
     # SMTP
     "SMTPClient",
-    "get_smtp_client",
+    "SMTPProtocol",
+    "SMTPConnection",
 ]

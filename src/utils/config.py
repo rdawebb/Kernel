@@ -434,5 +434,5 @@ class ConfigManager:
 
         with cls._lock:
             cls._instance = None
-            cls._initialized = False
+            cls._initialised = False
             logger.debug("ConfigManager singleton instance has been reset.")

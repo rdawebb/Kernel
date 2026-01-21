@@ -69,7 +69,7 @@ class CredentialManager:
             if not await self._prompt_for_account_info():
                 raise MissingCredentialsError("Account configuration is required.")
 
-        # Initialize keystore before use
+        # initialise keystore before use
         await self.keystore.initialise()
 
         password = await self.keystore.retrieve(account_config.username)

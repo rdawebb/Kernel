@@ -65,7 +65,7 @@ class BackupService:
         db_path: Path,
         email_repository: EmailRepository,
     ):
-        """Initialize backup service.
+        """initialise backup service.
 
         Args:
             db_path: Path to database file

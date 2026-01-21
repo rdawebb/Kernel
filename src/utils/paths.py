@@ -1,4 +1,4 @@
-"""Centralized path definitions for the Kernel application.
+"""Centralised path definitions for the Kernel application.
 
 This module provides a single source of truth for all application paths,
 preventing duplication and making path configuration easier to maintain.
