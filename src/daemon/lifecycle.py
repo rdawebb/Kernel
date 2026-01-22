@@ -39,11 +39,11 @@ from typing import Any, Dict, Optional
 
 from rich.console import Console
 
-from security.key_store import KeyStore
 from src.core.database import EngineManager, get_config
 from src.daemon.auth import DaemonAuth, get_auth_metrics
 from src.daemon.cache import CacheManager
 from src.daemon.pools import ConnectionPoolManager, get_pool_metrics
+from src.security.key_store import KeyStore
 from src.utils.config import ConfigManager
 from src.utils.errors import DatabaseError, KernelError
 from src.utils.logging import get_logger, log_event

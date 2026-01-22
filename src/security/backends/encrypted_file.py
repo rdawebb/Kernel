@@ -6,8 +6,9 @@ from typing import Optional
 
 from cryptography.fernet import Fernet
 
-from security.backends.base import BackendCapabilities, CredentialBackend
 from src.utils.paths import MASTER_KEY_PATH, SECRETS_DIR
+
+from .base import BackendCapabilities, CredentialBackend
 
 
 class EncryptedFileBackend(CredentialBackend):

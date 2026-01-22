@@ -39,6 +39,8 @@ def clean() -> None:
         Path(".test-env"),
         Path(".pypi"),
         Path(".testpypi"),
+        Path("native/build"),
+        Path("/tmp/kernel.sock"),
     ]
     for path in artifacts:
         if path.exists():

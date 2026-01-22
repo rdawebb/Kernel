@@ -1,33 +1,71 @@
-"""SMTP protocol operations - low-level SMTP command interface."""
+"""Native Go-backed low-level SMTP command interface."""
 
-import asyncio
+import base64
 from email.mime.multipart import MIMEMultipart
-from typing import List
+from typing import List, Optional, cast
 
-from .connection import SMTPConnection
-from .constants import Timeouts
+from src.native_bridge import NativeBridge, get_bridge
 from src.utils.logging import async_log_call, get_logger
 
 logger = get_logger(__name__)
 
 
 class SMTPProtocol:
-    """Low-level SMTP protocol operations & orchestration."""
+    """Native Go-backed SMTP protocol implementation."""
 
-    def __init__(self, connection: SMTPConnection):
-        """Initialise SMTP protocol handler.
+    def __init__(self, connection):
+        """Initialise native SMTP protocol.
 
         Args:
-            connection: SMTPConnection instance for connection management
+            connection: SMTPConnection instance (for compatibility)
         """
         self.connection = connection
+        self._handle: Optional[int] = None
+        self._bridge = None
+
+    def _get_bridge(self) -> NativeBridge:
+        """Type hint for bridge."""
+        return cast(NativeBridge, self._bridge)
+
+    async def _ensure_bridge(self):
+        """Ensure bridge is connected."""
+        if self._bridge is None:
+            self._bridge = await get_bridge()
+
+    async def _ensure_connected(self):
+        """Ensure SMTP connection is established."""
+        if self._handle is None:
+            await self._ensure_bridge()
+
+            config = self.connection.config_manager.config.account
+
+            # Get credentials
+            await self.connection.credential_manager.validate_and_prompt()
+            await self.connection.keystore.initialise()
+            password = await self.connection.keystore.retrieve(config.username)
+
+            if not password:
+                from src.utils.errors import MissingCredentialsError
+
+                raise MissingCredentialsError("Password not found")
+
+            # Connect via native backend
+            result = await self._get_bridge().call(
+                "smtp",
+                "connect",
+                {
+                    "host": config.smtp_server,
+                    "port": config.smtp_port,
+                    "username": config.username,
+                    "password": password,
+                },
+            )
+
+            self._handle = result["handle"]
+            logger.info(f"Connected to SMTP via native backend (handle={self._handle})")
 
     @async_log_call
-    async def send_message(
-        self,
-        message: MIMEMultipart,
-        recipients: List[str],
-    ) -> bool:
+    async def send_message(self, message: MIMEMultipart, recipients: List[str]) -> bool:
         """Send a MIME message to recipients.
 
         Args:
@@ -35,70 +73,50 @@ class SMTPProtocol:
             recipients: List of recipient email addresses
 
         Returns:
-            True if sent successfully, False otherwise
+            True if sent successfully
         """
-        try:
-            client = await self.connection.get_client()
+        await self._ensure_connected()
 
-            await asyncio.wait_for(
-                client.send_message(message, recipients=recipients),
-                timeout=Timeouts.SMTP_SEND,
+        try:
+            # Get sender from message
+            sender = message["From"]
+
+            # Convert message to bytes and base64 encode
+            message_bytes = message.as_bytes()
+            message_b64 = base64.b64encode(message_bytes).decode("utf-8")
+
+            await self._get_bridge().call(
+                "smtp",
+                "send",
+                {
+                    "handle": self._handle,
+                    "from": sender,
+                    "to": recipients,
+                    "message_b64": message_b64,
+                },
             )
 
+            logger.info(
+                f"Email sent via native backend to {len(recipients)} recipients"
+            )
             return True
 
-        except asyncio.TimeoutError as e:
-            logger.error(f"SMTP send timeout: {e}")
-            return False
-
         except Exception as e:
-            logger.error(f"SMTP send error: {e}")
+            logger.error(f"Failed to send email: {e}")
             return False
-
-    @async_log_call
-    async def verify_recipient(self, email: str) -> bool:
-        """Verify if a recipient address is valid (VRFY command).
-
-        Args:
-            email: Email address to verify
-
-        Returns:
-            True if valid, False otherwise
-
-        Note:
-            Many servers disable VRFY for security, so this may not work.
-        """
-        try:
-            client = await self.connection.get_client()
-
-            code, message = await asyncio.wait_for(
-                client.vrfy(email),
-                timeout=Timeouts.SMTP_VRFY,
-            )
-
-            return code == 250
-
-        except Exception as e:
-            logger.debug(f"VRFY not supported or failed: {e}")
-            return True  # Assume valid if VRFY not supported
 
     @async_log_call
     async def noop(self) -> bool:
         """Send NOOP command to keep connection alive.
 
         Returns:
-            True if successful, False otherwise
+            True if successful
         """
+        await self._ensure_connected()
+
         try:
-            client = await self.connection.get_client()
-
-            await asyncio.wait_for(
-                client.noop(),
-                timeout=Timeouts.SMTP_NOOP,
-            )
-
+            await self._get_bridge().call("smtp", "noop", {"handle": self._handle})
             return True
-
         except Exception as e:
             logger.debug(f"NOOP failed: {e}")
             return False

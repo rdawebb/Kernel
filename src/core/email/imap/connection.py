@@ -8,8 +8,8 @@ from typing import Optional
 
 import aioimaplib
 
-from security.credential_manager import CredentialManager
-from security.key_store import get_keystore
+from src.security.credential_manager import CredentialManager
+from src.security.key_store import get_keystore
 from src.utils.config import ConfigManager
 from src.utils.errors import (
     IMAPError,

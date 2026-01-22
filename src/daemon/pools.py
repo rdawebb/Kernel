@@ -36,9 +36,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from security.key_store import KeyStore
 from src.core.email.imap.client import IMAPClient
 from src.core.email.smtp.client import SMTPClient
+from src.security.key_store import KeyStore
 from src.utils.config import ConfigManager
 from src.utils.logging import get_logger, log_event
 
