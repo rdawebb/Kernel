@@ -4,7 +4,6 @@ import (
 	"fmt"
 )
 
-// SendMessage sends an email message
 func (c *Connection) SendMessage(from string, to []string, message []byte) error {
     c.mu.RLock()
     if c.closed || c.client == nil {

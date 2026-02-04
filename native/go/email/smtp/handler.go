@@ -14,7 +14,6 @@ type Handler struct {
     pool *pool.ConnectionPool
 }
 
-// NewHandler creates a new SMTP handler
 func NewHandler() *Handler {
     return &Handler{
         pool: pool.NewConnectionPool(),

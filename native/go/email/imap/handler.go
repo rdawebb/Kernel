@@ -8,19 +8,18 @@ import (
 	"github.com/rdawebb/kernel/native/internal/protocol"
 )
 
-// Handler handles IMAP requests from Python
+// Handles IMAP requests from Python
 type Handler struct {
     pool *pool.ConnectionPool
 }
 
-// NewHandler creates a new IMAP handler
 func NewHandler() *Handler {
     return &Handler{
         pool: pool.NewConnectionPool(),
     }
 }
 
-// Handle processes an IMAP request
+// Processes an IMAP request
 func (h *Handler) Handle(req protocol.Request) protocol.Response {
     switch req.Action {
     case "connect":

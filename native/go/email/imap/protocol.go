@@ -8,7 +8,6 @@ import (
 	"github.com/emersion/go-imap"
 )
 
-// SelectFolder selects an IMAP folder
 func (c *Connection) SelectFolder(folder string) error {
     c.mu.RLock()
     if c.closed || c.client == nil {
@@ -22,7 +21,6 @@ func (c *Connection) SelectFolder(folder string) error {
     return err
 }
 
-// SearchUIDs searches for message UIDs
 func (c *Connection) SearchUIDs(highestUID uint32) ([]uint32, error) {
     c.mu.RLock()
     if c.closed || c.client == nil {
@@ -50,7 +48,7 @@ func (c *Connection) SearchUIDs(highestUID uint32) ([]uint32, error) {
     return uids, nil
 }
 
-// FetchMessage fetches a single message by UID
+// Fetches a single message by UID
 func (c *Connection) FetchMessage(uid uint32) ([]byte, error) {
     c.mu.RLock()
     if c.closed || c.client == nil {
@@ -92,7 +90,7 @@ func (c *Connection) FetchMessage(uid uint32) ([]byte, error) {
     return body, nil
 }
 
-// FetchMessages fetches multiple messages by UID
+// Fetches multiple messages by UID
 func (c *Connection) FetchMessages(uids []uint32) (map[uint32]string, error) {
     c.mu.RLock()
     if c.closed || c.client == nil {
@@ -146,7 +144,6 @@ func (c *Connection) FetchMessages(uids []uint32) (map[uint32]string, error) {
     return result, nil
 }
 
-// SetFlags sets flags on a message
 func (c *Connection) SetFlags(uid uint32, flags []string, add bool) error {
     c.mu.Lock()
     if c.closed || c.client == nil {
@@ -170,7 +167,6 @@ func (c *Connection) SetFlags(uid uint32, flags []string, add bool) error {
     return client.UidStore(seqSet, item, flags, nil)
 }
 
-// CopyMessage copies a message to another folder
 func (c *Connection) CopyMessage(uid uint32, destFolder string) error {
     c.mu.Lock()
     if c.closed || c.client == nil {
@@ -186,7 +182,7 @@ func (c *Connection) CopyMessage(uid uint32, destFolder string) error {
     return client.UidCopy(seqSet, destFolder)
 }
 
-// Expunge permanently removes deleted messages
+// Permanently removes deleted messages
 func (c *Connection) Expunge() error {
     c.mu.Lock()
     if c.closed || c.client == nil {

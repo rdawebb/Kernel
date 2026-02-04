@@ -9,7 +9,6 @@ import (
 	"github.com/emersion/go-imap/client"
 )
 
-// Connection wraps an IMAP client connection
 type Connection struct {
     mu          sync.RWMutex
     client      *client.Client
@@ -20,7 +19,6 @@ type Connection struct {
     closed      bool
 }
 
-// Connect establishes an IMAP connection
 func Connect(host string, port int, username, password string) (*Connection, error) {
     addr := fmt.Sprintf("%s:%d", host, port)
     
@@ -32,7 +30,6 @@ func Connect(host string, port int, username, password string) (*Connection, err
         return nil, fmt.Errorf("failed to connect: %w", err)
     }
 
-    // Login
     if err := c.Login(username, password); err != nil {
         c.Logout()
         return nil, fmt.Errorf("login failed: %w", err)
@@ -49,7 +46,6 @@ func Connect(host string, port int, username, password string) (*Connection, err
     }, nil
 }
 
-// Close closes the connection
 func (c *Connection) Close() error {
     c.mu.Lock()
     defer c.mu.Unlock()
@@ -64,7 +60,6 @@ func (c *Connection) Close() error {
     return err
 }
 
-// Noop sends a NOOP to keep connection alive
 func (c *Connection) Noop() error {
     c.mu.RLock()
     if c.closed || c.client == nil {
@@ -76,7 +71,6 @@ func (c *Connection) Noop() error {
     return client.Noop()
 }
 
-// GetClient returns the underlying IMAP client
 func (c *Connection) GetClient() *client.Client {
     return c.client
 }

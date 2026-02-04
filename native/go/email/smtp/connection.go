@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// Connection wraps an SMTP client connection
 type Connection struct {
     mu          sync.RWMutex
     client      *smtp.Client
@@ -20,7 +19,6 @@ type Connection struct {
     closed      bool
 }
 
-// Connect establishes an SMTP connection
 func Connect(host string, port int, username, password string) (*Connection, error) {
     addr := fmt.Sprintf("[%s]:%d", host, port)
     var conn net.Conn
@@ -55,7 +53,6 @@ func Connect(host string, port int, username, password string) (*Connection, err
         }
     }
 
-    // Authenticate
     auth := smtp.PlainAuth("", username, password, host)
     if err = c.Auth(auth); err != nil {
         c.Quit()
@@ -71,7 +68,6 @@ func Connect(host string, port int, username, password string) (*Connection, err
     }, nil
 }
 
-// Close closes the connection
 func (c *Connection) Close() error {
     c.mu.Lock()
     defer c.mu.Unlock()
@@ -92,7 +88,6 @@ func (c *Connection) IsClosed() bool {
     return c.closed
 }
 
-// Noop sends a NOOP to keep connection alive
 func (c *Connection) Noop() error {
     c.mu.RLock()
     if c.closed || c.client == nil {
@@ -104,7 +99,6 @@ func (c *Connection) Noop() error {
     return client.Noop()
 }
 
-// GetClient returns the underlying SMTP client
 func (c *Connection) GetClient() *smtp.Client {
     return c.client
 }

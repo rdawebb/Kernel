@@ -16,7 +16,6 @@ type Response struct {
     Error   string      `json:"error,omitempty"`
 }
 
-// ErrorResponse creates an error response
 func ErrorResponse(err error) Response {
     return Response{
         Success: false,
@@ -24,7 +23,6 @@ func ErrorResponse(err error) Response {
     }
 }
 
-// SuccessResponse creates a success response
 func SuccessResponse(data any) Response {
     return Response{
         Success: true,

@@ -6,14 +6,12 @@ import (
 	"sync"
 )
 
-// ConnectionPool manages connection lifecycle
 type ConnectionPool struct {
     mu          sync.RWMutex
     connections map[int]any
     nextID      uint64
 }
 
-// NewConnectionPool creates a new connection pool
 func NewConnectionPool() *ConnectionPool {
     return &ConnectionPool{
         connections: make(map[int]any),
@@ -21,7 +19,6 @@ func NewConnectionPool() *ConnectionPool {
     }
 }
 
-// Add adds a connection and returns its handle
 func (p *ConnectionPool) Add(conn any) (int, error) {
     p.mu.Lock()
     defer p.mu.Unlock()
@@ -37,7 +34,6 @@ func (p *ConnectionPool) Add(conn any) (int, error) {
     return handle, nil
 }
 
-// Get retrieves a connection by handle
 func (p *ConnectionPool) Get(handle int) (any, error) {
     p.mu.RLock()
     defer p.mu.RUnlock()
@@ -50,7 +46,6 @@ func (p *ConnectionPool) Get(handle int) (any, error) {
     return conn, nil
 }
 
-// Remove removes a connection by handle
 func (p *ConnectionPool) Remove(handle int) {
     p.mu.Lock()
     defer p.mu.Unlock()
@@ -58,7 +53,6 @@ func (p *ConnectionPool) Remove(handle int) {
     delete(p.connections, handle)
 }
 
-// Count returns the number of active connections
 func (p *ConnectionPool) Count() int {
     p.mu.RLock()
     defer p.mu.RUnlock()

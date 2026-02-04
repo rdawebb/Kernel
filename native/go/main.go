@@ -50,8 +50,6 @@ func main() {
         log.Printf("Received signal: %v", sig)
         log.Println("Shutting down...")
 
-        // Close connections
-
         cancel()
         listener.Close()
     }()

@@ -1,8 +1,22 @@
 """Script for running the Kernel shell application"""
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+
+def clear_python_cache() -> None:
+    """Clear Python cache files (__pycache__ and .pyc files)."""
+    src_path = Path.cwd() / "src"
+    if src_path.exists():
+        # Remove __pycache__ directories
+        for cache_dir in src_path.rglob("__pycache__"):
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
+        # Remove .pyc files
+        for pyc_file in src_path.rglob("*.pyc"):
+            pyc_file.unlink(missing_ok=True)
 
 
 def get_venv_path() -> Path:
@@ -13,10 +27,7 @@ def get_venv_path() -> Path:
 def venv_exists() -> bool:
     """Check if virtual environment exists"""
     venv_path = get_venv_path()
-    if venv_path.exists() and (venv_path / "bin" / "python").exists():
-        subprocess.run(["source", str(venv_path / "bin" / "activate")], shell=True)
-        return True
-    return False
+    return venv_path.exists() and (venv_path / "bin" / "python").exists()
 
 
 def create_venv() -> None:
@@ -43,12 +54,17 @@ def run_shell() -> None:
     """Run the shell application"""
     print("Starting Kernel shell...")
 
-    result = subprocess.run(["python", "-m", "src.cli.shell"], check=False)
+    venv_path = get_venv_path()
+    venv_python = venv_path / "bin" / "python"
+
+    result = subprocess.run([str(venv_python), "-m", "src.cli.shell"], check=False)
     sys.exit(result.returncode)
 
 
 def main() -> None:
     """Main entry point."""
+    clear_python_cache()
+
     if not venv_exists():
         create_venv()
 
