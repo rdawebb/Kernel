@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-import socket
 import subprocess
 import time
 from contextlib import asynccontextmanager
@@ -26,7 +25,6 @@ class NativeBridge:
         """
         self.socket_path = socket_path or f"/tmp/kernel-{os.getpid()}.sock"
         self.process: Optional[subprocess.Popen] = None
-        self._sock: Optional[socket.socket] = None
         self._lock = asyncio.Lock()
         self._connected = False
 
@@ -70,9 +68,9 @@ class NativeBridge:
 
     async def _connect_socket(self) -> None:
         """Connect to the Unix socket."""
-        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self._sock.connect(self.socket_path)
-        self._sock.settimeout(30.0)  # 30 second timeout
+        self._reader, self._writer = await asyncio.open_unix_connection(
+            self.socket_path
+        )
 
     def _find_native_binary(self) -> Optional[Path]:
         """Find the native binary."""
@@ -112,47 +110,34 @@ class NativeBridge:
 
         async with self._lock:
             request = {"module": module, "action": action, "params": params}
-
-            request_json = json.dumps(request) + "\n"
-            if self._sock is None:
+            if self._writer is None or self._reader is None:
                 raise ConnectionError("Socket is not connected")
-            self._sock.sendall(request_json.encode("utf-8"))
 
-            response_data = b""
-            while True:
-                chunk = self._sock.recv(4096)
-                if not chunk:
-                    raise ConnectionError("Socket closed by server")
+            self._writer.write((json.dumps(request) + "\n").encode())
+            await self._writer.drain()
 
-                response_data += chunk
-                if b"\n" in chunk:
-                    break
+            line = await self._reader.readline()
 
-            response = json.loads(response_data.decode("utf-8"))
+            if not line:
+                raise ConnectionError("Socket closed by server")
 
+            response = json.loads(line.decode())
             if not response.get("success", False):
-                error = response.get("error", "Unknown error")
-                raise Exception(f"Native call failed: {error}")
+                raise RuntimeError(f"Native call failed: {response.get('error')}")
 
             return response.get("data", {})
 
     async def stop(self) -> None:
         """Stop the native process and clean up."""
-        if self._sock:
-            try:
-                self._sock.close()
-            except Exception:
-                pass
-            self._sock = None
+        if self._writer:
+            self._writer.close()
+
+            await self._writer.wait_closed()
+
+            self._reader = None
+            self._writer = None
 
         self._kill_process()
-
-        if os.path.exists(self.socket_path):
-            try:
-                os.unlink(self.socket_path)
-            except Exception:
-                pass
-
         self._connected = False
         logger.info("Native bridge stopped")
 
@@ -162,11 +147,18 @@ class NativeBridge:
             try:
                 self.process.terminate()
                 self.process.wait(timeout=5)
+
             except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
+                try:
+                    self.process.kill()
+                    self.process.wait()
+
+                except ProcessLookupError:
+                    pass
+
             except Exception:
                 pass
+
             finally:
                 self.process = None
 

@@ -32,6 +32,25 @@ class SMTPProtocol:
         if self._bridge is None:
             self._bridge = await get_bridge()
 
+    async def _call_bridge(self, action: str, params: dict) -> dict:
+        """Call the native bridge with the given action and parameters.
+
+        Args:
+            action: The bridge action to perform
+            params: Dictionary of parameters for the action
+
+        Returns:
+            The bridge response as a dictionary
+        """
+        try:
+            return await self._call_bridge(action, params)
+
+        except Exception as e:
+            if "invalid connection handle" in str(e).lower():
+                # Go process restarted, force full reconnect on next operation
+                self._handle = None
+            raise
+
     async def _ensure_connected(self):
         """Ensure SMTP connection is established."""
         if self._handle is None:
@@ -50,8 +69,7 @@ class SMTPProtocol:
                 raise MissingCredentialsError("Password not found")
 
             # Connect via native backend
-            result = await self._get_bridge().call(
-                "smtp",
+            result = await self._call_bridge(
                 "connect",
                 {
                     "host": config.smtp_server,
@@ -85,8 +103,7 @@ class SMTPProtocol:
             message_bytes = message.as_bytes()
             message_b64 = base64.b64encode(message_bytes).decode("utf-8")
 
-            await self._get_bridge().call(
-                "smtp",
+            await self._call_bridge(
                 "send",
                 {
                     "handle": self._handle,
@@ -115,7 +132,7 @@ class SMTPProtocol:
         await self._ensure_connected()
 
         try:
-            await self._get_bridge().call("smtp", "noop", {"handle": self._handle})
+            await self._call_bridge("noop", {"handle": self._handle})
             return True
         except Exception as e:
             logger.debug(f"NOOP failed: {e}")

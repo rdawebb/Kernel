@@ -35,6 +35,25 @@ class IMAPProtocol:
         if self._bridge is None:
             self._bridge = await get_bridge()
 
+    async def _call_bridge(self, action: str, params: dict) -> dict:
+        """Call the native bridge with the given action and parameters.
+
+        Args:
+            action: The bridge action to perform
+            params: Dictionary of parameters for the action
+
+        Returns:
+            The bridge response as a dictionary
+        """
+        try:
+            return await self._get_bridge().call("imap", action, params)
+
+        except Exception as e:
+            if "invalid connection handle" in str(e).lower():
+                # Go process restarted, force full reconnect on next operation
+                self._handle = None
+            raise
+
     async def _ensure_connected(self):
         """Ensure IMAP connection is established."""
         if self._handle is None:
@@ -53,8 +72,7 @@ class IMAPProtocol:
                 raise MissingCredentialsError("Password not found")
 
             # Connect via native backend
-            result = await self._get_bridge().call(
-                "imap",
+            result = await self._call_bridge(
                 "connect",
                 {
                     "host": config.imap_server,
@@ -76,37 +94,37 @@ class IMAPProtocol:
         """
         if self._selected_folder == folder:
             logger.debug(f"Folder {folder} already selected, skipping")
+
             return
 
         await self._ensure_connected()
 
-        await self._get_bridge().call(
-            "imap", "select_folder", {"handle": self._handle, "folder": folder}
+        await self._call_bridge(
+            "select_folder", {"handle": self._handle, "folder": folder}
         )
 
         self._selected_folder = folder
         logger.debug(f"Selected IMAP folder: {folder}")
 
     @async_log_call
-    async def search_uids(self, criteria: str) -> List[int]:
-        """Search for message UIDs matching criteria.
+    async def search_uids(self, highest_uid: int) -> List[int]:
+        """Return UIDs newer than the given highest UID.
 
         Args:
-            criteria: IMAP search criteria (e.g., "ALL", "UNSEEN")
+            highest_uid: The highest UID to use as a reference (0 for all messages)
 
         Returns:
-            List of matching UIDs (sorted ascending)
+            List of newer UIDs (sorted ascending)
         """
         await self._ensure_connected()
 
-        result = await self._get_bridge().call(
-            "imap", "search_uids", {"handle": self._handle, "criteria": criteria}
+        result = await self._call_bridge(
+            "search_uids", {"handle": self._handle, "highest_uid": highest_uid}
         )
 
-        uids = [int(uid) for uid in result["uids"]]
-        logger.debug(f"UID search completed: {len(uids)} results")
+        logger.debug(f"UID search completed: {len(result['uids'])} results")
 
-        return sorted(uids)
+        return sorted(int(uid) for uid in result["uids"])
 
     @async_log_call
     async def fetch_messages(self, uids: List[int]) -> Dict[int, bytes]:
@@ -126,8 +144,8 @@ class IMAPProtocol:
         # Convert to uint32 for Go
         uids_uint32 = [int(uid) for uid in uids]
 
-        result = await self._get_bridge().call(
-            "imap", "fetch_messages", {"handle": self._handle, "uids": uids_uint32}
+        result = await self._call_bridge(
+            "fetch_messages", {"handle": self._handle, "uids": uids_uint32}
         )
 
         # Convert base64-encoded messages back to bytes
@@ -155,8 +173,7 @@ class IMAPProtocol:
         await self._ensure_connected()
 
         try:
-            await self._get_bridge().call(
-                "imap",
+            await self._call_bridge(
                 "set_flags",
                 {
                     "handle": self._handle,
@@ -184,8 +201,7 @@ class IMAPProtocol:
         await self._ensure_connected()
 
         try:
-            await self._get_bridge().call(
-                "imap",
+            await self._call_bridge(
                 "copy_message",
                 {
                     "handle": self._handle,
@@ -208,10 +224,13 @@ class IMAPProtocol:
         await self._ensure_connected()
 
         try:
-            await self._get_bridge().call("imap", "expunge", {"handle": self._handle})
+            await self._call_bridge("expunge", {"handle": self._handle})
+
             return True
+
         except Exception as e:
             logger.error(f"Failed to expunge: {e}")
+
             return False
 
     @async_log_call
@@ -224,11 +243,13 @@ class IMAPProtocol:
         await self._ensure_connected()
 
         try:
-            await self._get_bridge().call("imap", "noop", {"handle": self._handle})
+            await self._call_bridge("noop", {"handle": self._handle})
+
             return True
 
         except Exception as e:
             logger.debug(f"NOOP failed: {e}")
+
             return False
 
     # Placeholder methods for compatibility (not implemented yet)
@@ -236,10 +257,12 @@ class IMAPProtocol:
         """Get list of available folders."""
         # TODO: Implement in Go
         logger.warning("get_folder_list not yet implemented in native backend")
+
         return []
 
     async def get_folder_status(self, folder: str) -> Dict[str, int]:
         """Get folder statistics."""
         # TODO: Implement in Go
         logger.warning("get_folder_status not yet implemented in native backend")
+
         return {}

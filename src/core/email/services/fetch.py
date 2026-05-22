@@ -7,7 +7,6 @@ from enum import Enum
 from typing import Dict, List, Optional
 
 from src.core.database import EmailRepository
-from src.core.email.imap.client import IMAPClient
 from src.core.email.imap.protocol import IMAPProtocol
 from src.core.email.parser import EmailParser
 from src.core.models.email import Email, FolderName
@@ -200,27 +199,20 @@ class EmailFetchService:
 
         await self._protocol.select_folder(folder.value.upper())
 
-        # Determine search criteria
+        # Determine highest UID to search from
         if sync_mode == SyncMode.FULL:
-            criteria = "ALL"
+            highest_uid = 0
         else:
             highest_uid = await self._repository.get_highest_uid(folder)
 
-            if highest_uid == 0:
-                # No emails in database, fetch all
-                criteria = "ALL"
-            else:
-                # Fetch only emails after the highest UID
-                criteria = f"UID {highest_uid + 1}:*"
-
-        uids = await self._protocol.search_uids(criteria)
+        uids = await self._protocol.search_uids(highest_uid)
 
         search_duration = time.time() - search_start
         logger.info(
             "UID search completed",
             extra={
                 "folder": folder.value,
-                "criteria": criteria,
+                "highest_uid": highest_uid,
                 "count": len(uids),
                 "duration": round(search_duration, 2),
             },

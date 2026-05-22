@@ -1,11 +1,12 @@
 """Email management workflow orchestration."""
 
 from typing import Optional
+
 from rich.console import Console
 
-from src.core.database import EngineManager, EmailRepository
-from src.utils.paths import DATABASE_PATH
+from src.core.database import EmailRepository, EngineManager
 from src.utils.logging import async_log_call, get_logger
+from src.utils.paths import DATABASE_PATH
 
 from .display import ManageDisplay
 from .operations import EmailOperations
@@ -60,10 +61,10 @@ class ManageWorkflow:
 
             # Execute delete
             if permanent or folder == "trash":
-                await self.ops.delete_permanent(email_id, folder)
+                await self.ops.delete_permanent(folder=folder, email_id=email_id)
                 self.display.show_deleted(email_id, permanent=True)
             else:
-                await self.ops.move_to_trash(email_id, folder)
+                await self.ops.move_to_trash(folder=folder, email_id=email_id)
                 self.display.show_deleted(email_id, permanent=False)
 
             return True
