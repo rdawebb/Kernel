@@ -6,7 +6,6 @@ import threading
 from typing import Optional
 
 from src.core.database import EngineManager
-from src.daemon.client import get_daemon_client
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -27,17 +26,9 @@ class LifecycleManager:
         """Perform cleanup on application exit.
 
         Handles:
-        - Stopping daemon
         - Closing database connections
         - Terminal state reset
         """
-        # Stop daemon
-        try:
-            daemon_client = get_daemon_client()
-            await daemon_client.stop_daemon()
-        except Exception as e:
-            logger.debug(f"Error stopping daemon: {e}")
-
         # Close database
         try:
             if self.engine_manager is not None:

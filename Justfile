@@ -1,6 +1,7 @@
 # Install Python in editable mode
 install:
-    uv pip install -e .
+    cd native/go && go build -o ../build/kernel-native .
+    uv sync --all-extras
 
 # Build Go binary
 go-build:
@@ -19,11 +20,11 @@ go-deps:
 	cd native/go && go mod download
 
 # Run all Python tests
-py-test:
+test-py:
     uv run pytest tests -v
 
 # Run all Go tests
-go-test:
+test-go:
 	cd native/go && go test ./...
 
 # Run all Python tests with coverage
