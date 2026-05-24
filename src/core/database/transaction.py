@@ -87,6 +87,7 @@ class TransactionManager:
                 )
                 if self._transaction:
                     await self._transaction.rollback()
+
                 raise DatabaseTransactionError(
                     f"Transaction timeout after {duration:.2f}s",
                     details={"timeout": self.timeout, "duration": duration},
@@ -95,10 +96,12 @@ class TransactionManager:
             if exc_type is not None:
                 if self._transaction:
                     await self._transaction.rollback()
+                    return
                 logger.warning(
                     f"Transaction rolled back due to {exc_type.__name__}: {exc_val} "
                     f"(duration={duration:.2f}s)"
                 )
+
             else:
                 # Commit on success
                 if self._transaction:

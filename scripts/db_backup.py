@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
-"""
-Backup and restore utility for Kernel email database.
+"""Backup and restore utility for Kernel email database.
 
 Usage:
     # Create backup (compressed by default)
@@ -27,23 +25,23 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import Optional
+
 from rich.console import Console
 from rich.progress import (
+    BarColumn,
     Progress,
     SpinnerColumn,
-    TextColumn,
-    BarColumn,
     TaskProgressColumn,
+    TextColumn,
     TimeRemainingColumn,
 )
 
 from src.core.database import (
-    EngineManager,
-    EmailRepository,
     BackupService,
+    EmailRepository,
+    EngineManager,
 )
 from src.utils.paths import DATABASE_PATH
-
 
 console = Console()
 

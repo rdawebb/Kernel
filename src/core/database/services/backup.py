@@ -93,7 +93,7 @@ class BackupService:
         Raises:
             BackupError: If backup fails
         """
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         try:
             # Generate backup path if not provided
@@ -128,7 +128,7 @@ class BackupService:
             # Get backup size
             backup_size = backup_path.stat().st_size
 
-            duration = asyncio.get_event_loop().time() - start_time
+            duration = asyncio.get_running_loop().time() - start_time
 
             logger.info(
                 f"Database backup created: {backup_path} "
@@ -150,7 +150,7 @@ class BackupService:
                 backup_path=backup_path or Path("unknown"),
                 size_bytes=0,
                 compressed=compress,
-                duration_seconds=asyncio.get_event_loop().time() - start_time,
+                duration_seconds=asyncio.get_running_loop().time() - start_time,
                 success=False,
                 error=str(e),
             )
@@ -173,7 +173,7 @@ class BackupService:
         Returns:
             ExportResult with export details
         """
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
         result = ExportResult()
 
         try:
@@ -206,7 +206,7 @@ class BackupService:
                     logger.error(error_msg)
                     result.errors.append((folder.value, str(e)))
 
-            result.duration_seconds = asyncio.get_event_loop().time() - start_time
+            result.duration_seconds = asyncio.get_running_loop().time() - start_time
 
             logger.info(
                 f"CSV export complete: {result.total_emails} emails "
@@ -219,7 +219,7 @@ class BackupService:
         except Exception as e:
             logger.error(f"Export failed: {e}")
             result.errors.append(("general", str(e)))
-            result.duration_seconds = asyncio.get_event_loop().time() - start_time
+            result.duration_seconds = asyncio.get_running_loop().time() - start_time
             return result
 
     async def verify_backup(self, backup_path: Path) -> bool:
@@ -242,7 +242,7 @@ class BackupService:
             # Try to read file
             if is_compressed:
 
-                async def test_read():
+                def test_read():
                     with gzip.open(backup_path, "rb") as f:
                         # Read first 1KB to verify
                         f.read(1024)

@@ -2,7 +2,8 @@
 
 from typing import Any, Dict, List, Optional, Set
 
-from sqlalchemy import Select, and_, delete, insert, or_, select, update, Insert
+from sqlalchemy import Insert, Select, and_, delete, or_, select, update
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.sql import ColumnElement
 
 from src.core.database.models import get_table
@@ -92,7 +93,7 @@ class QueryBuilder:
 
     @staticmethod
     def insert_email(folder: FolderName, values: Dict[str, Any]) -> Insert:
-        """Build INSERT OR REPLACE query for email.
+        """Build INSERT query for email using ON CONFLICT DO UPDATE.
 
         Args:
             folder: Target folder
@@ -104,7 +105,9 @@ class QueryBuilder:
         table = get_table(folder.value)
 
         query = insert(table).values(**values)
-        query = query.on_conflict_do_update(constraint=table.primary_key, set_=values)
+        query = query.on_conflict_do_update(
+            index_elements=[col.name for col in table.primary_key.columns], set_=values
+        )
 
         return query
 
@@ -140,6 +143,18 @@ class QueryBuilder:
         """
         table = get_table(folder.value)
         return delete(table).where(table.c.uid == uid)
+
+    @staticmethod
+    def _escape_like(keyword: str) -> str:
+        """Escape SQL LIKE special characters so they are treated as literals.
+
+        Args:
+            keyword: The search keyword to escape
+
+        Returns:
+            The escaped keyword string
+        """
+        return keyword.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
 
     @staticmethod
     def search_emails(
@@ -180,11 +195,16 @@ class QueryBuilder:
         for folder in folders:
             table = get_table(folder.value)
 
+            # Escape keyword for LIKE comparison
+            escaped = QueryBuilder._escape_like(keyword)
+
             # Build OR conditions for each field
             field_conditions = []
             for field in fields:
                 column = getattr(table.c, field)
-                field_conditions.append(column.like(f"%{keyword}%"))
+                field_conditions.append(
+                    column.like(column.like(f"%{escaped}%", escape="\\"))
+                )
 
             where_clause = or_(*field_conditions)
 

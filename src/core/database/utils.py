@@ -2,8 +2,7 @@
 
 from datetime import datetime
 
-from src.core.models.attachment import Attachment
-from src.core.models.email import FolderName, Email, EmailAddress, EmailId
+from src.core.models.email import Attachment, Email, EmailAddress, EmailId, FolderName
 
 
 def row_to_email(row, folder: FolderName) -> Email:
@@ -51,7 +50,11 @@ def row_to_email(row, folder: FolderName) -> Email:
         for filename in row.attachments.split(","):
             if filename.strip():
                 attachments.append(
-                    Attachment(id=None, filename=filename.strip(), content=None)
+                    Attachment(
+                        filename=filename.strip(),
+                        content_type="application/octet-stream",  # unknown until downloaded
+                        size_bytes=0,
+                    )
                 )
 
     email = Email(

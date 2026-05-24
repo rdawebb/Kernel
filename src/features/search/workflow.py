@@ -1,17 +1,18 @@
 """Search workflow orchestration."""
 
 from typing import Optional
+
 from rich.console import Console
 
-from src.core.database import EngineManager, EmailRepository
+from src.core.database import EmailRepository, EngineManager
 from src.core.database.query import QueryBuilder
-from src.utils.paths import DATABASE_PATH
-from src.utils.logging import async_log_call, get_logger
-from src.core.models.email import FolderName
 from src.core.database.utils import row_to_email
+from src.core.models.email import FolderName
+from src.utils.logging import async_log_call, get_logger
+from src.utils.paths import DATABASE_PATH
 
-from .query import SearchQuery
 from .display import SearchDisplay
+from .query import SearchQuery
 
 logger = get_logger(__name__)
 

@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
-"""
-Database monitoring dashboard for Kernel email client.
+"""Database monitoring dashboard for Kernel email client.
 
 Usage:
     # Show current status
@@ -20,8 +18,8 @@ import argparse
 import asyncio
 import json
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from rich.console import Console
@@ -31,7 +29,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from src.core.database import EngineManager, EmailRepository
+from src.core.database import EmailRepository, EngineManager
 from src.core.database.performance.health import HealthChecker, HealthStatus
 from src.core.database.performance.metrics import get_metrics_collector
 from src.utils.paths import DATABASE_PATH

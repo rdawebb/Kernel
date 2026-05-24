@@ -4,9 +4,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, List, Optional, Set
 
-from sqlalchemy import and_, literal, or_, select, func
-from sqlalchemy.sql import ColumnElement, Select
+from sqlalchemy import and_, func, literal, or_, select
+from sqlalchemy.sql import ColumnElement, Select, text
 
+from core.database.query import QueryBuilder
 from src.core.database import EngineManager, get_config, get_table
 from src.core.models.email import Email, FolderName
 from src.utils.logging import get_logger
@@ -328,7 +329,8 @@ class SearchService:
                 }
                 for field in search_fields:
                     column = getattr(table.c, self.FIELD_MAP[field])
-                    keyword_conditions.append(column.like(f"%{query.keyword}%"))
+                    escaped = QueryBuilder._escape_like(query.keyword)
+                    keyword_conditions.append(column.like(f"%{escaped}%", escape="\\"))
                 conditions.append(or_(*keyword_conditions))
 
             # Additional filters
@@ -375,19 +377,9 @@ class SearchService:
         else:
             combined = union_queries[0].union_all(*union_queries[1:])
 
-        # Add ORDER BY
-        order_col = query.order_by
-        if query.order_desc:
-            combined = combined.order_by(f"{order_col} DESC")
-        else:
-            combined = combined.order_by(order_col)
-
-        # Add secondary sort by time if ordering by date
-        if query.order_by == "date":
-            time_order = "time DESC" if query.order_desc else "time ASC"
-            combined = combined.order_by(
-                f"{order_col} DESC" if query.order_desc else order_col, time_order
-            )
+        date_order = text("date DESC" if query.order_desc else "date ASC")
+        time_order = text("time DESC" if query.order_desc else "time ASC")
+        combined = combined.order_by(date_order, time_order)
 
         # Add LIMIT and OFFSET
         combined = combined.limit(query.limit).offset(query.offset)
@@ -424,14 +416,19 @@ class SearchService:
                 }
                 for field in search_fields:
                     column = getattr(table.c, self.FIELD_MAP[field])
-                    keyword_conditions.append(column.like(f"%{query.keyword}%"))
+                    escaped = QueryBuilder._escape_like(query.keyword)
+                    keyword_conditions.append(column.like(f"%{escaped}%", escape="\\"))
                 conditions.append(or_(*keyword_conditions))
 
             # Additional filters
             for filter_ in query.filters:
-                column = getattr(table.c, self.FIELD_MAP[filter_.field])
-                condition = self._build_filter_condition(column, filter_)
-                conditions.append(condition)
+                col_name = self.FIELD_MAP.get(filter_.field)
+                if col_name:
+                    if not hasattr(table.c, col_name):
+                        continue
+                    column = getattr(table.c, col_name)
+                    condition = self._build_filter_condition(column, filter_)
+                    conditions.append(condition)
 
             # Combine conditions with AND
             where_clause = and_(*conditions) if conditions else None
@@ -448,10 +445,8 @@ class SearchService:
         if len(union_queries) == 1:
             combined = union_queries[0]
         else:
-            # Union all folder counts and sum them
-            combined = select(func.sum(func.count())).select_from(
-                union_queries[0].union_all(*union_queries[1:]).subquery()
-            )
+            subq = union_queries[0].union_all(*union_queries[1:]).subquery()
+            combined = select(func.count()).select_from(subq)
 
         return combined
 

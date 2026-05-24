@@ -17,7 +17,7 @@ from rich.text import Text
 from src.core.database import EngineManager, get_config
 from src.utils.config import ConfigManager
 from src.utils.logging import get_logger
-from src.utils.paths import SHELL_HISTORY_PATH, DATABASE_PATH
+from src.utils.paths import DATABASE_PATH, SHELL_HISTORY_PATH
 
 from .cli_parser import setup_argument_parser
 from .lifecycle import LifecycleManager

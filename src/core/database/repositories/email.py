@@ -1,14 +1,13 @@
 """Email repository with SQLAlchemy Core queries."""
 
-from sqlalchemy.ext.asyncio import AsyncConnection
-
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, List, Optional, Set
 
-from sqlalchemy import delete, func, select, Table, update
+from sqlalchemy import Table, delete, func, select
 from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from src.core.database.engine_manager import EngineManager
 from src.core.database.models import get_table
@@ -93,7 +92,7 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
         if not entities:
             return BatchResult(total=0, succeeded=0, failed=0)
 
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
         result = BatchResult(total=len(entities), succeeded=0, failed=0)
 
         by_folder: dict[FolderName, List[Email]] = {}
@@ -121,26 +120,18 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
                 batch_values = [self._email_to_row(e) for e in batch]
 
                 try:
-                    # Use transaction for atomic batch insert
                     async with TransactionManager(engine) as tx:
-                        # Separate new vs existing emails
-                        uids = [v["uid"] for v in batch_values]
-                        existing_uids = await self._get_existing_uids(
-                            tx.connection, table, uids
+                        # Replace all columns except uid
+                        stmt = insert(table).on_conflict_do_update(
+                            index_elements=["uid"],
+                            set_={
+                                k: insert(table).excluded[k]
+                                for k in batch_values[0]
+                                if k != "uid"
+                            },
                         )
 
-                        new_values = [
-                            v for v in batch_values if v["uid"] not in existing_uids
-                        ]
-                        update_values = [
-                            v for v in batch_values if v["uid"] in existing_uids
-                        ]
-
-                        if new_values:
-                            await tx.connection.execute(insert(table), new_values)
-
-                        if update_values:
-                            await tx.connection.execute(update(table), update_values)
+                        await tx.connection.execute(stmt, batch_values)
 
                     result.succeeded += len(batch)
 
@@ -148,12 +139,14 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
                     result.failed += len(batch)
                     for email in batch:
                         result.errors.append((email.id, str(e)))
-                    logger.error(f"Batch insert failed for {len(batch)} emails: {e}")
+                        logger.error(
+                            f"Batch insert failed for {len(batch)} emails: {e}"
+                        )
 
                 if progress:
                     progress(result.succeeded + result.failed, result.total)
 
-        result.duration_seconds = asyncio.get_event_loop().time() - start_time
+        result.duration_seconds = asyncio.get_running_loop().time() - start_time
         logger.info(
             f"Batch save complete: {result.succeeded}/{result.total} succeeded "
             f"({result.success_rate:.1f}%) in {result.duration_seconds:.2f}s"
@@ -430,7 +423,11 @@ class EmailRepository(Repository[Email, EmailId, FolderName]):
             table = get_table(folder.value)
 
             # Cast UID to integer for proper numeric comparison
-            query = select(func.max(cast(table.c.uid, Integer))).select_from(table)
+            query = (
+                select(func.max(cast(table.c.uid, Integer)))
+                .select_from(table)
+                .where(table.c.uid.op("GLOB")("[0-9]*"))
+            )
 
             async with engine.connect() as conn:
                 result = await conn.execute(query)
